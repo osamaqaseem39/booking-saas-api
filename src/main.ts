@@ -1,11 +1,30 @@
-/**
- * Vercel's Nest preset requires this file at the repo root and insists it
- * directly reference @nestjs/* (transitive imports are not enough).
- */
-export { ValidationPipe } from '@nestjs/common';
-export { NestFactory } from '@nestjs/core';
-export { NestExpressApplication } from '@nestjs/platform-express';
+import * as express from 'express';
+import { NestFactory } from '@nestjs/core';
+import { ExpressAdapter } from '@nestjs/platform-express';
+import type { NestExpressApplication } from '@nestjs/platform-express';
+import { AppModule } from '../apps/api/src/app.module';
+import { applyHttpGlobals } from '../apps/api/src/bootstrap-http';
 
-import { bootstrapHttpApp } from '../apps/api/src/bootstrap-http';
+async function createExpressServer(): Promise<express.Express> {
+  const expressApp = express();
+  const nestApp = await NestFactory.create<NestExpressApplication>(
+    AppModule,
+    new ExpressAdapter(expressApp),
+  );
+  applyHttpGlobals(nestApp);
+  await nestApp.init();
+  return expressApp;
+}
 
-bootstrapHttpApp();
+let serverPromise: Promise<express.Express> | undefined;
+
+export default async function vercelHandler(
+  req: express.Request,
+  res: express.Response,
+): Promise<void> {
+  if (!serverPromise) {
+    serverPromise = createExpressServer();
+  }
+  const server = await serverPromise;
+  server(req, res);
+}

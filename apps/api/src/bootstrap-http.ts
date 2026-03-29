@@ -3,9 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 
-export async function bootstrapHttpApp(): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
-
+export function applyHttpGlobals(app: NestExpressApplication): void {
   app.enableCors({
     origin: true,
     credentials: true,
@@ -32,6 +30,15 @@ export async function bootstrapHttpApp(): Promise<void> {
       },
     }),
   );
+}
 
+export async function createNestExpressApp(): Promise<NestExpressApplication> {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  applyHttpGlobals(app);
+  return app;
+}
+
+export async function bootstrapHttpApp(): Promise<void> {
+  const app = await createNestExpressApp();
   await app.listen(process.env.PORT ?? 3000);
 }
