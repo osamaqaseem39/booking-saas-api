@@ -1,5 +1,11 @@
 /**
- * Vercel Nest integration looks for `src/main.ts` at the repo root.
- * The real bootstrap lives in the API app (`apps/api/src/main.ts`).
+ * Vercel's Nest preset requires this file at the repo root and insists it
+ * directly reference @nestjs/* (transitive imports are not enough).
  */
-import '../apps/api/src/main';
+export { ValidationPipe } from '@nestjs/common';
+export { NestFactory } from '@nestjs/core';
+export { NestExpressApplication } from '@nestjs/platform-express';
+
+import { bootstrapHttpApp } from '../apps/api/src/bootstrap-http';
+
+bootstrapHttpApp();
