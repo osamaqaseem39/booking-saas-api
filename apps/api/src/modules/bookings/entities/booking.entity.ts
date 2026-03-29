@@ -1,0 +1,83 @@
+import {
+  Column,
+  CreateDateColumn,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+  UpdateDateColumn,
+} from 'typeorm';
+import { User } from '../../iam/entities/user.entity';
+import type {
+  BookingSportType,
+  BookingStatus,
+  PaymentMethod,
+  PaymentStatus,
+} from '../booking.types';
+import { BookingItem } from './booking-item.entity';
+
+@Entity({ name: 'bookings' })
+export class Booking {
+  @PrimaryGeneratedColumn('uuid')
+  id!: string;
+
+  /** Tenant scope; exposed as `arenaId` in API responses */
+  @Column({ type: 'uuid' })
+  tenantId!: string;
+
+  @Column({ type: 'uuid' })
+  userId!: string;
+
+  @ManyToOne(() => User, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'userId' })
+  user!: User;
+
+  @Column({ type: 'varchar', length: 16 })
+  sportType!: BookingSportType;
+
+  @Column({ type: 'date' })
+  bookingDate!: string;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2 })
+  subTotal!: string;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: '0' })
+  discount!: string;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2, default: '0' })
+  tax!: string;
+
+  @Column({ type: 'decimal', precision: 12, scale: 2 })
+  totalAmount!: string;
+
+  @Column({ type: 'varchar', length: 16 })
+  paymentStatus!: PaymentStatus;
+
+  @Column({ type: 'varchar', length: 16 })
+  paymentMethod!: PaymentMethod;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  transactionId?: string;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  paidAt?: Date;
+
+  @Column({ type: 'varchar', length: 20 })
+  bookingStatus!: BookingStatus;
+
+  @Column({ type: 'text', nullable: true })
+  notes?: string;
+
+  @Column({ type: 'text', nullable: true })
+  cancellationReason?: string;
+
+  @OneToMany(() => BookingItem, (item) => item.booking, { cascade: true })
+  items!: BookingItem[];
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  createdAt!: Date;
+
+  @UpdateDateColumn({ type: 'timestamptz' })
+  updatedAt!: Date;
+}
