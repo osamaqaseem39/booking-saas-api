@@ -31,7 +31,10 @@ export class BookingsController {
   }
 
   @Post()
-  create(@CurrentTenant() tenant: TenantContext, @Body() dto: CreateBookingDto) {
+  create(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() dto: CreateBookingDto,
+  ) {
     return this.bookingsService.create(tenant.tenantId, dto);
   }
 

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
 import { Repository } from 'typeorm';
@@ -48,13 +52,19 @@ export class FutsalFieldService {
     });
   }
 
-  async create(tenantId: string, dto: CreateFutsalFieldDto): Promise<FutsalField> {
+  async create(
+    tenantId: string,
+    dto: CreateFutsalFieldDto,
+  ): Promise<FutsalField> {
     this.requireTenant(tenantId);
     const location = await this.businessesService.assertLocationBelongsToTenant(
       dto.businessLocationId,
       tenantId,
     );
-    assertFacilityTypeAllowedForLocation(location, FUTSAL_LOCATION_FACILITY_CODE);
+    assertFacilityTypeAllowedForLocation(
+      location,
+      FUTSAL_LOCATION_FACILITY_CODE,
+    );
     const row = this.repo.create({
       tenantId,
       businessLocationId: dto.businessLocationId,

@@ -7,11 +7,7 @@ import { TurfCourtController } from './turf-court.controller';
 import { TurfCourtService } from './turf-court.service';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([TurfCourt]),
-    IamModule,
-    BusinessesModule,
-  ],
+  imports: [TypeOrmModule.forFeature([TurfCourt]), IamModule, BusinessesModule],
   controllers: [TurfCourtController],
   providers: [TurfCourtService],
   exports: [TurfCourtService],

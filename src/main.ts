@@ -2,11 +2,30 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../apps/api/src/app.module';
+import dataSource from '../apps/api/src/database/typeorm.config';
 
 let cachedApp: NestExpressApplication;
+let migrationsPromise: Promise<void> | undefined;
 
 async function bootstrap() {
   if (!cachedApp) {
+    // Ensure DB schema exists before Nest controllers/services run.
+    // This prevents runtime errors like `relation "users" does not exist`.
+    if (!migrationsPromise) {
+      migrationsPromise = (async () => {
+        try {
+          await dataSource.initialize();
+          await dataSource.runMigrations();
+        } finally {
+          // Always close the connection to avoid keeping serverless sockets open.
+          if (dataSource.isInitialized) {
+            await dataSource.destroy();
+          }
+        }
+      })();
+    }
+    await migrationsPromise;
+
     cachedApp = await NestFactory.create<NestExpressApplication>(AppModule);
 
     cachedApp.useGlobalPipes(
@@ -68,7 +87,7 @@ export default async function handler(req: any, res: any): Promise<void> {
     });
   } catch (error) {
     clearTimeout(timeout);
-    // eslint-disable-next-line no-console
+
     console.error('Handler error:', error);
     if (!res.headersSent) {
       res.status(500).json({
@@ -78,4 +97,3 @@ export default async function handler(req: any, res: any): Promise<void> {
     }
   }
 }
-

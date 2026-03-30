@@ -1,4 +1,8 @@
-export const TURF_SPORT_MODES = ['futsal_only', 'cricket_only', 'both'] as const;
+export const TURF_SPORT_MODES = [
+  'futsal_only',
+  'cricket_only',
+  'both',
+] as const;
 export type TurfSportMode = (typeof TURF_SPORT_MODES)[number];
 
 export function turfSportModeToFlags(mode: TurfSportMode): {

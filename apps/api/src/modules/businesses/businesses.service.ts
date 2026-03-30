@@ -97,9 +97,7 @@ export class BusinessesService {
     let scoped = allLocations;
     if (!isPlatformOwner) {
       const allowedBusinessIds = new Set(
-        (
-          await this.listForRequester(requesterUserId)
-        ).map((b) => b.id),
+        (await this.listForRequester(requesterUserId)).map((b) => b.id),
       );
       scoped = allLocations.filter((l) => allowedBusinessIds.has(l.businessId));
     }

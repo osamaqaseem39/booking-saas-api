@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPasswordHashToUsers1711000000009
-  implements MigrationInterface
-{
+export class AddPasswordHashToUsers1711000000009 implements MigrationInterface {
   name = 'AddPasswordHashToUsers1711000000009';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -19,4 +17,3 @@ export class AddPasswordHashToUsers1711000000009
     `);
   }
 }
-

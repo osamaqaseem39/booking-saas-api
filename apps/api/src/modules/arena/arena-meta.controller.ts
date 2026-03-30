@@ -9,8 +9,7 @@ export class ArenaMetaController {
       vertical: ARENA_VERTICAL_CODE,
       subTypes: [...ARENA_SUB_TYPE_CODES],
       locationScoped: true,
-      note:
-        'POST create bodies require businessLocationId; list with ?businessLocationId= to scope courts to a business location.',
+      note: 'POST create bodies require businessLocationId; list with ?businessLocationId= to scope courts to a business location.',
       resources: {
         'turf-court': {
           path: '/arena/turf-courts',

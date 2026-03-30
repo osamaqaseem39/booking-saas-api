@@ -14,7 +14,14 @@ export class BillingController {
   }
 
   @Post('invoices')
-  issueInvoice(@CurrentTenant() tenant: TenantContext, @Body() dto: IssueInvoiceDto) {
-    return this.billingService.issue(tenant.tenantId, dto.bookingId, dto.amount);
+  issueInvoice(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() dto: IssueInvoiceDto,
+  ) {
+    return this.billingService.issue(
+      tenant.tenantId,
+      dto.bookingId,
+      dto.amount,
+    );
   }
 }

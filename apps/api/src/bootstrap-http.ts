@@ -19,12 +19,18 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
       // If no CORS env is configured, reflect the request origin.
       const allowOrigin =
         allowedOrigins.length === 0 || allowedOrigins.includes(origin);
-      res.setHeader('Access-Control-Allow-Origin', allowOrigin ? origin : 'null');
+      res.setHeader(
+        'Access-Control-Allow-Origin',
+        allowOrigin ? origin : 'null',
+      );
       res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Credentials', 'true');
     }
 
-    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+    res.setHeader(
+      'Access-Control-Allow-Methods',
+      'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    );
 
     // Let the client request headers decide which headers we allow,
     // so preflight doesn't fail when the frontend sends extra headers.

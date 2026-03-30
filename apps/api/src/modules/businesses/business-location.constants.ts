@@ -13,7 +13,8 @@ export const BUSINESS_LOCATION_TYPE_CODES = [
   'other',
 ] as const;
 
-export type BusinessLocationTypeCode = (typeof BUSINESS_LOCATION_TYPE_CODES)[number];
+export type BusinessLocationTypeCode =
+  (typeof BUSINESS_LOCATION_TYPE_CODES)[number];
 
 /**
  * Sub-facility / court kinds this location can host (arena vertical).

@@ -37,7 +37,8 @@ function createTypeOrmOptions(): DataSourceOptions {
       process.env.DB_USERNAME ?? process.env.POSTGRES_USER ?? 'postgres',
     password:
       process.env.DB_PASSWORD ?? process.env.POSTGRES_PASSWORD ?? 'postgres',
-    database: process.env.DB_NAME ?? process.env.POSTGRES_DATABASE ?? 'backend_saas',
+    database:
+      process.env.DB_NAME ?? process.env.POSTGRES_DATABASE ?? 'backend_saas',
   };
 }
 
@@ -57,15 +58,34 @@ export const typeOrmOptions: DataSourceOptions = {
     Booking,
     BookingItem,
   ],
-  // Use DataSource-relative paths so it works after building to `dist/`.
-  migrations: [join(__dirname, 'migrations', '*.js')],
+  // Vercel/build setups differ on where compiled migration files land.
+  // Include both the local src-relative location and dist-relative location.
+  migrations: [
+    join(__dirname, 'migrations', '*.js'),
+    join(
+      process.cwd(),
+      'dist',
+      'apps',
+      'api',
+      'database',
+      'migrations',
+      '*.js',
+    ),
+  ],
 };
 
 // Helpful in Vercel: confirms env vars are being applied (no secrets logged).
 if (!(globalThis as any).__dbEnvLogged) {
   (globalThis as any).__dbEnvLogged = true;
-  // eslint-disable-next-line no-console
-  console.log('[DB] host=', process.env.DB_HOST ?? 'localhost', 'port=', process.env.DB_PORT ?? 5432, 'db=', process.env.DB_NAME ?? 'backend_saas');
+
+  console.log(
+    '[DB] host=',
+    process.env.DB_HOST ?? 'localhost',
+    'port=',
+    process.env.DB_PORT ?? 5432,
+    'db=',
+    process.env.DB_NAME ?? 'backend_saas',
+  );
 }
 
 export default new DataSource(typeOrmOptions);

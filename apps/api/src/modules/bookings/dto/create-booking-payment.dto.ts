@@ -1,10 +1,10 @@
+import { IsDateString, IsIn, IsOptional, IsString } from 'class-validator';
 import {
-  IsDateString,
-  IsIn,
-  IsOptional,
-  IsString,
-} from 'class-validator';
-import { PAYMENT_METHODS, PAYMENT_STATUSES, type PaymentMethod, type PaymentStatus } from '../booking.types';
+  PAYMENT_METHODS,
+  PAYMENT_STATUSES,
+  type PaymentMethod,
+  type PaymentStatus,
+} from '../booking.types';
 
 export class CreateBookingPaymentDto {
   @IsIn([...PAYMENT_STATUSES])

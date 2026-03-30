@@ -40,11 +40,7 @@ export class TurfCourtController {
       }
       filter = sport;
     }
-    return this.service.list(
-      tenant.tenantId,
-      filter,
-      businessLocationId,
-    );
+    return this.service.list(tenant.tenantId, filter, businessLocationId);
   }
 
   @Get(':id')

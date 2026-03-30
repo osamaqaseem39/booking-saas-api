@@ -95,7 +95,7 @@ export class BookingsService {
       bookingId: booking.id,
       arenaId: booking.tenantId,
       userId: booking.userId,
-      sportType: booking.sportType as BookingSportType,
+      sportType: booking.sportType,
       bookingDate: formatDateOnly(booking.bookingDate),
       items: (booking.items ?? []).map((it) => ({
         id: it.id,
@@ -115,12 +115,12 @@ export class BookingsService {
         totalAmount: numFromDec(booking.totalAmount),
       },
       payment: {
-        paymentStatus: booking.paymentStatus as PaymentStatus,
-        paymentMethod: booking.paymentMethod as PaymentMethod,
+        paymentStatus: booking.paymentStatus,
+        paymentMethod: booking.paymentMethod,
         transactionId: booking.transactionId,
         paidAt: booking.paidAt?.toISOString(),
       },
-      bookingStatus: booking.bookingStatus as BookingStatus,
+      bookingStatus: booking.bookingStatus,
       notes: booking.notes,
       cancellationReason: booking.cancellationReason,
       createdAt: booking.createdAt.toISOString(),
@@ -148,7 +148,10 @@ export class BookingsService {
     return this.toApi(booking);
   }
 
-  async create(tenantId: string, dto: CreateBookingDto): Promise<BookingApiRow> {
+  async create(
+    tenantId: string,
+    dto: CreateBookingDto,
+  ): Promise<BookingApiRow> {
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) {
       throw new BadRequestException(`User ${dto.userId} not found`);
@@ -242,7 +245,9 @@ export class BookingsService {
       for (const row of dto.itemStatuses) {
         const item = byId.get(row.itemId);
         if (!item) {
-          throw new BadRequestException(`Item ${row.itemId} not in this booking`);
+          throw new BadRequestException(
+            `Item ${row.itemId} not in this booking`,
+          );
         }
         item.itemStatus = row.status;
       }
@@ -276,9 +281,7 @@ export class BookingsService {
       throw new BadRequestException('cricket booking cannot use a padel court');
     }
     if (sport === 'cricket' && courtKind === 'futsal_field') {
-      throw new BadRequestException(
-        'cricket booking cannot use futsal_field',
-      );
+      throw new BadRequestException('cricket booking cannot use futsal_field');
     }
 
     switch (courtKind) {

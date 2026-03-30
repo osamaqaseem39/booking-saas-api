@@ -22,9 +22,8 @@ export const GAMING_ZONE_SUB_TYPES = [
   'xbox-series-x',
   'xbox-series-s',
   'vr',
-  'driving-simulator'
+  'driving-simulator',
 ] as const;
 
 // These are not subtypes but separate main types
 export const UPCOMING_TYPES = ['snooker', 'table-tennis'] as const;
-

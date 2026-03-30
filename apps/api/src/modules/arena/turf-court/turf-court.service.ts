@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
 import { In, Repository } from 'typeorm';
@@ -7,7 +11,10 @@ import { assertFacilityTypeAllowedForLocation } from '../location-facility.util'
 import { CreateTurfCourtDto } from './dto/create-turf-court.dto';
 import { UpdateTurfCourtDto } from './dto/update-turf-court.dto';
 import { TurfCourt } from './entities/turf-court.entity';
-import { turfSportModeToFlags, type TurfSportFilter } from './turf-sport-mode.util';
+import {
+  turfSportModeToFlags,
+  type TurfSportFilter,
+} from './turf-sport-mode.util';
 
 const TURF_LOCATION_FACILITY_CODE = 'turf-court' as const;
 
@@ -82,7 +89,9 @@ export class TurfCourtService {
       tenantId,
     );
     assertFacilityTypeAllowedForLocation(location, TURF_LOCATION_FACILITY_CODE);
-    const { supportsFutsal, supportsCricket } = turfSportModeToFlags(dto.sportMode);
+    const { supportsFutsal, supportsCricket } = turfSportModeToFlags(
+      dto.sportMode,
+    );
 
     const row = this.repo.create({
       tenantId,
@@ -146,7 +155,8 @@ export class TurfCourtService {
 
     const patch: Partial<TurfCourt> = {};
     const assign = <K extends keyof TurfCourt>(key: K, val: TurfCourt[K]) => {
-      if (val !== undefined) (patch as Record<string, unknown>)[key as string] = val;
+      if (val !== undefined)
+        (patch as Record<string, unknown>)[key as string] = val;
     };
 
     if (dto.name !== undefined) assign('name', dto.name);
@@ -160,7 +170,8 @@ export class TurfCourtService {
     if (dto.coveredType !== undefined) assign('coveredType', dto.coveredType);
     if (dto.sideNetting !== undefined) assign('sideNetting', dto.sideNetting);
     if (dto.netHeight !== undefined) assign('netHeight', dto.netHeight);
-    if (dto.boundaryType !== undefined) assign('boundaryType', dto.boundaryType);
+    if (dto.boundaryType !== undefined)
+      assign('boundaryType', dto.boundaryType);
     if (dto.ventilation !== undefined) assign('ventilation', dto.ventilation);
     if (dto.lighting !== undefined) assign('lighting', dto.lighting);
     if (dto.lengthM !== undefined) assign('lengthM', dec(dto.lengthM));
@@ -175,7 +186,8 @@ export class TurfCourtService {
       assign('supportsFutsal', flags.supportsFutsal);
       assign('supportsCricket', flags.supportsCricket);
     }
-    if (dto.futsalFormat !== undefined) assign('futsalFormat', dto.futsalFormat);
+    if (dto.futsalFormat !== undefined)
+      assign('futsalFormat', dto.futsalFormat);
     if (dto.futsalGoalPostsAvailable !== undefined)
       assign('futsalGoalPostsAvailable', dto.futsalGoalPostsAvailable);
     if (dto.futsalGoalPostSize !== undefined)

@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
 import { Repository } from 'typeorm';
@@ -53,13 +57,19 @@ export class PadelCourtService {
     });
   }
 
-  async create(tenantId: string, dto: CreatePadelCourtDto): Promise<PadelCourt> {
+  async create(
+    tenantId: string,
+    dto: CreatePadelCourtDto,
+  ): Promise<PadelCourt> {
     this.requireTenant(tenantId);
     const location = await this.businessesService.assertLocationBelongsToTenant(
       dto.businessLocationId,
       tenantId,
     );
-    assertFacilityTypeAllowedForLocation(location, PADEL_LOCATION_FACILITY_CODE);
+    assertFacilityTypeAllowedForLocation(
+      location,
+      PADEL_LOCATION_FACILITY_CODE,
+    );
     const courtStatus = dto.courtStatus ?? 'active';
     const isActive =
       dto.isActive !== undefined ? dto.isActive : courtStatus === 'active';
@@ -131,7 +141,8 @@ export class PadelCourtService {
     if (dto.surfaceType !== undefined) row.surfaceType = dto.surfaceType;
     if (dto.matchType !== undefined) row.matchType = dto.matchType;
     if (dto.maxPlayers !== undefined) row.maxPlayers = dto.maxPlayers;
-    if (dto.pricePerSlot !== undefined) row.pricePerSlot = dec(dto.pricePerSlot);
+    if (dto.pricePerSlot !== undefined)
+      row.pricePerSlot = dec(dto.pricePerSlot);
     if (dto.peakPricing !== undefined) row.peakPricing = dto.peakPricing;
     if (dto.membershipPrice !== undefined)
       row.membershipPrice = dec(dto.membershipPrice);

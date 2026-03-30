@@ -31,7 +31,7 @@ function createTypeOrmConfig() {
     };
     if (!(globalThis as any).__dbEnvLogged) {
       (globalThis as any).__dbEnvLogged = true;
-      // eslint-disable-next-line no-console
+
       console.log(
         '[DB] host=',
         cfg.host,
@@ -49,9 +49,12 @@ function createTypeOrmConfig() {
     type: 'postgres' as const,
     host: process.env.DB_HOST ?? process.env.POSTGRES_HOST ?? 'localhost',
     port: Number(process.env.DB_PORT ?? 5432),
-    username: process.env.DB_USERNAME ?? process.env.POSTGRES_USER ?? 'postgres',
-    password: process.env.DB_PASSWORD ?? process.env.POSTGRES_PASSWORD ?? 'postgres',
-    database: process.env.DB_NAME ?? process.env.POSTGRES_DATABASE ?? 'backend_saas',
+    username:
+      process.env.DB_USERNAME ?? process.env.POSTGRES_USER ?? 'postgres',
+    password:
+      process.env.DB_PASSWORD ?? process.env.POSTGRES_PASSWORD ?? 'postgres',
+    database:
+      process.env.DB_NAME ?? process.env.POSTGRES_DATABASE ?? 'backend_saas',
     autoLoadEntities: true,
     synchronize: (process.env.DB_SYNC ?? 'false') === 'true',
     ssl:
@@ -61,15 +64,8 @@ function createTypeOrmConfig() {
   };
   if (!(globalThis as any).__dbEnvLogged) {
     (globalThis as any).__dbEnvLogged = true;
-    // eslint-disable-next-line no-console
-    console.log(
-      '[DB] host=',
-      cfg.host,
-      'port=',
-      cfg.port,
-      'db=',
-      cfg.database,
-    );
+
+    console.log('[DB] host=', cfg.host, 'port=', cfg.port, 'db=', cfg.database);
   }
   return cfg;
 }

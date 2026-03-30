@@ -11,4 +11,3 @@ import { User } from '../iam/entities/user.entity';
   providers: [AuthService, JwtService],
 })
 export class AuthModule {}
-

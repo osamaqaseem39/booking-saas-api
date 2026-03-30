@@ -16,7 +16,9 @@ export class SubFacilityTypesService {
 
   create(tenantId: string, dto: CreateSubFacilityTypeDto): SubFacilityType {
     const facilityTypes = this.facilityTypesService.list(tenantId);
-    const parentType = facilityTypes.find((item) => item.id === dto.facilityTypeId);
+    const parentType = facilityTypes.find(
+      (item) => item.id === dto.facilityTypeId,
+    );
 
     if (!parentType) {
       throw new BadRequestException(

@@ -83,7 +83,9 @@ export class IamService implements OnModuleInit {
     const email = dto.email.toLowerCase();
     const existing = await this.usersRepository.findOne({ where: { email } });
     if (existing) {
-      throw new BadRequestException(`User with email ${dto.email} already exists`);
+      throw new BadRequestException(
+        `User with email ${dto.email} already exists`,
+      );
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
@@ -119,7 +121,9 @@ export class IamService implements OnModuleInit {
       throw new BadRequestException(`User ${userId} does not exist`);
     }
 
-    const role = await this.rolesRepository.findOne({ where: { code: roleCode } });
+    const role = await this.rolesRepository.findOne({
+      where: { code: roleCode },
+    });
     if (!role) {
       throw new BadRequestException(`Role ${roleCode} does not exist`);
     }
