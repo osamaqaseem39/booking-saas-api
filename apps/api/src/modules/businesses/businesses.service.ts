@@ -106,7 +106,6 @@ export class BusinessesService {
       );
     }
 
-    const normalizedVertical = (dto.vertical ?? 'arena').trim() || 'arena';
     const normalizedStatus = (dto.status ?? 'active').trim().toLowerCase();
     const ownerProfile = dto.owner
       ? {
@@ -120,7 +119,6 @@ export class BusinessesService {
       tenantId: dto.tenantId ?? randomUUID(),
       businessName: dto.businessName,
       legalName: dto.legalName,
-      vertical: normalizedVertical,
       businessType: dto.businessType?.trim(),
       sportsOffered:
         dto.sportsOffered?.map((x) => x.trim()).filter(Boolean) ?? undefined,
@@ -261,7 +259,6 @@ export class BusinessesService {
               id: b.id,
               businessName: b.businessName,
               tenantId: b.tenantId,
-              vertical: b.vertical,
             }
           : null,
       };
@@ -418,9 +415,6 @@ export class BusinessesService {
     }
     if (dto.legalName !== undefined) {
       business.legalName = dto.legalName;
-    }
-    if (dto.vertical !== undefined) {
-      business.vertical = dto.vertical;
     }
     if (dto.businessType !== undefined) {
       business.businessType = dto.businessType;

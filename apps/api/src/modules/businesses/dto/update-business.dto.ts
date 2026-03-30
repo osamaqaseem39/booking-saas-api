@@ -70,10 +70,6 @@ export class UpdateBusinessDto {
 
   @IsOptional()
   @IsString()
-  vertical?: string;
-
-  @IsOptional()
-  @IsString()
   @MaxLength(40)
   businessType?: string;
 

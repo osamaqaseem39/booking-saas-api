@@ -19,9 +19,6 @@ export class Business {
   @Column({ type: 'varchar', length: 220, nullable: true })
   legalName?: string;
 
-  @Column({ type: 'varchar', length: 80 })
-  vertical!: string;
-
   @Column({ type: 'varchar', length: 40, nullable: true })
   businessType?: string | null;
 

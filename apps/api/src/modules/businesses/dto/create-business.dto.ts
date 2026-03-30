@@ -79,10 +79,6 @@ export class CreateBusinessDto {
 
   @IsOptional()
   @IsString()
-  vertical?: string;
-
-  @IsOptional()
-  @IsString()
   @MaxLength(40)
   businessType?: string;
 
