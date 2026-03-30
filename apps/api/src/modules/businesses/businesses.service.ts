@@ -11,6 +11,7 @@ import { QueryFailedError, Repository } from 'typeorm';
 import { IamService } from '../iam/iam.service';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
+import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateBusinessLocationDto } from './dto/update-business-location.dto';
 import { BusinessLocation } from './entities/business-location.entity';
@@ -232,37 +233,115 @@ export class BusinessesService {
     }
     return scoped.map((loc) => {
       const b = businessById.get(loc.businessId);
-      return {
-        id: loc.id,
-        businessId: loc.businessId,
-        branchId: loc.branchId,
-        arenaId: loc.arenaId,
-        locationType: loc.locationType,
-        facilityTypes: loc.facilityTypes ?? [],
-        name: loc.name,
-        addressLine: loc.addressLine,
-        city: loc.city,
-        area: loc.area,
-        country: loc.country,
-        latitude: loc.latitude,
-        longitude: loc.longitude,
-        phone: loc.phone,
-        manager: loc.manager,
-        workingHours: loc.workingHours,
-        timezone: loc.timezone,
-        currency: loc.currency,
-        status: loc.status,
-        isActive: loc.isActive,
-        createdAt: loc.createdAt,
-        business: b
-          ? {
-              id: b.id,
-              businessName: b.businessName,
-              tenantId: b.tenantId,
-            }
-          : null,
-      };
+      return this.toLocationListRow(loc, b);
     });
+  }
+
+  /**
+   * Public / unauthenticated listing: all locations (e.g. end-user discovery).
+   */
+  async listAllLocationsPublic() {
+    let allLocations: BusinessLocation[];
+    try {
+      allLocations = await this.locationsRepository.find({
+        order: { createdAt: 'DESC' },
+      });
+    } catch (error: unknown) {
+      if (this.isSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Business locations schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
+    let businesses: Business[];
+    try {
+      businesses = await this.businessesRepository.find();
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
+    const businessById = new Map(businesses.map((b) => [b.id, b]));
+    return allLocations.map((loc) => {
+      const b = businessById.get(loc.businessId);
+      return this.toLocationListRow(loc, b);
+    });
+  }
+
+  private toLocationListRow(loc: BusinessLocation, b: Business | undefined) {
+    return {
+      id: loc.id,
+      businessId: loc.businessId,
+      branchId: loc.branchId,
+      arenaId: loc.arenaId,
+      locationType: loc.locationType,
+      facilityTypes: loc.facilityTypes ?? [],
+      name: loc.name,
+      addressLine: loc.addressLine,
+      city: loc.city,
+      area: loc.area,
+      country: loc.country,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+      phone: loc.phone,
+      manager: loc.manager,
+      workingHours: loc.workingHours,
+      timezone: loc.timezone,
+      currency: loc.currency,
+      status: loc.status,
+      isActive: loc.isActive,
+      createdAt: loc.createdAt,
+      business: b
+        ? {
+            id: b.id,
+            businessName: b.businessName,
+            tenantId: b.tenantId,
+          }
+        : null,
+    };
+  }
+
+  async listLocationCitiesForRequester(
+    requesterUserId: string,
+    dto: ListLocationCitiesDto,
+  ): Promise<{ cities: string[] }> {
+    const rows = await this.listLocationsForRequester(requesterUserId);
+    const query = dto.q?.trim().toLowerCase();
+
+    const unique = new Set<string>();
+    for (const row of rows) {
+      const city = row.city?.trim();
+      if (!city) continue;
+      if (query && !city.toLowerCase().includes(query)) continue;
+      unique.add(city);
+    }
+
+    const cities = Array.from(unique).sort((a, b) => a.localeCompare(b));
+    const limit = dto.limit ?? cities.length;
+    return { cities: cities.slice(0, limit) };
+  }
+
+  async listLocationCitiesPublic(
+    dto: ListLocationCitiesDto,
+  ): Promise<{ cities: string[] }> {
+    const rows = await this.listAllLocationsPublic();
+    const query = dto.q?.trim().toLowerCase();
+
+    const unique = new Set<string>();
+    for (const row of rows) {
+      const city = row.city?.trim();
+      if (!city) continue;
+      if (query && !city.toLowerCase().includes(query)) continue;
+      unique.add(city);
+    }
+
+    const cities = Array.from(unique).sort((a, b) => a.localeCompare(b));
+    const limit = dto.limit ?? cities.length;
+    return { cities: cities.slice(0, limit) };
   }
 
   /**

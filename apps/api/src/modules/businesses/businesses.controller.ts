@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -15,6 +16,7 @@ import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
+import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateBusinessLocationDto } from './dto/update-business-location.dto';
 import { BusinessesService } from './businesses.service';
@@ -40,14 +42,15 @@ export class BusinessesController {
     return this.businessesService.onboardBusiness(dto);
   }
 
+  /** No auth required; returns all locations for end-user discovery (see listAllLocationsPublic). */
   @Get('locations')
-  @Roles('platform-owner', 'business-admin')
-  async listLocations(@Req() req: Request) {
-    const userId = (req as Request & { userId?: string }).userId?.trim();
-    if (!userId) {
-      throw new UnauthorizedException('Missing user');
-    }
-    return this.businessesService.listLocationsForRequester(userId);
+  async listLocations() {
+    return this.businessesService.listAllLocationsPublic();
+  }
+
+  @Get('locations/cities')
+  async listLocationCities(@Query() dto: ListLocationCitiesDto) {
+    return this.businessesService.listLocationCitiesPublic(dto);
   }
 
   @Post('locations')

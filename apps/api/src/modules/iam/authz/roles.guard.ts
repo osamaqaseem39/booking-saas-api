@@ -48,9 +48,14 @@ export class RolesGuard implements CanActivate {
         const payload = await this.jwtService.verifyAsync<{
           sub?: string;
           userId?: string;
+          typ?: string;
         }>(token);
+        if (payload.typ === 'refresh') {
+          throw new UnauthorizedException('Use access token for API requests');
+        }
         userId = payload.sub ?? payload.userId;
-      } catch {
+      } catch (e) {
+        if (e instanceof UnauthorizedException) throw e;
         throw new UnauthorizedException('Invalid token');
       }
     }

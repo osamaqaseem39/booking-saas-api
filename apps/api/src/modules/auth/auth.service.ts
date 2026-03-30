@@ -11,6 +11,7 @@ import * as bcrypt from 'bcryptjs';
 import { Repository } from 'typeorm';
 import { BootstrapFirstOwnerDto } from './dto/bootstrap-first-owner.dto';
 import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterEndUserDto } from './dto/register-end-user.dto';
 import { Role } from '../iam/entities/role.entity';
 import { User } from '../iam/entities/user.entity';
@@ -30,7 +31,29 @@ export class AuthService {
     private readonly jwtService: JwtService,
   ) {}
 
-  async login(dto: LoginDto): Promise<{ token: string }> {
+  private accessExpiresIn(): string {
+    return process.env.JWT_ACCESS_EXPIRES_IN ?? process.env.JWT_EXPIRES_IN ?? '15m';
+  }
+
+  private refreshExpiresIn(): string {
+    return process.env.JWT_REFRESH_EXPIRES_IN ?? '7d';
+  }
+
+  private async signAccessToken(userId: string): Promise<string> {
+    return this.jwtService.signAsync(
+      { sub: userId },
+      { expiresIn: this.accessExpiresIn() as any },
+    );
+  }
+
+  private async signRefreshToken(userId: string): Promise<string> {
+    return this.jwtService.signAsync(
+      { sub: userId, typ: 'refresh' },
+      { expiresIn: this.refreshExpiresIn() as any },
+    );
+  }
+
+  async login(dto: LoginDto): Promise<{ token: string; refreshToken: string }> {
     const email = dto.email.toLowerCase();
     const safeEmail = this.maskEmail(email);
 
@@ -58,14 +81,39 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    const token = await this.jwtService.signAsync({ sub: user.id });
+    const token = await this.signAccessToken(user.id);
+    const refreshToken = await this.signRefreshToken(user.id);
     this.logger.log(`Login success (${safeEmail}, id=${user.id})`);
-    return { token };
+    return { token, refreshToken };
+  }
+
+  async refresh(dto: RefreshTokenDto): Promise<{ token: string; refreshToken: string }> {
+    try {
+      const payload = await this.jwtService.verifyAsync<{
+        sub?: string;
+        typ?: string;
+      }>(dto.refreshToken);
+      if (payload.typ !== 'refresh' || !payload.sub) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+      const user = await this.usersRepository.findOne({
+        where: { id: payload.sub },
+      });
+      if (!user?.isActive) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+      const token = await this.signAccessToken(user.id);
+      const refreshToken = await this.signRefreshToken(user.id);
+      return { token, refreshToken };
+    } catch (e) {
+      if (e instanceof UnauthorizedException) throw e;
+      throw new UnauthorizedException('Invalid refresh token');
+    }
   }
 
   async bootstrapFirstOwner(
     dto: BootstrapFirstOwnerDto,
-  ): Promise<{ token: string; userId: string; email: string }> {
+  ): Promise<{ token: string; refreshToken: string; userId: string; email: string }> {
     const configuredSecret = process.env.AUTH_BOOTSTRAP_SECRET?.trim();
     if (!configuredSecret) {
       throw new ForbiddenException('Bootstrap is not enabled on server');
@@ -109,13 +157,15 @@ export class AuthService {
     });
     await this.userRolesRepository.save(userRole);
 
-    const token = await this.jwtService.signAsync({ sub: savedUser.id });
+    const token = await this.signAccessToken(savedUser.id);
+    const refreshToken = await this.signRefreshToken(savedUser.id);
     this.logger.log(
       `Bootstrap success: first owner created (${this.maskEmail(email)}, id=${savedUser.id})`,
     );
 
     return {
       token,
+      refreshToken,
       userId: savedUser.id,
       email,
     };
@@ -123,7 +173,7 @@ export class AuthService {
 
   async registerEndUser(
     dto: RegisterEndUserDto,
-  ): Promise<{ token: string; userId: string; email: string }> {
+  ): Promise<{ token: string; refreshToken: string; userId: string; email: string }> {
     const email = dto.email.toLowerCase().trim();
     const safeEmail = this.maskEmail(email);
 
@@ -160,13 +210,15 @@ export class AuthService {
     });
     await this.userRolesRepository.save(userRole);
 
-    const token = await this.jwtService.signAsync({ sub: savedUser.id });
+    const token = await this.signAccessToken(savedUser.id);
+    const refreshToken = await this.signRefreshToken(savedUser.id);
     this.logger.log(
       `Register success: end user created (${safeEmail}, id=${savedUser.id})`,
     );
 
     return {
       token,
+      refreshToken,
       userId: savedUser.id,
       email,
     };
