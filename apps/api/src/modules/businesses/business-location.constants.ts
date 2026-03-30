@@ -1,16 +1,9 @@
-/**
- * Suggested location kinds for venues/branches. API accepts any string ≤80 chars;
- * these are documented defaults for UIs.
- */
+/** Supported location kinds for dashboard setup. */
 export const BUSINESS_LOCATION_TYPE_CODES = [
   'arena',
-  'branch',
-  'headquarters',
-  'indoor_court',
-  'outdoor_pitch',
-  'retail',
-  'warehouse',
-  'other',
+  'gaming-zone',
+  'snooker',
+  'table-tennis',
 ] as const;
 
 export type BusinessLocationTypeCode =

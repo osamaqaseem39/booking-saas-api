@@ -131,12 +131,23 @@ export class BusinessesService {
       return {
         id: loc.id,
         businessId: loc.businessId,
+        branchId: loc.branchId,
+        arenaId: loc.arenaId,
         locationType: loc.locationType,
         facilityTypes: loc.facilityTypes ?? [],
         name: loc.name,
         addressLine: loc.addressLine,
         city: loc.city,
+        area: loc.area,
+        country: loc.country,
+        latitude: loc.latitude,
+        longitude: loc.longitude,
         phone: loc.phone,
+        manager: loc.manager,
+        workingHours: loc.workingHours,
+        timezone: loc.timezone,
+        currency: loc.currency,
+        status: loc.status,
         isActive: loc.isActive,
         createdAt: loc.createdAt,
         business: b
@@ -197,14 +208,39 @@ export class BusinessesService {
         );
       }
     }
+    const sourceName = dto.branchName ?? dto.name ?? 'Unnamed Branch';
+    const sourceAddress = dto.location?.address ?? dto.addressLine;
+    const sourceCity = dto.location?.city ?? dto.city;
+    const sourceArea = dto.location?.area ?? dto.area;
+    const sourceCountry = dto.location?.country ?? dto.country;
+    const sourcePhone = dto.contact?.phone ?? dto.phone;
+    const sourceManager = dto.contact?.manager ?? dto.manager;
+    const sourceTimezone = dto.settings?.timezone ?? dto.timezone;
+    const sourceCurrency = dto.settings?.currency ?? dto.currency;
+    const sourceLatitude = dto.location?.coordinates?.lat ?? dto.latitude;
+    const sourceLongitude = dto.location?.coordinates?.lng ?? dto.longitude;
+    const sourceStatus = dto.status ?? 'active';
+
     const row = this.locationsRepository.create({
       businessId: dto.businessId,
-      locationType: dto.locationType,
+      branchId: dto.branchId,
+      arenaId: dto.arenaId,
+      locationType: dto.locationType ?? 'arena',
       facilityTypes: dto.facilityTypes?.length ? dto.facilityTypes : [],
-      name: dto.name,
-      addressLine: dto.addressLine,
-      city: dto.city,
-      phone: dto.phone,
+      name: sourceName,
+      addressLine: sourceAddress,
+      city: sourceCity,
+      area: sourceArea,
+      country: sourceCountry,
+      latitude: sourceLatitude,
+      longitude: sourceLongitude,
+      phone: sourcePhone,
+      manager: sourceManager,
+      workingHours: dto.workingHours,
+      timezone: sourceTimezone,
+      currency: sourceCurrency ?? 'PKR',
+      status: sourceStatus,
+      isActive: sourceStatus === 'active',
     });
     return this.locationsRepository.save(row);
   }
@@ -278,13 +314,58 @@ export class BusinessesService {
       }
     }
 
-    if (dto.name !== undefined) location.name = dto.name;
+    if (dto.name !== undefined || dto.branchName !== undefined) {
+      location.name = dto.branchName ?? dto.name ?? location.name;
+    }
+    if (dto.branchId !== undefined) location.branchId = dto.branchId;
+    if (dto.arenaId !== undefined) location.arenaId = dto.arenaId;
     if (dto.locationType !== undefined) location.locationType = dto.locationType;
     if (dto.facilityTypes !== undefined) location.facilityTypes = dto.facilityTypes;
-    if (dto.addressLine !== undefined) location.addressLine = dto.addressLine;
-    if (dto.city !== undefined) location.city = dto.city;
-    if (dto.phone !== undefined) location.phone = dto.phone;
+    if (dto.addressLine !== undefined || dto.location?.address !== undefined) {
+      location.addressLine = dto.location?.address ?? dto.addressLine;
+    }
+    if (dto.city !== undefined || dto.location?.city !== undefined) {
+      location.city = dto.location?.city ?? dto.city;
+    }
+    if (dto.area !== undefined || dto.location?.area !== undefined) {
+      location.area = dto.location?.area ?? dto.area;
+    }
+    if (dto.country !== undefined || dto.location?.country !== undefined) {
+      location.country = dto.location?.country ?? dto.country;
+    }
+    if (
+      dto.latitude !== undefined ||
+      dto.location?.coordinates?.lat !== undefined
+    ) {
+      location.latitude = dto.location?.coordinates?.lat ?? dto.latitude;
+    }
+    if (
+      dto.longitude !== undefined ||
+      dto.location?.coordinates?.lng !== undefined
+    ) {
+      location.longitude = dto.location?.coordinates?.lng ?? dto.longitude;
+    }
+    if (dto.phone !== undefined || dto.contact?.phone !== undefined) {
+      location.phone = dto.contact?.phone ?? dto.phone;
+    }
+    if (dto.manager !== undefined || dto.contact?.manager !== undefined) {
+      location.manager = dto.contact?.manager ?? dto.manager;
+    }
+    if (dto.workingHours !== undefined) location.workingHours = dto.workingHours;
+    if (dto.timezone !== undefined || dto.settings?.timezone !== undefined) {
+      location.timezone = dto.settings?.timezone ?? dto.timezone;
+    }
+    if (dto.currency !== undefined || dto.settings?.currency !== undefined) {
+      const nextCurrency = dto.settings?.currency ?? dto.currency;
+      if (nextCurrency !== undefined) {
+        location.currency = nextCurrency;
+      }
+    }
+    if (dto.status !== undefined) location.status = dto.status;
     if (dto.isActive !== undefined) location.isActive = dto.isActive;
+    if (dto.status !== undefined && dto.isActive === undefined) {
+      location.isActive = dto.status === 'active';
+    }
 
     return this.locationsRepository.save(location);
   }

@@ -108,6 +108,50 @@ async function bootstrap() {
             ALTER TABLE "business_locations"
             ADD COLUMN IF NOT EXISTS "facilityTypes" text[] NOT NULL DEFAULT '{}'
           `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "branchId" varchar(80)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "arenaId" varchar(80)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "area" varchar(120)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "country" varchar(120)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "latitude" decimal(10,6)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "longitude" decimal(10,6)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "manager" varchar(120)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "workingHours" jsonb
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "timezone" varchar(80)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "currency" varchar(8) NOT NULL DEFAULT 'PKR'
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "status" varchar(20) NOT NULL DEFAULT 'active'
+          `);
           // Ensure booking tables exist even if migration history is out of sync.
           await dataSource.query(`
             CREATE TABLE IF NOT EXISTS "bookings" (

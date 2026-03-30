@@ -23,6 +23,12 @@ export class BusinessLocation {
   @Column({ type: 'varchar', length: 200 })
   name!: string;
 
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  branchId?: string;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  arenaId?: string;
+
   /** What this site is used for (arena, branch, hq, …). Assigned per location. */
   @Column({ type: 'varchar', length: 80, default: 'other' })
   locationType!: string;
@@ -37,8 +43,35 @@ export class BusinessLocation {
   @Column({ type: 'varchar', length: 120, nullable: true })
   city?: string;
 
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  area?: string;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  country?: string;
+
+  @Column({ type: 'decimal', precision: 10, scale: 6, nullable: true })
+  latitude?: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 6, nullable: true })
+  longitude?: number;
+
   @Column({ type: 'varchar', length: 60, nullable: true })
   phone?: string;
+
+  @Column({ type: 'varchar', length: 120, nullable: true })
+  manager?: string;
+
+  @Column({ type: 'jsonb', nullable: true })
+  workingHours?: Record<string, unknown>;
+
+  @Column({ type: 'varchar', length: 80, nullable: true })
+  timezone?: string;
+
+  @Column({ type: 'varchar', length: 8, default: 'PKR' })
+  currency!: string;
+
+  @Column({ type: 'varchar', length: 20, default: 'active' })
+  status!: string;
 
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
