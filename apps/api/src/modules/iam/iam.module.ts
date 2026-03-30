@@ -9,7 +9,19 @@ import { UserRole } from './entities/user-role.entity';
 import { IamService } from './iam.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Role, UserRole]), JwtModule],
+  imports: [
+    TypeOrmModule.forFeature([User, Role, UserRole]),
+    JwtModule.register({
+      secret:
+        process.env.JWT_SECRET ??
+        process.env.SUPABASE_JWT_SECRET ??
+        process.env.SUPABASE_SECRET_KEY ??
+        'dev-jwt-secret',
+      signOptions: {
+        expiresIn: (process.env.JWT_EXPIRES_IN ?? '1d') as any,
+      },
+    }),
+  ],
   controllers: [IamController],
   providers: [IamService, RolesGuard],
   exports: [IamService, RolesGuard],
