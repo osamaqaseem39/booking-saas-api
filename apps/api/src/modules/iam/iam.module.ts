@@ -24,6 +24,8 @@ import { IamService } from './iam.service';
   ],
   controllers: [IamController],
   providers: [IamService, RolesGuard],
-  exports: [IamService, RolesGuard],
+  // Re-export JwtModule so guards/controllers in importing modules
+  // can resolve JwtService via DI.
+  exports: [IamService, RolesGuard, JwtModule],
 })
 export class IamModule {}
