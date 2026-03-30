@@ -41,10 +41,32 @@ export class BusinessesService {
     );
   }
 
+  private isBusinessSchemaMismatchError(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+    const message = `${error.message ?? ''}`.toLowerCase();
+    return (
+      message.includes('column') &&
+      message.includes('does not exist') &&
+      (message.includes('businesses') || message.includes('business.'))
+    );
+  }
+
   async listForRequester(requesterUserId: string) {
-    const businesses = await this.businessesRepository.find({
-      order: { createdAt: 'DESC' },
-    });
+    let businesses: Business[];
+    try {
+      businesses = await this.businessesRepository.find({
+        order: { createdAt: 'DESC' },
+      });
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
     const memberships = await this.membershipsRepository.find();
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
       'platform-owner',
@@ -65,9 +87,19 @@ export class BusinessesService {
   }
 
   async onboardBusiness(dto: CreateBusinessDto) {
-    const duplicate = await this.businessesRepository.findOne({
-      where: { businessName: dto.businessName },
-    });
+    let duplicate: Business | null;
+    try {
+      duplicate = await this.businessesRepository.findOne({
+        where: { businessName: dto.businessName },
+      });
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
     if (duplicate) {
       throw new BadRequestException(
         `Business ${dto.businessName} already exists in onboarding store`,
@@ -109,7 +141,17 @@ export class BusinessesService {
         : undefined,
       status: normalizedStatus === 'inactive' ? 'inactive' : 'active',
     });
-    const savedBusiness = await this.businessesRepository.save(business);
+    let savedBusiness: Business;
+    try {
+      savedBusiness = await this.businessesRepository.save(business);
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
 
     const adminSource = dto.admin
       ? {
@@ -168,7 +210,17 @@ export class BusinessesService {
       }
       throw error;
     }
-    const businesses = await this.businessesRepository.find();
+    let businesses: Business[];
+    try {
+      businesses = await this.businessesRepository.find();
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
     const businessById = new Map(businesses.map((b) => [b.id, b]));
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
       'platform-owner',
@@ -243,9 +295,19 @@ export class BusinessesService {
     requesterUserId: string,
     dto: CreateBusinessLocationDto,
   ): Promise<BusinessLocation> {
-    const business = await this.businessesRepository.findOne({
-      where: { id: dto.businessId },
-    });
+    let business: Business | null;
+    try {
+      business = await this.businessesRepository.findOne({
+        where: { id: dto.businessId },
+      });
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
     if (!business) {
       throw new NotFoundException(`Business ${dto.businessId} not found`);
     }
@@ -304,9 +366,19 @@ export class BusinessesService {
     businessId: string,
     dto: UpdateBusinessDto,
   ): Promise<Business> {
-    const business = await this.businessesRepository.findOne({
-      where: { id: businessId },
-    });
+    let business: Business | null;
+    try {
+      business = await this.businessesRepository.findOne({
+        where: { id: businessId },
+      });
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
     if (!business) {
       throw new NotFoundException(`Business ${businessId} not found`);
     }
@@ -324,9 +396,19 @@ export class BusinessesService {
     }
 
     if (dto.businessName && dto.businessName !== business.businessName) {
-      const duplicate = await this.businessesRepository.findOne({
-        where: { businessName: dto.businessName },
-      });
+      let duplicate: Business | null;
+      try {
+        duplicate = await this.businessesRepository.findOne({
+          where: { businessName: dto.businessName },
+        });
+      } catch (error: unknown) {
+        if (this.isBusinessSchemaMismatchError(error)) {
+          throw new ServiceUnavailableException(
+            'Businesses schema is out of date. Run latest database migrations and retry.',
+          );
+        }
+        throw error;
+      }
       if (duplicate && duplicate.id !== businessId) {
         throw new BadRequestException(
           `Business ${dto.businessName} already exists in onboarding store`,
@@ -359,7 +441,16 @@ export class BusinessesService {
       business.status = dto.status;
     }
 
-    return this.businessesRepository.save(business);
+    try {
+      return await this.businessesRepository.save(business);
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
   }
 
   async updateLocation(
@@ -446,9 +537,19 @@ export class BusinessesService {
     requesterUserId: string,
     businessId: string,
   ): Promise<{ deleted: true; businessId: string }> {
-    const business = await this.businessesRepository.findOne({
-      where: { id: businessId },
-    });
+    let business: Business | null;
+    try {
+      business = await this.businessesRepository.findOne({
+        where: { id: businessId },
+      });
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
     if (!business) {
       throw new NotFoundException(`Business ${businessId} not found`);
     }
