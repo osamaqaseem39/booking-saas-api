@@ -38,4 +38,11 @@ export const typeOrmOptions: DataSourceOptions = {
   migrations: [join(__dirname, 'migrations', '*.js')],
 };
 
+// Helpful in Vercel: confirms env vars are being applied (no secrets logged).
+if (!(globalThis as any).__dbEnvLogged) {
+  (globalThis as any).__dbEnvLogged = true;
+  // eslint-disable-next-line no-console
+  console.log('[DB] host=', process.env.DB_HOST ?? 'localhost', 'port=', process.env.DB_PORT ?? 5432, 'db=', process.env.DB_NAME ?? 'backend_saas');
+}
+
 export default new DataSource(typeOrmOptions);
