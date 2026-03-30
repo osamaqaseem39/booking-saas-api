@@ -3,13 +3,16 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { IamService } from '../iam/iam.service';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
+import { UpdateBusinessDto } from './dto/update-business.dto';
+import { UpdateBusinessLocationDto } from './dto/update-business-location.dto';
 import { BusinessLocation } from './entities/business-location.entity';
 import { Business } from './entities/business.entity';
 import { BusinessMembership } from './entities/business-membership.entity';
@@ -25,6 +28,18 @@ export class BusinessesService {
     @InjectRepository(BusinessLocation)
     private readonly locationsRepository: Repository<BusinessLocation>,
   ) {}
+
+  private isSchemaMismatchError(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+    const message = `${error.message ?? ''}`.toLowerCase();
+    return (
+      message.includes('column') &&
+      message.includes('does not exist') &&
+      message.includes('business_locations')
+    );
+  }
 
   async listForRequester(requesterUserId: string) {
     const businesses = await this.businessesRepository.find({
@@ -86,9 +101,19 @@ export class BusinessesService {
   }
 
   async listLocationsForRequester(requesterUserId: string) {
-    const allLocations = await this.locationsRepository.find({
-      order: { createdAt: 'DESC' },
-    });
+    let allLocations: BusinessLocation[];
+    try {
+      allLocations = await this.locationsRepository.find({
+        order: { createdAt: 'DESC' },
+      });
+    } catch (error: unknown) {
+      if (this.isSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Business locations schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
     const businesses = await this.businessesRepository.find();
     const businessById = new Map(businesses.map((b) => [b.id, b]));
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
@@ -182,5 +207,139 @@ export class BusinessesService {
       phone: dto.phone,
     });
     return this.locationsRepository.save(row);
+  }
+
+  async updateBusiness(
+    requesterUserId: string,
+    businessId: string,
+    dto: UpdateBusinessDto,
+  ): Promise<Business> {
+    const business = await this.businessesRepository.findOne({
+      where: { id: businessId },
+    });
+    if (!business) {
+      throw new NotFoundException(`Business ${businessId} not found`);
+    }
+
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
+      'platform-owner',
+    ]);
+    if (!isPlatformOwner) {
+      const member = await this.membershipsRepository.findOne({
+        where: { businessId, userId: requesterUserId },
+      });
+      if (!member) {
+        throw new ForbiddenException('You cannot update this business');
+      }
+    }
+
+    if (dto.businessName && dto.businessName !== business.businessName) {
+      const duplicate = await this.businessesRepository.findOne({
+        where: { businessName: dto.businessName },
+      });
+      if (duplicate && duplicate.id !== businessId) {
+        throw new BadRequestException(
+          `Business ${dto.businessName} already exists in onboarding store`,
+        );
+      }
+      business.businessName = dto.businessName;
+    }
+    if (dto.legalName !== undefined) {
+      business.legalName = dto.legalName;
+    }
+    if (dto.vertical !== undefined) {
+      business.vertical = dto.vertical;
+    }
+
+    return this.businessesRepository.save(business);
+  }
+
+  async updateLocation(
+    requesterUserId: string,
+    locationId: string,
+    dto: UpdateBusinessLocationDto,
+  ): Promise<BusinessLocation> {
+    const location = await this.locationsRepository.findOne({
+      where: { id: locationId },
+    });
+    if (!location) {
+      throw new NotFoundException(`Location ${locationId} not found`);
+    }
+
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
+      'platform-owner',
+    ]);
+    if (!isPlatformOwner) {
+      const member = await this.membershipsRepository.findOne({
+        where: { businessId: location.businessId, userId: requesterUserId },
+      });
+      if (!member) {
+        throw new ForbiddenException('You cannot update this location');
+      }
+    }
+
+    if (dto.name !== undefined) location.name = dto.name;
+    if (dto.locationType !== undefined) location.locationType = dto.locationType;
+    if (dto.facilityTypes !== undefined) location.facilityTypes = dto.facilityTypes;
+    if (dto.addressLine !== undefined) location.addressLine = dto.addressLine;
+    if (dto.city !== undefined) location.city = dto.city;
+    if (dto.phone !== undefined) location.phone = dto.phone;
+    if (dto.isActive !== undefined) location.isActive = dto.isActive;
+
+    return this.locationsRepository.save(location);
+  }
+
+  async deleteBusiness(
+    requesterUserId: string,
+    businessId: string,
+  ): Promise<{ deleted: true; businessId: string }> {
+    const business = await this.businessesRepository.findOne({
+      where: { id: businessId },
+    });
+    if (!business) {
+      throw new NotFoundException(`Business ${businessId} not found`);
+    }
+
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
+      'platform-owner',
+    ]);
+    if (!isPlatformOwner) {
+      const member = await this.membershipsRepository.findOne({
+        where: { businessId, userId: requesterUserId },
+      });
+      if (!member) {
+        throw new ForbiddenException('You cannot delete this business');
+      }
+    }
+
+    await this.businessesRepository.delete({ id: businessId });
+    return { deleted: true, businessId };
+  }
+
+  async deleteLocation(
+    requesterUserId: string,
+    locationId: string,
+  ): Promise<{ deleted: true; locationId: string }> {
+    const location = await this.locationsRepository.findOne({
+      where: { id: locationId },
+    });
+    if (!location) {
+      throw new NotFoundException(`Location ${locationId} not found`);
+    }
+
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
+      'platform-owner',
+    ]);
+    if (!isPlatformOwner) {
+      const member = await this.membershipsRepository.findOne({
+        where: { businessId: location.businessId, userId: requesterUserId },
+      });
+      if (!member) {
+        throw new ForbiddenException('You cannot delete this location');
+      }
+    }
+
+    await this.locationsRepository.delete({ id: locationId });
+    return { deleted: true, locationId };
   }
 }
