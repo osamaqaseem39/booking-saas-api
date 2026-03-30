@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
+  Patch,
   Post,
   Req,
   UnauthorizedException,
@@ -12,6 +15,7 @@ import { RolesGuard } from './authz/roles.guard';
 import { Roles } from './authz/roles.decorator';
 import { AssignRoleDto } from './dto/assign-role.dto';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { IamService } from './iam.service';
 import { SYSTEM_ROLES } from './iam.constants';
 
@@ -46,6 +50,21 @@ export class IamController {
   @Roles('platform-owner', 'business-admin')
   async createUser(@Body() dto: CreateUserDto) {
     return this.iamService.createUser(dto);
+  }
+
+  @Patch('users/:userId')
+  @Roles('platform-owner', 'business-admin')
+  async updateUser(
+    @Param('userId') userId: string,
+    @Body() dto: UpdateUserDto,
+  ) {
+    return this.iamService.updateUser(userId, dto);
+  }
+
+  @Delete('users/:userId')
+  @Roles('platform-owner', 'business-admin')
+  async deleteUser(@Param('userId') userId: string) {
+    return this.iamService.deleteUser(userId);
   }
 
   @Post('roles/assign')

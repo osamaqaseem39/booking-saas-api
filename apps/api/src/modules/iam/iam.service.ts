@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { SystemRole } from './iam.constants';
 import { Role } from './entities/role.entity';
 import { User } from './entities/user.entity';
@@ -97,6 +98,42 @@ export class IamService implements OnModuleInit {
       passwordHash,
     });
     return this.usersRepository.save(created);
+  }
+
+  async updateUser(userId: string, dto: UpdateUserDto): Promise<User> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+
+    if (dto.email && dto.email.toLowerCase() !== user.email.toLowerCase()) {
+      const exists = await this.usersRepository.findOne({
+        where: { email: dto.email.toLowerCase() },
+      });
+      if (exists && exists.id !== userId) {
+        throw new BadRequestException(
+          `User with email ${dto.email} already exists`,
+        );
+      }
+      user.email = dto.email.toLowerCase();
+    }
+
+    if (dto.fullName !== undefined) user.fullName = dto.fullName;
+    if (dto.phone !== undefined) user.phone = dto.phone;
+    if (dto.password !== undefined) {
+      user.passwordHash = await bcrypt.hash(dto.password, 10);
+    }
+
+    return this.usersRepository.save(user);
+  }
+
+  async deleteUser(userId: string): Promise<{ deleted: true; userId: string }> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+    await this.usersRepository.delete({ id: userId });
+    return { deleted: true, userId };
   }
 
   async ensureUser(input: CreateUserDto): Promise<User> {
