@@ -71,6 +71,7 @@ export class BusinessesService {
       fullName: dto.admin.fullName,
       email: dto.admin.email,
       phone: dto.admin.phone,
+      password: dto.admin.password,
     });
     await this.iamService.assignRole(adminUser.id, 'business-admin');
 

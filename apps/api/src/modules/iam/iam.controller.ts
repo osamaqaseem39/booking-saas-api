@@ -15,9 +15,9 @@ export class IamController {
   @Get('me')
   @Roles(...SYSTEM_ROLES)
   async me(@Req() req: Request) {
-    const userId = req.header('x-user-id')?.trim();
+    const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing user');
     }
     return this.iamService.getMe(userId);
   }

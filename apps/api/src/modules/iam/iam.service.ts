@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import * as bcrypt from 'bcryptjs';
 import { CreateUserDto } from './dto/create-user.dto';
 import { SystemRole } from './iam.constants';
 import { Role } from './entities/role.entity';
@@ -85,11 +86,13 @@ export class IamService implements OnModuleInit {
       throw new BadRequestException(`User with email ${dto.email} already exists`);
     }
 
+    const passwordHash = await bcrypt.hash(dto.password, 10);
     const created = this.usersRepository.create({
       fullName: dto.fullName,
       email,
       phone: dto.phone,
       isActive: true,
+      passwordHash,
     });
     return this.usersRepository.save(created);
   }
@@ -97,8 +100,17 @@ export class IamService implements OnModuleInit {
   async ensureUser(input: CreateUserDto): Promise<User> {
     const email = input.email.toLowerCase();
     const existing = await this.usersRepository.findOne({ where: { email } });
-    if (existing) return existing;
-    return this.createUser({ ...input, email });
+    if (!existing) {
+      return this.createUser({ ...input, email });
+    }
+
+    // Backfill password if the user was created before password support was added.
+    if (!existing.passwordHash) {
+      existing.passwordHash = await bcrypt.hash(input.password, 10);
+      return this.usersRepository.save(existing);
+    }
+
+    return existing;
   }
 
   async assignRole(userId: string, roleCode: SystemRole): Promise<UserRole> {

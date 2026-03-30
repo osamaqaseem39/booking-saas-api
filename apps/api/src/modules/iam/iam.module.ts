@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { JwtModule } from '@nestjs/jwt';
 import { RolesGuard } from './authz/roles.guard';
 import { IamController } from './iam.controller';
 import { Role } from './entities/role.entity';
@@ -8,7 +9,7 @@ import { UserRole } from './entities/user-role.entity';
 import { IamService } from './iam.service';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Role, UserRole])],
+  imports: [TypeOrmModule.forFeature([User, Role, UserRole]), JwtModule],
   controllers: [IamController],
   providers: [IamService, RolesGuard],
   exports: [IamService, RolesGuard],

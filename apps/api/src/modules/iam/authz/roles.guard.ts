@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
+import { JwtService } from '@nestjs/jwt';
 import { SystemRole } from '../iam.constants';
 import { IamService } from '../iam.service';
 import { ROLES_KEY } from './roles.decorator';
@@ -16,6 +17,7 @@ export class RolesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly iamService: IamService,
+    private readonly jwtService: JwtService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -28,10 +30,32 @@ export class RolesGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
-    const userId = request.header('x-user-id');
-    if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+    const authHeader = request.header('Authorization')?.trim();
+    let userId: string | undefined;
+
+    if (authHeader?.startsWith('Bearer ')) {
+      const token = authHeader.slice('Bearer '.length);
+      try {
+        const payload = await this.jwtService.verifyAsync<{
+          sub?: string;
+          userId?: string;
+        }>(token);
+        userId = payload.sub ?? payload.userId;
+      } catch {
+        throw new UnauthorizedException('Invalid token');
+      }
     }
+
+    if (!userId) {
+      userId = request.header('x-user-id')?.trim();
+    }
+
+    if (!userId) {
+      throw new UnauthorizedException('Missing authentication');
+    }
+
+    // Attach for downstream controllers.
+    (request as Request & { userId?: string }).userId = userId;
 
     const allowed = await this.iamService.hasAnyRole(userId, requiredRoles);
     if (!allowed) {

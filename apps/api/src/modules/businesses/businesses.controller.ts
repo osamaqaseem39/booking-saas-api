@@ -22,9 +22,9 @@ export class BusinessesController {
   @Get()
   @Roles('platform-owner', 'business-admin')
   async list(@Req() req: Request) {
-    const userId = req.header('x-user-id')?.trim();
+    const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing user');
     }
     return this.businessesService.listForRequester(userId);
   }
@@ -38,9 +38,9 @@ export class BusinessesController {
   @Get('locations')
   @Roles('platform-owner', 'business-admin')
   async listLocations(@Req() req: Request) {
-    const userId = req.header('x-user-id')?.trim();
+    const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing user');
     }
     return this.businessesService.listLocationsForRequester(userId);
   }
@@ -51,9 +51,9 @@ export class BusinessesController {
     @Req() req: Request,
     @Body() dto: CreateBusinessLocationDto,
   ) {
-    const userId = req.header('x-user-id')?.trim();
+    const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) {
-      throw new UnauthorizedException('Missing x-user-id header');
+      throw new UnauthorizedException('Missing user');
     }
     return this.businessesService.createLocation(userId, dto);
   }

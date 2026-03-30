@@ -14,6 +14,9 @@ export class User {
   @Column({ type: 'varchar', length: 30, nullable: true })
   phone?: string;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  passwordHash?: string | null;
+
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
 
