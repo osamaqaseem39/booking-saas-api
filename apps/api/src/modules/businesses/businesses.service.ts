@@ -74,19 +74,73 @@ export class BusinessesService {
       );
     }
 
+    const normalizedVertical = (dto.vertical ?? 'arena').trim() || 'arena';
+    const normalizedStatus = (dto.status ?? 'active').trim().toLowerCase();
+    const ownerProfile = dto.owner
+      ? {
+          name: dto.owner.name?.trim(),
+          email: dto.owner.email?.trim().toLowerCase(),
+          phone: dto.owner.phone?.trim(),
+        }
+      : undefined;
+
     const business = this.businessesRepository.create({
-      tenantId: randomUUID(),
+      tenantId: dto.tenantId ?? randomUUID(),
       businessName: dto.businessName,
       legalName: dto.legalName,
-      vertical: dto.vertical,
+      vertical: normalizedVertical,
+      businessType: dto.businessType?.trim(),
+      sportsOffered:
+        dto.sportsOffered?.map((x) => x.trim()).filter(Boolean) ?? undefined,
+      owner: ownerProfile,
+      subscription: dto.subscription
+        ? {
+            plan: dto.subscription.plan?.trim(),
+            status: dto.subscription.status?.trim(),
+            billingCycle: dto.subscription.billingCycle?.trim(),
+          }
+        : undefined,
+      settings: dto.settings
+        ? {
+            timezone: dto.settings.timezone?.trim(),
+            currency: dto.settings.currency?.trim().toUpperCase(),
+            allowOnlinePayments: dto.settings.allowOnlinePayments ?? false,
+          }
+        : undefined,
+      status: normalizedStatus === 'inactive' ? 'inactive' : 'active',
     });
     const savedBusiness = await this.businessesRepository.save(business);
 
+    const adminSource = dto.admin
+      ? {
+          fullName: dto.admin.fullName,
+          email: dto.admin.email,
+          phone: dto.admin.phone,
+          password: dto.admin.password,
+        }
+      : dto.owner
+        ? {
+            fullName: dto.owner.name,
+            email: dto.owner.email,
+            phone: dto.owner.phone,
+            // Owner payload in upgraded schema may omit password.
+            // Keep onboarding backward-compatible by generating a strong temporary one.
+            password:
+              dto.owner.password ??
+              `Tmp#${randomUUID().replace(/-/g, '').slice(0, 12)}`,
+          }
+        : null;
+    if (!adminSource) {
+      throw new BadRequestException(
+        'Provide either admin or owner details in onboarding payload',
+      );
+    }
+
     const adminUser = await this.iamService.ensureUser({
-      fullName: dto.admin.fullName,
-      email: dto.admin.email,
-      phone: dto.admin.phone,
-      password: dto.admin.password,
+      fullName: adminSource.fullName,
+      email: adminSource.email,
+      phone: adminSource.phone,
+      password: adminSource.password,
     });
     await this.iamService.assignRole(adminUser.id, 'business-admin');
 
@@ -285,6 +339,24 @@ export class BusinessesService {
     }
     if (dto.vertical !== undefined) {
       business.vertical = dto.vertical;
+    }
+    if (dto.businessType !== undefined) {
+      business.businessType = dto.businessType;
+    }
+    if (dto.sportsOffered !== undefined) {
+      business.sportsOffered = dto.sportsOffered;
+    }
+    if (dto.owner !== undefined) {
+      business.owner = dto.owner;
+    }
+    if (dto.subscription !== undefined) {
+      business.subscription = dto.subscription;
+    }
+    if (dto.settings !== undefined) {
+      business.settings = dto.settings;
+    }
+    if (dto.status !== undefined) {
+      business.status = dto.status;
     }
 
     return this.businessesRepository.save(business);
