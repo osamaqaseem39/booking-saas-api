@@ -1,31 +1,81 @@
-import express from 'express';
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ExpressAdapter } from '@nestjs/platform-express';
-import type { NestExpressApplication } from '@nestjs/platform-express';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../apps/api/src/app.module';
-import { applyHttpGlobals } from '../apps/api/src/bootstrap-http';
 
-async function createExpressServer(): Promise<express.Express> {
-  const expressApp = express();
-  const nestApp = await NestFactory.create<NestExpressApplication>(
-    AppModule,
-    new ExpressAdapter(expressApp),
-  );
-  applyHttpGlobals(nestApp);
-  await nestApp.init();
-  return expressApp;
+let cachedApp: NestExpressApplication;
+
+async function bootstrap() {
+  if (!cachedApp) {
+    cachedApp = await NestFactory.create<NestExpressApplication>(AppModule);
+
+    cachedApp.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+        transformOptions: {
+          enableImplicitConversion: true,
+        },
+      }),
+    );
+
+    // Match the working Vercel entrypoint pattern:
+    // enable CORS before init, so preflight OPTIONS gets CORS headers.
+    cachedApp.enableCors({
+      // Keep it open in this phase to prevent CORS-related 500s
+      // from breaking the browser preflight.
+      origin: true,
+      credentials: true,
+      methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'Accept',
+        'Origin',
+        // Custom app headers (used by your frontend/guards)
+        'X-User-Id',
+        'X-Tenant-Id',
+      ],
+      exposedHeaders: ['Content-Range', 'X-Total-Count'],
+      maxAge: 600,
+    });
+
+    await cachedApp.init();
+  }
+
+  return cachedApp.getHttpAdapter().getInstance();
 }
 
-let serverPromise: Promise<express.Express> | undefined;
+export default async function handler(req: any, res: any): Promise<void> {
+  // Set a timeout to ensure response is sent before Vercel's timeout.
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      res.status(504).json({
+        error: 'Gateway Timeout',
+        message: 'Request took too long to process',
+      });
+    }
+  }, 55000); // 55 seconds (5 seconds before Vercel's 60s timeout)
 
-export default async function vercelHandler(
-  req: express.Request,
-  res: express.Response,
-): Promise<void> {
-  if (!serverPromise) {
-    serverPromise = createExpressServer();
+  try {
+    const expressApp = await bootstrap();
+    expressApp(req, res);
+
+    res.on?.('finish', () => {
+      clearTimeout(timeout);
+    });
+  } catch (error) {
+    clearTimeout(timeout);
+    // eslint-disable-next-line no-console
+    console.error('Handler error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Internal Server Error',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
   }
-  const server = await serverPromise;
-  server(req, res);
 }
 

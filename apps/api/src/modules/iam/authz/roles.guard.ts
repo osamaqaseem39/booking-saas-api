@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -17,7 +18,10 @@ export class RolesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly iamService: IamService,
-    private readonly jwtService: JwtService,
+    // Some modules may not import/export JwtModule, so keep boot resilient.
+    // If Authorization bearer token is used but JwtService isn't available,
+    // we will fail the request with a 401 instead of crashing the whole app.
+    @Optional() private readonly jwtService?: JwtService,
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -34,6 +38,11 @@ export class RolesGuard implements CanActivate {
     let userId: string | undefined;
 
     if (authHeader?.startsWith('Bearer ')) {
+      if (!this.jwtService) {
+        throw new UnauthorizedException(
+          'Token verification not configured on server',
+        );
+      }
       const token = authHeader.slice('Bearer '.length);
       try {
         const payload = await this.jwtService.verifyAsync<{
