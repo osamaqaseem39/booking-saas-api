@@ -10,21 +10,37 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
     .map((s) => s.trim())
     .filter(Boolean);
 
-  app.enableCors({
-    origin: allowedOrigins.length > 0 ? allowedOrigins : true,
-    credentials: true,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Requested-With',
-      'Accept',
-      'Origin',
-      'X-User-Id',
-      'X-Tenant-Id',
-    ],
-    exposedHeaders: ['Content-Range', 'X-Total-Count'],
-    maxAge: 600,
+  // Explicit CORS middleware to ensure preflight `OPTIONS` requests
+  // never hit a 404/route-miss without `Access-Control-Allow-Origin`.
+  app.use((req, res, next) => {
+    const origin = req.headers.origin as string | undefined;
+
+    if (origin) {
+      // If no CORS env is configured, reflect the request origin.
+      const allowOrigin =
+        allowedOrigins.length === 0 || allowedOrigins.includes(origin);
+      res.setHeader('Access-Control-Allow-Origin', allowOrigin ? origin : 'null');
+      res.setHeader('Vary', 'Origin');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+    }
+
+    res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+
+    // Let the client request headers decide which headers we allow,
+    // so preflight doesn't fail when the frontend sends extra headers.
+    const requestHeaders = req.header('Access-Control-Request-Headers');
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      requestHeaders ??
+        'Content-Type, Authorization, X-Requested-With, Accept, Origin, X-User-Id, X-Tenant-Id',
+    );
+
+    if (req.method === 'OPTIONS') {
+      res.status(204).send();
+      return;
+    }
+
+    next();
   });
 
   app.useGlobalPipes(
