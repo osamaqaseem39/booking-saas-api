@@ -7,7 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
 import { In, Repository } from 'typeorm';
 import { BusinessesService } from '../../businesses/businesses.service';
-import { assertFacilityTypeAllowedForLocation } from '../location-facility.util';
+import { assertTurfSportModesAllowedForLocation } from '../location-facility.util';
 import { CreateTurfCourtDto } from './dto/create-turf-court.dto';
 import { UpdateTurfCourtDto } from './dto/update-turf-court.dto';
 import { TurfCourt } from './entities/turf-court.entity';
@@ -15,8 +15,6 @@ import {
   turfSportModeToFlags,
   type TurfSportFilter,
 } from './turf-sport-mode.util';
-
-const TURF_LOCATION_FACILITY_CODE = 'turf-court' as const;
 
 function dec(n?: number): string | undefined {
   if (n === undefined || n === null || Number.isNaN(n)) return undefined;
@@ -88,7 +86,7 @@ export class TurfCourtService {
       dto.businessLocationId,
       tenantId,
     );
-    assertFacilityTypeAllowedForLocation(location, TURF_LOCATION_FACILITY_CODE);
+    assertTurfSportModesAllowedForLocation(location, dto.sportMode);
     const { supportsFutsal, supportsCricket } = turfSportModeToFlags(
       dto.sportMode,
     );
@@ -152,6 +150,19 @@ export class TurfCourtService {
     dto: UpdateTurfCourtDto,
   ): Promise<TurfCourt> {
     const row = await this.findOne(tenantId, id);
+
+    if (dto.sportMode !== undefined) {
+      if (!row.businessLocationId) {
+        throw new BadRequestException(
+          'Turf court is not linked to a business location',
+        );
+      }
+      const location = await this.businessesService.assertLocationBelongsToTenant(
+        row.businessLocationId,
+        tenantId,
+      );
+      assertTurfSportModesAllowedForLocation(location, dto.sportMode);
+    }
 
     const patch: Partial<TurfCourt> = {};
     const assign = <K extends keyof TurfCourt>(key: K, val: TurfCourt[K]) => {

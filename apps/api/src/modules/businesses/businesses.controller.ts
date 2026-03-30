@@ -17,6 +17,7 @@ import { RolesGuard } from '../iam/authz/roles.guard';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
+import { SearchLocationsQueryDto } from './dto/search-locations-query.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateBusinessLocationDto } from './dto/update-business-location.dto';
 import { BusinessesService } from './businesses.service';
@@ -51,6 +52,18 @@ export class BusinessesController {
   @Get('locations/cities')
   async listLocationCities(@Query() dto: ListLocationCitiesDto) {
     return this.businessesService.listLocationCitiesPublic(dto);
+  }
+
+  /** No auth; distinct location types that have at least one active location. */
+  @Get('locations/location-types')
+  async listLocationTypes() {
+    return this.businessesService.listLocationTypesPublic();
+  }
+
+  /** Query filters: cities (comma-separated), locationType, bookingStatus=unbooked + date + startTime + endTime. */
+  @Get('locations/search')
+  async searchLocations(@Query() dto: SearchLocationsQueryDto) {
+    return this.businessesService.searchLocationsPublic(dto);
   }
 
   @Post('locations')

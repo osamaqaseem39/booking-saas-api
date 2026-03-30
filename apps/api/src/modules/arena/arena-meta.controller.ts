@@ -11,13 +11,13 @@ export class ArenaMetaController {
       locationScoped: true,
       note: 'POST create bodies require businessLocationId; list with ?businessLocationId= to scope courts to a business location.',
       resources: {
-        'turf-court': {
+        'cricket-indoor': { path: '/arena/cricket-indoor', label: 'Arena Cricket' },
+        'futsal-field': { path: '/arena/futsal-field', label: 'Futsal' },
+        'padel-court': { path: '/arena/padel-court', label: 'Padel' },
+        'turf-courts': {
           path: '/arena/turf-courts',
-          note: 'Combined Futsal + Cricket setup (single physical court)',
+          note: 'Optional combined pitch; location must enable Futsal and/or Arena Cricket by sportMode.',
         },
-        'cricket-indoor': { path: '/arena/cricket-indoor' },
-        'futsal-field': { path: '/arena/futsal-field' },
-        'padel-court': { path: '/arena/padel-court' },
       },
     };
   }

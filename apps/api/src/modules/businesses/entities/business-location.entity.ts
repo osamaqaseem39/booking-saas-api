@@ -23,12 +23,6 @@ export class BusinessLocation {
   @Column({ type: 'varchar', length: 200 })
   name!: string;
 
-  @Column({ type: 'varchar', length: 80, nullable: true })
-  branchId?: string;
-
-  @Column({ type: 'varchar', length: 80, nullable: true })
-  arenaId?: string;
-
   /** What this site is used for (arena, branch, hq, …). Assigned per location. */
   @Column({ type: 'varchar', length: 80, default: 'other' })
   locationType!: string;
@@ -69,6 +63,14 @@ export class BusinessLocation {
 
   @Column({ type: 'varchar', length: 8, default: 'PKR' })
   currency!: string;
+
+  /** Main image URL for this site (e.g. branch hero / listing thumbnail). */
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  logo?: string | null;
+
+  /** Additional image URLs for this location. */
+  @Column('text', { array: true, default: '{}' })
+  gallery!: string[];
 
   @Column({ type: 'varchar', length: 20, default: 'active' })
   status!: string;

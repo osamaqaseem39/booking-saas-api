@@ -8,14 +8,6 @@ export class BusinessLocationBranchProfile1711000000010
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       ALTER TABLE "business_locations"
-      ADD COLUMN IF NOT EXISTS "branchId" varchar(80)
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "business_locations"
-      ADD COLUMN IF NOT EXISTS "arenaId" varchar(80)
-    `);
-    await queryRunner.query(`
-      ALTER TABLE "business_locations"
       ADD COLUMN IF NOT EXISTS "area" varchar(120)
     `);
     await queryRunner.query(`
@@ -79,12 +71,6 @@ export class BusinessLocationBranchProfile1711000000010
     );
     await queryRunner.query(
       `ALTER TABLE "business_locations" DROP COLUMN IF EXISTS "area"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "business_locations" DROP COLUMN IF EXISTS "arenaId"`,
-    );
-    await queryRunner.query(
-      `ALTER TABLE "business_locations" DROP COLUMN IF EXISTS "branchId"`,
     );
   }
 }

@@ -7,16 +7,23 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
+import { CricketIndoorCourt } from '../arena/cricket-indoor/entities/cricket-indoor-court.entity';
+import { FutsalField } from '../arena/futsal-field/entities/futsal-field.entity';
+import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
+import { TurfCourt } from '../arena/turf-court/entities/turf-court.entity';
+import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { IamService } from '../iam/iam.service';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
+import { SearchLocationsQueryDto } from './dto/search-locations-query.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateBusinessLocationDto } from './dto/update-business-location.dto';
 import { BusinessLocation } from './entities/business-location.entity';
 import { Business } from './entities/business.entity';
 import { BusinessMembership } from './entities/business-membership.entity';
+import { normalizeLocationFacilityTypesForApi } from './business-location.constants';
 
 @Injectable()
 export class BusinessesService {
@@ -28,7 +35,31 @@ export class BusinessesService {
     private readonly membershipsRepository: Repository<BusinessMembership>,
     @InjectRepository(BusinessLocation)
     private readonly locationsRepository: Repository<BusinessLocation>,
+    @InjectRepository(TurfCourt)
+    private readonly turfCourtRepository: Repository<TurfCourt>,
+    @InjectRepository(FutsalField)
+    private readonly futsalFieldRepository: Repository<FutsalField>,
+    @InjectRepository(PadelCourt)
+    private readonly padelCourtRepository: Repository<PadelCourt>,
+    @InjectRepository(CricketIndoorCourt)
+    private readonly cricketIndoorCourtRepository: Repository<CricketIndoorCourt>,
+    @InjectRepository(BookingItem)
+    private readonly bookingItemRepository: Repository<BookingItem>,
   ) {}
+
+  /**
+   * API uses `status` as the single write field; `isActive` is derived and kept in sync for queries.
+   */
+  private normalizeLocationStatus(raw: string | undefined): {
+    status: string;
+    isActive: boolean;
+  } {
+    const s = (raw ?? 'active').trim().toLowerCase();
+    if (s === 'inactive') {
+      return { status: 'inactive', isActive: false };
+    }
+    return { status: 'active', isActive: true };
+  }
 
   private isSchemaMismatchError(error: unknown): boolean {
     if (!(error instanceof QueryFailedError)) {
@@ -276,10 +307,8 @@ export class BusinessesService {
     return {
       id: loc.id,
       businessId: loc.businessId,
-      branchId: loc.branchId,
-      arenaId: loc.arenaId,
       locationType: loc.locationType,
-      facilityTypes: loc.facilityTypes ?? [],
+      facilityTypes: normalizeLocationFacilityTypesForApi(loc.facilityTypes),
       name: loc.name,
       addressLine: loc.addressLine,
       city: loc.city,
@@ -292,6 +321,8 @@ export class BusinessesService {
       workingHours: loc.workingHours,
       timezone: loc.timezone,
       currency: loc.currency,
+      logo: loc.logo ?? null,
+      gallery: loc.gallery ?? [],
       status: loc.status,
       isActive: loc.isActive,
       createdAt: loc.createdAt,
@@ -342,6 +373,180 @@ export class BusinessesService {
     const cities = Array.from(unique).sort((a, b) => a.localeCompare(b));
     const limit = dto.limit ?? cities.length;
     return { cities: cities.slice(0, limit) };
+  }
+
+  /**
+   * Distinct `locationType` values that have at least one active row (for filters / discovery).
+   */
+  async listLocationTypesPublic(): Promise<{ locationTypes: string[] }> {
+    try {
+      const raw = await this.locationsRepository
+        .createQueryBuilder('l')
+        .select('DISTINCT l.locationType', 'locationType')
+        .where('l.isActive = :active', { active: true })
+        .andWhere('l.locationType IS NOT NULL')
+        .andWhere("TRIM(l.locationType) != ''")
+        .getRawMany<{ locationType: string }>();
+      const set = new Set<string>();
+      for (const row of raw) {
+        const t = row.locationType?.trim();
+        if (t) set.add(t);
+      }
+      const locationTypes = Array.from(set).sort((a, b) => a.localeCompare(b));
+      return { locationTypes };
+    } catch (error: unknown) {
+      if (this.isSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Business locations schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Filter public locations by optional cities / locationType, and optionally
+   * `bookingStatus=unbooked` with `date` + `startTime`/`endTime` (HH:mm, same day).
+   */
+  async searchLocationsPublic(dto: SearchLocationsQueryDto) {
+    const rows = await this.listAllLocationsPublic();
+    let filtered = rows.filter((r) => r.isActive);
+
+    const citySet = this.parseCitiesFilter(dto.cities);
+    if (citySet) {
+      filtered = filtered.filter((r) => {
+        const c = r.city?.trim().toLowerCase();
+        return Boolean(c && citySet.has(c));
+      });
+    }
+
+    if (dto.locationType?.trim()) {
+      const want = dto.locationType.trim().toLowerCase();
+      filtered = filtered.filter(
+        (r) => (r.locationType ?? '').trim().toLowerCase() === want,
+      );
+    }
+
+    if (dto.bookingStatus !== 'unbooked') {
+      return filtered;
+    }
+
+    const date = dto.date as string;
+    const reqStart = this.hhMmToMinutes(dto.startTime as string);
+    const reqEnd = this.hhMmToMinutes(dto.endTime as string);
+    if (reqEnd <= reqStart) {
+      throw new BadRequestException('endTime must be after startTime');
+    }
+
+    const busyKeys = await this.loadBusyCourtKeysForWindow(date, reqStart, reqEnd);
+    const locationIds = filtered.map((r) => r.id);
+    if (locationIds.length === 0) {
+      return [];
+    }
+
+    const courtsByLocation = await this.loadCourtKeysByLocationId(locationIds);
+
+    return filtered.filter((loc) => {
+      const courts = courtsByLocation.get(loc.id) ?? [];
+      if (courts.length === 0) {
+        return false;
+      }
+      return courts.some((key) => !busyKeys.has(key));
+    });
+  }
+
+  private parseCitiesFilter(cities?: string): Set<string> | null {
+    if (!cities?.trim()) {
+      return null;
+    }
+    const parts = cities
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    return parts.length ? new Set(parts) : null;
+  }
+
+  private hhMmToMinutes(t: string): number {
+    const [h, m] = t.split(':').map((x) => Number.parseInt(x, 10));
+    return h * 60 + m;
+  }
+
+  private intervalsOverlapMinutes(
+    aStart: number,
+    aEnd: number,
+    bStart: number,
+    bEnd: number,
+  ): boolean {
+    return aStart < bEnd && aEnd > bStart;
+  }
+
+  private async loadBusyCourtKeysForWindow(
+    date: string,
+    reqStartMin: number,
+    reqEndMin: number,
+  ): Promise<Set<string>> {
+    const items = await this.bookingItemRepository
+      .createQueryBuilder('item')
+      .innerJoin('item.booking', 'booking')
+      .where('booking.bookingDate = :d', { d: date })
+      .andWhere('booking.bookingStatus != :c', { c: 'cancelled' })
+      .andWhere('item.itemStatus != :ic', { ic: 'cancelled' })
+      .getMany();
+
+    const busy = new Set<string>();
+    for (const item of items) {
+      const a = this.hhMmToMinutes(item.startTime);
+      const b = this.hhMmToMinutes(item.endTime);
+      if (
+        this.intervalsOverlapMinutes(reqStartMin, reqEndMin, a, b)
+      ) {
+        busy.add(`${item.courtKind}:${item.courtId}`);
+      }
+    }
+    return busy;
+  }
+
+  private async loadCourtKeysByLocationId(
+    locationIds: string[],
+  ): Promise<Map<string, string[]>> {
+    const map = new Map<string, string[]>();
+    const push = (locId: string | null | undefined, kind: string, id: string) => {
+      if (!locId) {
+        return;
+      }
+      const key = `${kind}:${id}`;
+      const list = map.get(locId) ?? [];
+      list.push(key);
+      map.set(locId, list);
+    };
+
+    if (locationIds.length === 0) {
+      return map;
+    }
+
+    const whereLoc = { businessLocationId: In(locationIds) };
+
+    const [turf, futsal, padel, cricket] = await Promise.all([
+      this.turfCourtRepository.find({ where: whereLoc }),
+      this.futsalFieldRepository.find({ where: whereLoc }),
+      this.padelCourtRepository.find({ where: whereLoc }),
+      this.cricketIndoorCourtRepository.find({ where: whereLoc }),
+    ]);
+
+    for (const row of turf) {
+      push(row.businessLocationId, 'turf_court', row.id);
+    }
+    for (const row of futsal) {
+      push(row.businessLocationId, 'futsal_field', row.id);
+    }
+    for (const row of padel) {
+      push(row.businessLocationId, 'padel_court', row.id);
+    }
+    for (const row of cricket) {
+      push(row.businessLocationId, 'cricket_indoor_court', row.id);
+    }
+
+    return map;
   }
 
   /**
@@ -411,12 +616,16 @@ export class BusinessesService {
     const sourceCurrency = dto.settings?.currency ?? dto.currency;
     const sourceLatitude = dto.location?.coordinates?.lat ?? dto.latitude;
     const sourceLongitude = dto.location?.coordinates?.lng ?? dto.longitude;
-    const sourceStatus = dto.status ?? 'active';
+    const { status: nextStatus, isActive: nextIsActive } =
+      this.normalizeLocationStatus(dto.status);
+    const logoTrimmed = dto.logo?.trim();
+    const galleryList =
+      dto.gallery === undefined
+        ? []
+        : dto.gallery.map((u) => u.trim()).filter((u) => u.length > 0);
 
     const row = this.locationsRepository.create({
       businessId: dto.businessId,
-      branchId: dto.branchId,
-      arenaId: dto.arenaId,
       locationType: dto.locationType ?? 'arena',
       facilityTypes: dto.facilityTypes?.length ? dto.facilityTypes : [],
       name: sourceName,
@@ -431,8 +640,10 @@ export class BusinessesService {
       workingHours: dto.workingHours,
       timezone: sourceTimezone,
       currency: sourceCurrency ?? 'PKR',
-      status: sourceStatus,
-      isActive: sourceStatus === 'active',
+      logo: logoTrimmed && logoTrimmed.length > 0 ? logoTrimmed : null,
+      gallery: galleryList,
+      status: nextStatus,
+      isActive: nextIsActive,
     });
     return this.locationsRepository.save(row);
   }
@@ -553,8 +764,6 @@ export class BusinessesService {
     if (dto.name !== undefined || dto.branchName !== undefined) {
       location.name = dto.branchName ?? dto.name ?? location.name;
     }
-    if (dto.branchId !== undefined) location.branchId = dto.branchId;
-    if (dto.arenaId !== undefined) location.arenaId = dto.arenaId;
     if (dto.locationType !== undefined) location.locationType = dto.locationType;
     if (dto.facilityTypes !== undefined) location.facilityTypes = dto.facilityTypes;
     if (dto.addressLine !== undefined || dto.location?.address !== undefined) {
@@ -597,10 +806,19 @@ export class BusinessesService {
         location.currency = nextCurrency;
       }
     }
-    if (dto.status !== undefined) location.status = dto.status;
-    if (dto.isActive !== undefined) location.isActive = dto.isActive;
-    if (dto.status !== undefined && dto.isActive === undefined) {
-      location.isActive = dto.status === 'active';
+    if (dto.logo !== undefined) {
+      const t = dto.logo.trim();
+      location.logo = t.length > 0 ? t : null;
+    }
+    if (dto.gallery !== undefined) {
+      location.gallery = dto.gallery
+        .map((u) => u.trim())
+        .filter((u) => u.length > 0);
+    }
+    if (dto.status !== undefined) {
+      const { status, isActive } = this.normalizeLocationStatus(dto.status);
+      location.status = status;
+      location.isActive = isActive;
     }
 
     return this.locationsRepository.save(location);

@@ -11,7 +11,10 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { BUSINESS_LOCATION_TYPE_CODES } from '../business-location.constants';
+import {
+  BUSINESS_LOCATION_FACILITY_TYPE_CODES,
+  BUSINESS_LOCATION_TYPE_CODES,
+} from '../business-location.constants';
 
 class CoordinatesDto {
   @IsLatitude()
@@ -85,22 +88,12 @@ export class CreateBusinessLocationDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @MaxLength(80, { each: true })
+  @IsIn([...BUSINESS_LOCATION_FACILITY_TYPE_CODES], { each: true })
   facilityTypes?: string[];
 
   @IsOptional()
   @IsString()
   name?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  branchId?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  arenaId?: string;
 
   @IsOptional()
   @IsString()
@@ -150,6 +143,17 @@ export class CreateBusinessLocationDto {
   @IsString()
   @MaxLength(8)
   currency?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  logo?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(2048, { each: true })
+  gallery?: string[];
 
   @IsOptional()
   @IsString()

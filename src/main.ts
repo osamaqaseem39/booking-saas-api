@@ -110,14 +110,6 @@ async function bootstrap() {
           `);
           await dataSource.query(`
             ALTER TABLE "business_locations"
-            ADD COLUMN IF NOT EXISTS "branchId" varchar(80)
-          `);
-          await dataSource.query(`
-            ALTER TABLE "business_locations"
-            ADD COLUMN IF NOT EXISTS "arenaId" varchar(80)
-          `);
-          await dataSource.query(`
-            ALTER TABLE "business_locations"
             ADD COLUMN IF NOT EXISTS "area" varchar(120)
           `);
           await dataSource.query(`
@@ -151,6 +143,14 @@ async function bootstrap() {
           await dataSource.query(`
             ALTER TABLE "business_locations"
             ADD COLUMN IF NOT EXISTS "status" varchar(20) NOT NULL DEFAULT 'active'
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "logo" varchar(2048)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "gallery" text[] NOT NULL DEFAULT '{}'
           `);
           // Ensure booking tables exist even if migration history is out of sync.
           await dataSource.query(`

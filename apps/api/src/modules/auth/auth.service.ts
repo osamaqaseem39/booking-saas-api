@@ -13,6 +13,7 @@ import { BootstrapFirstOwnerDto } from './dto/bootstrap-first-owner.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterEndUserDto } from './dto/register-end-user.dto';
+import { IamService } from '../iam/iam.service';
 import { Role } from '../iam/entities/role.entity';
 import { User } from '../iam/entities/user.entity';
 import { UserRole } from '../iam/entities/user-role.entity';
@@ -29,6 +30,7 @@ export class AuthService {
     @InjectRepository(UserRole)
     private readonly userRolesRepository: Repository<UserRole>,
     private readonly jwtService: JwtService,
+    private readonly iamService: IamService,
   ) {}
 
   private accessExpiresIn(): string {
@@ -53,7 +55,11 @@ export class AuthService {
     );
   }
 
-  async login(dto: LoginDto): Promise<{ token: string; refreshToken: string }> {
+  async login(dto: LoginDto): Promise<{
+    token: string;
+    refreshToken: string;
+    user: Awaited<ReturnType<IamService['getMe']>>;
+  }> {
     const email = dto.email.toLowerCase();
     const safeEmail = this.maskEmail(email);
 
@@ -83,8 +89,9 @@ export class AuthService {
 
     const token = await this.signAccessToken(user.id);
     const refreshToken = await this.signRefreshToken(user.id);
+    const profile = await this.iamService.getMe(user.id);
     this.logger.log(`Login success (${safeEmail}, id=${user.id})`);
-    return { token, refreshToken };
+    return { token, refreshToken, user: profile };
   }
 
   async refresh(dto: RefreshTokenDto): Promise<{ token: string; refreshToken: string }> {
