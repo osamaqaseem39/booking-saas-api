@@ -13,26 +13,91 @@ import { IamModule } from './modules/iam/iam.module';
 import { ProductCatalogModule } from './modules/product-catalog/product-catalog.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
+function createTypeOrmConfig() {
+  const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
+  if (url) {
+    const parsed = new URL(url);
+    const sslMode = parsed.searchParams.get('sslmode');
+    const cfg = {
+      type: 'postgres' as const,
+      host: parsed.hostname,
+      port: Number(parsed.port || 5432),
+      username: parsed.username,
+      password: parsed.password,
+      database: parsed.pathname.replace(/^\//, ''),
+      autoLoadEntities: true,
+      synchronize: (process.env.DB_SYNC ?? 'false') === 'true',
+      ssl: sslMode === 'require' ? { rejectUnauthorized: false } : false,
+    };
+    if (!(globalThis as any).__dbEnvLogged) {
+      (globalThis as any).__dbEnvLogged = true;
+      // eslint-disable-next-line no-console
+      console.log(
+        '[DB] host=',
+        cfg.host,
+        'port=',
+        cfg.port,
+        'db=',
+        cfg.database,
+      );
+    }
+    return cfg;
+  }
+
+  // Fallback: explicit DB_* vars
+  const cfg = {
+    type: 'postgres' as const,
+    host: process.env.DB_HOST ?? process.env.POSTGRES_HOST ?? 'localhost',
+    port: Number(process.env.DB_PORT ?? 5432),
+    username: process.env.DB_USERNAME ?? process.env.POSTGRES_USER ?? 'postgres',
+    password: process.env.DB_PASSWORD ?? process.env.POSTGRES_PASSWORD ?? 'postgres',
+    database: process.env.DB_NAME ?? process.env.POSTGRES_DATABASE ?? 'backend_saas',
+    autoLoadEntities: true,
+    synchronize: (process.env.DB_SYNC ?? 'false') === 'true',
+    ssl:
+      process.env.DB_SSL === 'true'
+        ? { rejectUnauthorized: false }
+        : sslModeFromEnv(),
+  };
+  if (!(globalThis as any).__dbEnvLogged) {
+    (globalThis as any).__dbEnvLogged = true;
+    // eslint-disable-next-line no-console
+    console.log(
+      '[DB] host=',
+      cfg.host,
+      'port=',
+      cfg.port,
+      'db=',
+      cfg.database,
+    );
+  }
+  return cfg;
+}
+
+function sslModeFromEnv() {
+  // In Supabase, SSL is typically required when using pooler URLs.
+  // If DB_SSL is not set, default to enabling SSL when the pooler URL is used.
+  const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
+  if (!url) return false;
+  const parsed = new URL(url);
+  const sslMode = parsed.searchParams.get('sslmode');
+  return sslMode === 'require' ? { rejectUnauthorized: false } : false;
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     JwtModule.register({
-      secret: process.env.JWT_SECRET ?? 'dev-jwt-secret',
+      secret:
+        process.env.JWT_SECRET ??
+        process.env.SUPABASE_JWT_SECRET ??
+        process.env.SUPABASE_SECRET_KEY ??
+        'dev-jwt-secret',
       signOptions: {
         expiresIn: (process.env.JWT_EXPIRES_IN ?? '1d') as any,
       },
     }),
-    TypeOrmModule.forRoot({
-      type: 'postgres',
-      host: process.env.DB_HOST ?? 'localhost',
-      port: Number(process.env.DB_PORT ?? 5432),
-      username: process.env.DB_USERNAME ?? 'postgres',
-      password: process.env.DB_PASSWORD ?? 'postgres',
-      database: process.env.DB_NAME ?? 'backend_saas',
-      autoLoadEntities: true,
-      synchronize: (process.env.DB_SYNC ?? 'false') === 'true',
-      ssl: (process.env.DB_SSL ?? 'false') === 'true',
-    }),
+    TypeOrmModule.forRoot(createTypeOrmConfig()),
     TenancyModule,
     HealthModule,
     ArenaModule,

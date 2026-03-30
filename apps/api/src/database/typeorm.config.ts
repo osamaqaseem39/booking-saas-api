@@ -13,13 +13,36 @@ import { Role } from '../modules/iam/entities/role.entity';
 import { UserRole } from '../modules/iam/entities/user-role.entity';
 import { User } from '../modules/iam/entities/user.entity';
 
+function createTypeOrmOptions(): DataSourceOptions {
+  const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
+  if (url) {
+    const parsed = new URL(url);
+    const sslMode = parsed.searchParams.get('sslmode');
+    return {
+      type: 'postgres',
+      host: parsed.hostname,
+      port: Number(parsed.port || 5432),
+      username: parsed.username,
+      password: parsed.password,
+      database: parsed.pathname.replace(/^\//, ''),
+      ssl: sslMode === 'require' ? { rejectUnauthorized: false } : false,
+    };
+  }
+
+  return {
+    type: 'postgres',
+    host: process.env.DB_HOST ?? process.env.POSTGRES_HOST ?? 'localhost',
+    port: Number(process.env.DB_PORT ?? 5432),
+    username:
+      process.env.DB_USERNAME ?? process.env.POSTGRES_USER ?? 'postgres',
+    password:
+      process.env.DB_PASSWORD ?? process.env.POSTGRES_PASSWORD ?? 'postgres',
+    database: process.env.DB_NAME ?? process.env.POSTGRES_DATABASE ?? 'backend_saas',
+  };
+}
+
 export const typeOrmOptions: DataSourceOptions = {
-  type: 'postgres',
-  host: process.env.DB_HOST ?? 'localhost',
-  port: Number(process.env.DB_PORT ?? 5432),
-  username: process.env.DB_USERNAME ?? 'postgres',
-  password: process.env.DB_PASSWORD ?? 'postgres',
-  database: process.env.DB_NAME ?? 'backend_saas',
+  ...createTypeOrmOptions(),
   entities: [
     User,
     Role,
