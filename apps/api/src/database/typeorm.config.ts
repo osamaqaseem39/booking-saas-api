@@ -1,4 +1,5 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
+import { join } from 'path';
 import { CricketIndoorCourt } from '../modules/arena/cricket-indoor/entities/cricket-indoor-court.entity';
 import { FutsalField } from '../modules/arena/futsal-field/entities/futsal-field.entity';
 import { PadelCourt } from '../modules/arena/padel-court/entities/padel-court.entity';
@@ -33,7 +34,8 @@ export const typeOrmOptions: DataSourceOptions = {
     Booking,
     BookingItem,
   ],
-  migrations: ['dist/apps/api/src/database/migrations/*.js'],
+  // Use DataSource-relative paths so it works after building to `dist/`.
+  migrations: [join(__dirname, 'migrations', '*.js')],
 };
 
 export default new DataSource(typeOrmOptions);

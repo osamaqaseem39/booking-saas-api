@@ -28,3 +28,4 @@ export default async function vercelHandler(
   const server = await serverPromise;
   server(req, res);
 }
+
