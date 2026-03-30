@@ -36,6 +36,7 @@ async function bootstrap() {
               "fullName" varchar(150) NOT NULL,
               "email" varchar(180) NOT NULL UNIQUE,
               "phone" varchar(30),
+              "passwordHash" varchar(255) NULL,
               "isActive" boolean NOT NULL DEFAULT true,
               "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now()
             );
