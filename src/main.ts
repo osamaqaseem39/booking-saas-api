@@ -22,6 +22,14 @@ async function bootstrap() {
           // sync with the actual schema. Ensure the core IAM tables exist
           // so bootstrapping (and `/auth/login`) doesn't crash.
           await dataSource.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
+
+          // Ensure IAM baseline columns exist even if an older schema exists.
+          // (Some deployments may have created `users` without password support.)
+          await dataSource.query(`
+            ALTER TABLE "users"
+            ADD COLUMN IF NOT EXISTS "passwordHash" varchar(255) NULL
+          `);
+
           await dataSource.query(`
             CREATE TABLE IF NOT EXISTS "users" (
               "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),

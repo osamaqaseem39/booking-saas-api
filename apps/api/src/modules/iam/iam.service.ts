@@ -5,7 +5,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { CreateUserDto } from './dto/create-user.dto';
 import { SystemRole } from './iam.constants';
@@ -168,7 +168,17 @@ export class IamService implements OnModuleInit {
           code: role.code,
           name: role.name,
         });
-        await this.rolesRepository.save(created);
+        try {
+          await this.rolesRepository.save(created);
+        } catch (err) {
+          // Serverless cold starts can run in parallel. Both instances may
+          // pass the `exists` check, so ignore unique constraint violations.
+          if (err instanceof QueryFailedError) {
+            const code = (err as any).code;
+            if (code === '23505') continue; // unique_violation
+          }
+          throw err;
+        }
       }
     }
   }
