@@ -1,5 +1,6 @@
 import { InjectRepository } from '@nestjs/typeorm';
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -10,6 +11,7 @@ import * as bcrypt from 'bcryptjs';
 import { Repository } from 'typeorm';
 import { BootstrapFirstOwnerDto } from './dto/bootstrap-first-owner.dto';
 import { LoginDto } from './dto/login.dto';
+import { RegisterEndUserDto } from './dto/register-end-user.dto';
 import { Role } from '../iam/entities/role.entity';
 import { User } from '../iam/entities/user.entity';
 import { UserRole } from '../iam/entities/user-role.entity';
@@ -110,6 +112,57 @@ export class AuthService {
     const token = await this.jwtService.signAsync({ sub: savedUser.id });
     this.logger.log(
       `Bootstrap success: first owner created (${this.maskEmail(email)}, id=${savedUser.id})`,
+    );
+
+    return {
+      token,
+      userId: savedUser.id,
+      email,
+    };
+  }
+
+  async registerEndUser(
+    dto: RegisterEndUserDto,
+  ): Promise<{ token: string; userId: string; email: string }> {
+    const email = dto.email.toLowerCase().trim();
+    const safeEmail = this.maskEmail(email);
+
+    const existing = await this.usersRepository.findOne({ where: { email } });
+    if (existing) {
+      this.logger.warn(`Register failed: email already exists (${safeEmail})`);
+      throw new BadRequestException(`User with email ${email} already exists`);
+    }
+
+    const passwordHash = await bcrypt.hash(dto.password, 10);
+    const user = this.usersRepository.create({
+      fullName: dto.fullName.trim(),
+      email,
+      phone: dto.phone?.trim(),
+      passwordHash,
+      isActive: true,
+    });
+    const savedUser = await this.usersRepository.save(user);
+
+    let role = await this.rolesRepository.findOne({
+      where: { code: 'customer-end-user' },
+    });
+    if (!role) {
+      role = this.rolesRepository.create({
+        code: 'customer-end-user',
+        name: 'Customer / End User',
+      });
+      await this.rolesRepository.save(role);
+    }
+
+    const userRole = this.userRolesRepository.create({
+      userId: savedUser.id,
+      roleCode: 'customer-end-user',
+    });
+    await this.userRolesRepository.save(userRole);
+
+    const token = await this.jwtService.signAsync({ sub: savedUser.id });
+    this.logger.log(
+      `Register success: end user created (${safeEmail}, id=${savedUser.id})`,
     );
 
     return {

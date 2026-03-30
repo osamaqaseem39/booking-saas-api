@@ -1,6 +1,7 @@
 import { Body, Controller, Post } from '@nestjs/common';
 import { BootstrapFirstOwnerDto } from './dto/bootstrap-first-owner.dto';
 import { LoginDto } from './dto/login.dto';
+import { RegisterEndUserDto } from './dto/register-end-user.dto';
 import { AuthService } from './auth.service';
 
 @Controller('auth')
@@ -17,5 +18,12 @@ export class AuthController {
     @Body() dto: BootstrapFirstOwnerDto,
   ): Promise<{ token: string; userId: string; email: string }> {
     return this.authService.bootstrapFirstOwner(dto);
+  }
+
+  @Post('register-end-user')
+  async registerEndUser(
+    @Body() dto: RegisterEndUserDto,
+  ): Promise<{ token: string; userId: string; email: string }> {
+    return this.authService.registerEndUser(dto);
   }
 }
