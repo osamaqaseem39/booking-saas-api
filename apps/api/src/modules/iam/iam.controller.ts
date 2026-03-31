@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UnauthorizedException,
   UseGuards,
@@ -36,8 +37,12 @@ export class IamController {
 
   @Get('users')
   @Roles('platform-owner', 'business-admin')
-  async listUsers() {
-    return this.iamService.listUsers();
+  async listUsers(
+    @Query('search') search?: string,
+    @Query('sortBy') sortBy?: string,
+    @Query('sortOrder') sortOrder?: string,
+  ) {
+    return this.iamService.listUsers({ search, sortBy, sortOrder });
   }
 
   @Get('end-users')

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -6,7 +7,11 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
+import { COURT_KINDS, type CourtKind } from './booking.types';
+import { BookingAvailabilityQueryDto } from './dto/booking-availability-query.dto';
+import { CourtSlotsQueryDto } from './dto/court-slots-query.dto';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
 import { BookingsService } from './bookings.service';
@@ -20,6 +25,33 @@ export class BookingsController {
   @Get()
   list(@CurrentTenant() tenant: TenantContext) {
     return this.bookingsService.list(tenant.tenantId);
+  }
+
+  @Get('availability')
+  availabilityByTime(
+    @CurrentTenant() tenant: TenantContext,
+    @Query() query: BookingAvailabilityQueryDto,
+  ) {
+    return this.bookingsService.getAvailabilityByTime(tenant.tenantId, query);
+  }
+
+  @Get('courts/:courtKind/:courtId/slots')
+  courtSlots(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('courtKind') courtKind: string,
+    @Param('courtId', ParseUUIDPipe) courtId: string,
+    @Query() query: CourtSlotsQueryDto,
+  ) {
+    if (!COURT_KINDS.includes(courtKind as CourtKind)) {
+      throw new BadRequestException(
+        `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
+      );
+    }
+    return this.bookingsService.getCourtSlots(tenant.tenantId, {
+      kind: courtKind as CourtKind,
+      courtId,
+      date: query.date,
+    });
   }
 
   @Get(':bookingId')

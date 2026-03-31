@@ -150,6 +150,11 @@ export class CreateBusinessLocationDto {
   logo?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  bannerImage?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   @MaxLength(2048, { each: true })

@@ -322,6 +322,7 @@ export class BusinessesService {
       timezone: loc.timezone,
       currency: loc.currency,
       logo: loc.logo ?? null,
+      bannerImage: loc.bannerImage ?? null,
       gallery: loc.gallery ?? [],
       status: loc.status,
       isActive: loc.isActive,
@@ -406,7 +407,7 @@ export class BusinessesService {
 
   /**
    * Filter public locations by optional cities / locationType, and optionally
-   * `bookingStatus=unbooked` with `date` + `startTime`/`endTime` (HH:mm, same day).
+   * `bookingStatus=unbooked` with `date` + `startTime`/`endTime` (HH:mm, supports crossing midnight).
    */
   async searchLocationsPublic(dto: SearchLocationsQueryDto) {
     const rows = await this.listAllLocationsPublic();
@@ -434,8 +435,8 @@ export class BusinessesService {
     const date = dto.date as string;
     const reqStart = this.hhMmToMinutes(dto.startTime as string);
     const reqEnd = this.hhMmToMinutes(dto.endTime as string);
-    if (reqEnd <= reqStart) {
-      throw new BadRequestException('endTime must be after startTime');
+    if (reqEnd === reqStart) {
+      throw new BadRequestException('endTime must be different from startTime');
     }
 
     const busyKeys = await this.loadBusyCourtKeysForWindow(date, reqStart, reqEnd);
@@ -471,6 +472,32 @@ export class BusinessesService {
     return h * 60 + m;
   }
 
+  private addDaysToIsoDate(date: string, days: number): string {
+    const [year, month, day] = date.split('-').map((x) => Number.parseInt(x, 10));
+    const utcDate = new Date(Date.UTC(year, month - 1, day));
+    utcDate.setUTCDate(utcDate.getUTCDate() + days);
+    const yyyy = utcDate.getUTCFullYear().toString().padStart(4, '0');
+    const mm = (utcDate.getUTCMonth() + 1).toString().padStart(2, '0');
+    const dd = utcDate.getUTCDate().toString().padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  private splitWindowToDaySegments(
+    startMin: number,
+    endMin: number,
+  ): Array<{ dayOffset: 0 | 1; startMin: number; endMin: number }> {
+    if (startMin === endMin) {
+      return [];
+    }
+    if (endMin > startMin) {
+      return [{ dayOffset: 0, startMin, endMin }];
+    }
+    return [
+      { dayOffset: 0, startMin, endMin: 24 * 60 },
+      { dayOffset: 1, startMin: 0, endMin },
+    ];
+  }
+
   private intervalsOverlapMinutes(
     aStart: number,
     aEnd: number,
@@ -485,22 +512,57 @@ export class BusinessesService {
     reqStartMin: number,
     reqEndMin: number,
   ): Promise<Set<string>> {
+    const reqSegments = this.splitWindowToDaySegments(reqStartMin, reqEndMin);
+    const queryDates =
+      reqSegments.length > 1 ? [date, this.addDaysToIsoDate(date, 1)] : [date];
+    const dayOffsetByDate = new Map<string, 0 | 1>([
+      [date, 0],
+      ...(queryDates.length > 1
+        ? ([[queryDates[1], 1]] as Array<[string, 0 | 1]>)
+        : []),
+    ]);
+
     const items = await this.bookingItemRepository
       .createQueryBuilder('item')
       .innerJoin('item.booking', 'booking')
-      .where('booking.bookingDate = :d', { d: date })
+      .where('booking.bookingDate IN (:...dates)', { dates: queryDates })
       .andWhere('booking.bookingStatus != :c', { c: 'cancelled' })
       .andWhere('item.itemStatus != :ic', { ic: 'cancelled' })
       .getMany();
 
     const busy = new Set<string>();
     for (const item of items) {
-      const a = this.hhMmToMinutes(item.startTime);
-      const b = this.hhMmToMinutes(item.endTime);
-      if (
-        this.intervalsOverlapMinutes(reqStartMin, reqEndMin, a, b)
-      ) {
-        busy.add(`${item.courtKind}:${item.courtId}`);
+      const bookingDate = item.booking?.bookingDate;
+      if (!bookingDate) {
+        continue;
+      }
+      const bookingDayOffset = dayOffsetByDate.get(bookingDate);
+      if (bookingDayOffset === undefined) {
+        continue;
+      }
+
+      const bookingSegments = this.splitWindowToDaySegments(
+        this.hhMmToMinutes(item.startTime),
+        this.hhMmToMinutes(item.endTime),
+      );
+      for (const requestSegment of reqSegments) {
+        if (requestSegment.dayOffset !== bookingDayOffset) {
+          continue;
+        }
+        const hasOverlap = bookingSegments.some(
+          (bookingSegment) =>
+            bookingSegment.dayOffset === requestSegment.dayOffset &&
+            this.intervalsOverlapMinutes(
+              requestSegment.startMin,
+              requestSegment.endMin,
+              bookingSegment.startMin,
+              bookingSegment.endMin,
+            ),
+        );
+        if (hasOverlap) {
+          busy.add(`${item.courtKind}:${item.courtId}`);
+          break;
+        }
       }
     }
     return busy;
@@ -619,6 +681,7 @@ export class BusinessesService {
     const { status: nextStatus, isActive: nextIsActive } =
       this.normalizeLocationStatus(dto.status);
     const logoTrimmed = dto.logo?.trim();
+    const bannerImageTrimmed = dto.bannerImage?.trim();
     const galleryList =
       dto.gallery === undefined
         ? []
@@ -641,6 +704,10 @@ export class BusinessesService {
       timezone: sourceTimezone,
       currency: sourceCurrency ?? 'PKR',
       logo: logoTrimmed && logoTrimmed.length > 0 ? logoTrimmed : null,
+      bannerImage:
+        bannerImageTrimmed && bannerImageTrimmed.length > 0
+          ? bannerImageTrimmed
+          : null,
       gallery: galleryList,
       status: nextStatus,
       isActive: nextIsActive,
@@ -809,6 +876,10 @@ export class BusinessesService {
     if (dto.logo !== undefined) {
       const t = dto.logo.trim();
       location.logo = t.length > 0 ? t : null;
+    }
+    if (dto.bannerImage !== undefined) {
+      const t = dto.bannerImage.trim();
+      location.bannerImage = t.length > 0 ? t : null;
     }
     if (dto.gallery !== undefined) {
       location.gallery = dto.gallery

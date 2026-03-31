@@ -148,6 +148,11 @@ export class UpdateBusinessLocationDto {
   logo?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  bannerImage?: string;
+
+  @IsOptional()
   @IsArray()
   @IsString({ each: true })
   @MaxLength(2048, { each: true })

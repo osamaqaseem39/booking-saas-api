@@ -45,11 +45,51 @@ export class IamService implements OnModuleInit {
     };
   }
 
-  async listUsers() {
-    const users = await this.usersRepository.find({
-      order: { createdAt: 'DESC' },
+  async listUsers(input?: {
+    search?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  }) {
+    const businessRoles: SystemRole[] = ['business-admin', 'business-staff'];
+    const businessRoleRows = await this.userRolesRepository.find({
+      where: { roleCode: In(businessRoles) },
     });
-    const userRoles = await this.userRolesRepository.find();
+    const businessUserIds = [...new Set(businessRoleRows.map((r) => r.userId))];
+    if (businessUserIds.length === 0) return [];
+
+    const search = (input?.search ?? '').trim().toLowerCase();
+    const sortByInput = (input?.sortBy ?? '').trim().toLowerCase();
+    const sortOrderInput = (input?.sortOrder ?? '').trim().toUpperCase();
+
+    const sortBy =
+      sortByInput === 'fullname'
+        ? 'fullName'
+        : sortByInput === 'email'
+          ? 'email'
+          : sortByInput === 'createdat'
+            ? 'createdAt'
+            : 'createdAt';
+    const sortOrder = sortOrderInput === 'ASC' || sortOrderInput === 'DESC' ? sortOrderInput : 'DESC';
+
+    const query = this.usersRepository
+      .createQueryBuilder('user')
+      .where('user.id IN (:...ids)', { ids: businessUserIds });
+
+    if (search) {
+      query.andWhere(
+        '(LOWER(user.fullName) LIKE :search OR LOWER(user.email) LIKE :search OR LOWER(COALESCE(user.phone, \'\')) LIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    query.orderBy(`user.${sortBy}`, sortOrder as 'ASC' | 'DESC');
+    const users = await query.getMany();
+    const userIds = users.map((u) => u.id);
+    if (userIds.length === 0) return [];
+
+    const userRoles = await this.userRolesRepository.find({
+      where: { userId: In(userIds) },
+    });
     return users.map((user) => ({
       ...user,
       roles: userRoles

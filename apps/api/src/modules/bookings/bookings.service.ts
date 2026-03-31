@@ -73,6 +73,42 @@ export type BookingApiRow = {
   updatedAt: string;
 };
 
+type CourtOptionRow = {
+  kind: CourtKind;
+  id: string;
+  name: string;
+};
+
+export type BookingAvailabilityApiRow = {
+  date: string;
+  startTime: string;
+  endTime: string;
+  sportType?: BookingSportType;
+  availableCourts: CourtOptionRow[];
+  bookedSlots: Array<{
+    kind: CourtKind;
+    courtId: string;
+    startTime: string;
+    endTime: string;
+    bookingId: string;
+    itemId: string;
+    status: BookingItemStatus;
+  }>;
+};
+
+export type CourtSlotsApiRow = {
+  date: string;
+  kind: CourtKind;
+  courtId: string;
+  slots: Array<{
+    startTime: string;
+    endTime: string;
+    bookingId: string;
+    itemId: string;
+    status: BookingItemStatus;
+  }>;
+};
+
 @Injectable()
 export class BookingsService {
   constructor(
@@ -257,6 +293,71 @@ export class BookingsService {
     return this.getOne(tenantId, bookingId);
   }
 
+  async getAvailabilityByTime(
+    tenantId: string,
+    params: {
+      date: string;
+      startTime: string;
+      endTime: string;
+      sportType?: BookingSportType;
+    },
+  ): Promise<BookingAvailabilityApiRow> {
+    const dateOnly = formatDateOnly(params.date);
+    const courts = await this.listCourtsBySport(tenantId, params.sportType);
+    const courtByKey = new Set(courts.map((c) => `${c.kind}:${c.id}`));
+    const items = await this.listBookedItemsForDate(tenantId, dateOnly);
+    const overlapping = items.filter(
+      (it) =>
+        this.timesOverlap(
+          params.startTime,
+          params.endTime,
+          it.startTime,
+          it.endTime,
+        ) && courtByKey.has(`${it.courtKind}:${it.courtId}`),
+    );
+    const blocked = new Set(overlapping.map((it) => `${it.courtKind}:${it.courtId}`));
+    return {
+      date: dateOnly,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      sportType: params.sportType,
+      availableCourts: courts.filter((c) => !blocked.has(`${c.kind}:${c.id}`)),
+      bookedSlots: overlapping.map((it) => ({
+        kind: it.courtKind,
+        courtId: it.courtId,
+        startTime: it.startTime,
+        endTime: it.endTime,
+        bookingId: it.bookingId,
+        itemId: it.id,
+        status: it.itemStatus,
+      })),
+    };
+  }
+
+  async getCourtSlots(
+    tenantId: string,
+    params: { kind: CourtKind; courtId: string; date: string },
+  ): Promise<CourtSlotsApiRow> {
+    const dateOnly = formatDateOnly(params.date);
+    const rows = await this.listBookedItemsForDate(tenantId, dateOnly);
+    const slots = rows
+      .filter((it) => it.courtKind === params.kind && it.courtId === params.courtId)
+      .map((it) => ({
+        startTime: it.startTime,
+        endTime: it.endTime,
+        bookingId: it.bookingId,
+        itemId: it.id,
+        status: it.itemStatus,
+      }))
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+    return {
+      date: dateOnly,
+      kind: params.kind,
+      courtId: params.courtId,
+      slots,
+    };
+  }
+
   private async assertCourtValidForSport(
     tenantId: string,
     sport: BookingSportType,
@@ -344,5 +445,109 @@ export class BookingsService {
         break;
       }
     }
+  }
+
+  private async listCourtsBySport(
+    tenantId: string,
+    sport?: BookingSportType,
+  ): Promise<CourtOptionRow[]> {
+    const out: CourtOptionRow[] = [];
+    if (!sport || sport === 'futsal') {
+      const [turf, futsal] = await Promise.all([
+        this.turfRepo.find({
+          where: { tenantId, courtStatus: 'active', supportsFutsal: true },
+          select: ['id', 'name'],
+        }),
+        this.futsalRepo.find({
+          where: { tenantId, isActive: true },
+          select: ['id', 'name'],
+        }),
+      ]);
+      out.push(
+        ...turf.map((r) => ({ kind: 'turf_court' as const, id: r.id, name: r.name })),
+      );
+      out.push(
+        ...futsal.map((r) => ({
+          kind: 'futsal_field' as const,
+          id: r.id,
+          name: r.name,
+        })),
+      );
+    }
+    if (!sport || sport === 'cricket') {
+      const [turf, indoor] = await Promise.all([
+        this.turfRepo.find({
+          where: { tenantId, courtStatus: 'active', supportsCricket: true },
+          select: ['id', 'name'],
+        }),
+        this.cricketRepo.find({
+          where: { tenantId, isActive: true },
+          select: ['id', 'name'],
+        }),
+      ]);
+      out.push(
+        ...turf.map((r) => ({ kind: 'turf_court' as const, id: r.id, name: r.name })),
+      );
+      out.push(
+        ...indoor.map((r) => ({
+          kind: 'cricket_indoor_court' as const,
+          id: r.id,
+          name: r.name,
+        })),
+      );
+    }
+    if (!sport || sport === 'padel') {
+      const rows = await this.padelRepo.find({
+        where: { tenantId, isActive: true, courtStatus: 'active' },
+        select: ['id', 'name'],
+      });
+      out.push(
+        ...rows.map((r) => ({ kind: 'padel_court' as const, id: r.id, name: r.name })),
+      );
+    }
+    const seen = new Set<string>();
+    return out.filter((row) => {
+      const key = `${row.kind}:${row.id}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private async listBookedItemsForDate(tenantId: string, dateOnly: string) {
+    return this.bookingRepo
+      .createQueryBuilder('b')
+      .innerJoin('b.items', 'i')
+      .where('b.tenantId = :tenantId', { tenantId })
+      .andWhere('b.bookingDate = :dateOnly', { dateOnly })
+      .andWhere("b.bookingStatus != 'cancelled'")
+      .andWhere("i.itemStatus != 'cancelled'")
+      .select([
+        'b.id AS bookingId',
+        'i.id AS id',
+        'i.courtKind AS courtKind',
+        'i.courtId AS courtId',
+        'i.startTime AS startTime',
+        'i.endTime AS endTime',
+        'i.itemStatus AS itemStatus',
+      ])
+      .getRawMany<{
+        bookingId: string;
+        id: string;
+        courtKind: CourtKind;
+        courtId: string;
+        startTime: string;
+        endTime: string;
+        itemStatus: BookingItemStatus;
+      }>();
+  }
+
+  private timesOverlap(
+    startA: string,
+    endA: string,
+    startB: string,
+    endB: string,
+  ): boolean {
+    return startA < endB && startB < endA;
   }
 }

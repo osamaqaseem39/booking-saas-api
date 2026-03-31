@@ -68,6 +68,10 @@ export class BusinessLocation {
   @Column({ type: 'varchar', length: 2048, nullable: true })
   logo?: string | null;
 
+  /** Banner image URL for this location (e.g. top cover image). */
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  bannerImage?: string | null;
+
   /** Additional image URLs for this location. */
   @Column('text', { array: true, default: '{}' })
   gallery!: string[];
