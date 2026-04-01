@@ -13,6 +13,7 @@ import { IamModule } from './modules/iam/iam.module';
 import { ProductCatalogModule } from './modules/product-catalog/product-catalog.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
+
 function createTypeOrmConfig() {
   const poolMax = Number(process.env.DB_POOL_MAX ?? 2);
   const poolIdleTimeoutMs = Number(process.env.DB_POOL_IDLE_MS ?? 10000);
