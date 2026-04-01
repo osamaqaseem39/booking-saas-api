@@ -37,6 +37,11 @@ function formatDateOnly(d: Date | string): string {
   return String(d).slice(0, 10);
 }
 
+function isPastDate(dateOnly: string): boolean {
+  const today = new Date().toISOString().slice(0, 10);
+  return dateOnly < today;
+}
+
 function toMinutes(time: string): number {
   const [hRaw, mRaw] = time.split(':');
   const h = Number(hRaw || 0);
@@ -118,6 +123,16 @@ export type CourtSlotsApiRow = {
 
 @Injectable()
 export class BookingsService {
+  private effectiveStatus(booking: Booking): BookingStatus {
+    const current = booking.bookingStatus;
+    if (current === 'cancelled' || current === 'completed' || current === 'no_show') {
+      return current;
+    }
+    const bookingDay = formatDateOnly(booking.bookingDate);
+    if (isPastDate(bookingDay)) return 'completed';
+    return current;
+  }
+
   constructor(
     @InjectRepository(Booking)
     private readonly bookingRepo: Repository<Booking>,
@@ -163,7 +178,7 @@ export class BookingsService {
         transactionId: booking.transactionId,
         paidAt: booking.paidAt?.toISOString(),
       },
-      bookingStatus: booking.bookingStatus,
+      bookingStatus: this.effectiveStatus(booking),
       notes: booking.notes,
       cancellationReason: booking.cancellationReason,
       createdAt: booking.createdAt.toISOString(),
