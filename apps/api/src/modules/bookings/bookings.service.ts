@@ -22,7 +22,9 @@ import type {
 import type { CreateBookingDto } from './dto/create-booking.dto';
 import type { CreateBookingItemDto } from './dto/create-booking-item.dto';
 import type { UpdateBookingDto } from './dto/update-booking.dto';
+import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { Booking } from './entities/booking.entity';
+import { getWorkingDayWindow } from './working-hours.util';
 
 function dec(n: number): string {
   return Number(n).toFixed(2);
@@ -47,6 +49,13 @@ function toMinutes(time: string): number {
   const h = Number(hRaw || 0);
   const m = Number(mRaw || 0);
   return h * 60 + m;
+}
+
+function minutesToTimeString(m: number): string {
+  if (m >= 24 * 60) return '24:00';
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
 export type BookingApiRow = {
@@ -121,6 +130,38 @@ export type CourtSlotsApiRow = {
   }>;
 };
 
+export type CourtSlotGridSegment =
+  | {
+      startTime: string;
+      endTime: string;
+      state: 'free';
+    }
+  | {
+      startTime: string;
+      endTime: string;
+      state: 'booked';
+      bookingId: string;
+      itemId: string;
+      status: BookingItemStatus;
+    };
+
+export type CourtSlotGridApiRow = {
+  date: string;
+  kind: CourtKind;
+  courtId: string;
+  segmentMinutes: 30;
+  /** Effective grid window (aligned to 30-minute boundaries). */
+  gridStartTime: string;
+  gridEndTime: string;
+  /** Set when `useWorkingHours=true` and location hours were applied. */
+  workingHoursApplied?: boolean;
+  /** Set when the venue is closed for `date` per working hours. */
+  locationClosed?: boolean;
+  /** When true, `segments` only lists free slots (booked intervals omitted). */
+  availableOnly?: boolean;
+  segments: CourtSlotGridSegment[];
+};
+
 @Injectable()
 export class BookingsService {
   private effectiveStatus(booking: Booking): BookingStatus {
@@ -146,6 +187,8 @@ export class BookingsService {
     private readonly padelRepo: Repository<PadelCourt>,
     @InjectRepository(CricketIndoorCourt)
     private readonly cricketRepo: Repository<CricketIndoorCourt>,
+    @InjectRepository(BusinessLocation)
+    private readonly locationRepo: Repository<BusinessLocation>,
   ) {}
 
   private toApi(booking: Booking): BookingApiRow {
@@ -379,6 +422,198 @@ export class BookingsService {
       courtId: params.courtId,
       slots,
     };
+  }
+
+  /**
+   * Full-day (or window) timeline in fixed 30-minute segments for one facility/court.
+   * Use `useWorkingHours` to align the grid to the location's hours; use `availableOnly`
+   * to return only bookable (free) segments for pickers.
+   */
+  async getCourtSlotGrid(
+    tenantId: string,
+    params: {
+      kind: CourtKind;
+      courtId: string;
+      date: string;
+      startTime?: string;
+      endTime?: string;
+      useWorkingHours?: boolean;
+      availableOnly?: boolean;
+    },
+  ): Promise<CourtSlotGridApiRow> {
+    const dateOnly = formatDateOnly(params.date);
+    let workingHoursApplied = false;
+    let locationClosed = false;
+
+    const explicitWindow =
+      params.startTime !== undefined || params.endTime !== undefined;
+
+    let startT = params.startTime ?? '00:00';
+    let endT = params.endTime ?? '24:00';
+
+    if (!explicitWindow && params.useWorkingHours) {
+      const locId = await this.getBusinessLocationIdForCourt(
+        tenantId,
+        params.kind,
+        params.courtId,
+      );
+      if (locId) {
+        const loc = await this.locationRepo.findOne({
+          where: { id: locId },
+          select: ['id', 'workingHours'],
+        });
+        if (loc?.workingHours && typeof loc.workingHours === 'object') {
+          const win = getWorkingDayWindow(
+            loc.workingHours as Record<string, unknown>,
+            dateOnly,
+          );
+          workingHoursApplied = true;
+          if (win.closed) {
+            locationClosed = true;
+            return {
+              date: dateOnly,
+              kind: params.kind,
+              courtId: params.courtId,
+              segmentMinutes: 30,
+              gridStartTime: win.open,
+              gridEndTime: win.close,
+              workingHoursApplied,
+              locationClosed,
+              availableOnly: params.availableOnly,
+              segments: [],
+            };
+          }
+          startT = win.open;
+          endT = win.close === '24:00' ? '24:00' : win.close;
+        }
+      }
+    }
+
+    const { startMin, endMin } = this.parseSlotGridWindow(startT, endT);
+
+    const rows = await this.listBookedItemsForDate(tenantId, dateOnly);
+    const bookings = rows
+      .filter((it) => it.courtKind === params.kind && it.courtId === params.courtId)
+      .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    const segments: CourtSlotGridSegment[] = [];
+    for (let segStart = startMin; segStart < endMin; segStart += 30) {
+      const segEnd = segStart + 30;
+      const overlap = bookings.find((b) =>
+        this.segmentOverlapsMinutes(
+          segStart,
+          segEnd,
+          b.startTime,
+          b.endTime,
+        ),
+      );
+      if (overlap) {
+        segments.push({
+          startTime: minutesToTimeString(segStart),
+          endTime: minutesToTimeString(segEnd),
+          state: 'booked',
+          bookingId: overlap.bookingId,
+          itemId: overlap.id,
+          status: overlap.itemStatus,
+        });
+      } else {
+        segments.push({
+          startTime: minutesToTimeString(segStart),
+          endTime: minutesToTimeString(segEnd),
+          state: 'free',
+        });
+      }
+    }
+
+    const filtered =
+      params.availableOnly === true
+        ? segments.filter((s) => s.state === 'free')
+        : segments;
+
+    return {
+      date: dateOnly,
+      kind: params.kind,
+      courtId: params.courtId,
+      segmentMinutes: 30,
+      gridStartTime: minutesToTimeString(startMin),
+      gridEndTime: minutesToTimeString(endMin),
+      workingHoursApplied: workingHoursApplied || undefined,
+      locationClosed: locationClosed || undefined,
+      availableOnly: params.availableOnly || undefined,
+      segments: filtered,
+    };
+  }
+
+  private async getBusinessLocationIdForCourt(
+    tenantId: string,
+    kind: CourtKind,
+    courtId: string,
+  ): Promise<string | null> {
+    switch (kind) {
+      case 'turf_court': {
+        const row = await this.turfRepo.findOne({
+          where: { id: courtId, tenantId },
+          select: ['businessLocationId'],
+        });
+        return row?.businessLocationId ?? null;
+      }
+      case 'futsal_field': {
+        const row = await this.futsalRepo.findOne({
+          where: { id: courtId, tenantId },
+          select: ['businessLocationId'],
+        });
+        return row?.businessLocationId ?? null;
+      }
+      case 'padel_court': {
+        const row = await this.padelRepo.findOne({
+          where: { id: courtId, tenantId },
+          select: ['businessLocationId'],
+        });
+        return row?.businessLocationId ?? null;
+      }
+      case 'cricket_indoor_court': {
+        const row = await this.cricketRepo.findOne({
+          where: { id: courtId, tenantId },
+          select: ['businessLocationId'],
+        });
+        return row?.businessLocationId ?? null;
+      }
+      default:
+        return null;
+    }
+  }
+
+  private parseSlotGridWindow(
+    startTime: string,
+    endTime: string,
+  ): { startMin: number; endMin: number } {
+    const startMin = toMinutes(startTime);
+    const endMin = endTime === '24:00' ? 24 * 60 : toMinutes(endTime);
+    if (endMin <= startMin) {
+      throw new BadRequestException('endTime must be after startTime');
+    }
+    if (startMin % 30 !== 0 || endMin % 30 !== 0) {
+      throw new BadRequestException(
+        'startTime and endTime must be on 30-minute boundaries',
+      );
+    }
+    if ((endMin - startMin) % 30 !== 0) {
+      throw new BadRequestException(
+        'Grid window length must be a multiple of 30 minutes',
+      );
+    }
+    return { startMin, endMin };
+  }
+
+  private segmentOverlapsMinutes(
+    segStartMin: number,
+    segEndMin: number,
+    bookingStart: string,
+    bookingEnd: string,
+  ): boolean {
+    const bStart = toMinutes(bookingStart);
+    const bEnd = toMinutes(bookingEnd);
+    return segStartMin < bEnd && bStart < segEndMin;
   }
 
   private async assertCourtValidForSport(

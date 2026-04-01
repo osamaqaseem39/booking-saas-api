@@ -9,6 +9,7 @@ import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
 import { BookingItem } from './entities/booking-item.entity';
 import { Booking } from './entities/booking.entity';
+import { BusinessLocation } from '../businesses/entities/business-location.entity';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { Booking } from './entities/booking.entity';
       FutsalField,
       PadelCourt,
       CricketIndoorCourt,
+      BusinessLocation,
     ]),
   ],
   controllers: [BookingsController],

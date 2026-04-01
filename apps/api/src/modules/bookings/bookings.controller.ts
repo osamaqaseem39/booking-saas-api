@@ -12,6 +12,7 @@ import {
 import { isUUID } from 'class-validator';
 import { COURT_KINDS, type CourtKind } from './booking.types';
 import { BookingAvailabilityQueryDto } from './dto/booking-availability-query.dto';
+import { CourtSlotGridQueryDto } from './dto/court-slot-grid-query.dto';
 import { CourtSlotsQueryDto } from './dto/court-slots-query.dto';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
@@ -90,6 +91,41 @@ export class BookingsController {
       kind: courtKind as CourtKind,
       courtId,
       date: query.date,
+    });
+  }
+
+  @Get('courts/:courtKind/:courtId/slot-grid')
+  courtSlotGrid(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('courtKind') courtKind: string,
+    @Param('courtId', ParseUUIDPipe) courtId: string,
+    @Query() query: CourtSlotGridQueryDto,
+  ) {
+    if (!COURT_KINDS.includes(courtKind as CourtKind)) {
+      throw new BadRequestException(
+        `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
+      );
+    }
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      return {
+        date: query.date,
+        kind: courtKind as CourtKind,
+        courtId,
+        segmentMinutes: 30 as const,
+        gridStartTime: query.startTime ?? '00:00',
+        gridEndTime: query.endTime ?? '24:00',
+        segments: [],
+      };
+    }
+    return this.bookingsService.getCourtSlotGrid(tenantId, {
+      kind: courtKind as CourtKind,
+      courtId,
+      date: query.date,
+      startTime: query.startTime,
+      endTime: query.endTime,
+      useWorkingHours: query.useWorkingHours === 'true',
+      availableOnly: query.availableOnly === 'true',
     });
   }
 
