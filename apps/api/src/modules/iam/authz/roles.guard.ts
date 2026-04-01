@@ -34,6 +34,12 @@ export class RolesGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest<Request>();
+    const requestMethod = request.method?.toUpperCase();
+    const rolesToCheck =
+      requestMethod === 'GET' &&
+      !requiredRoles.includes('customer-end-user')
+        ? [...requiredRoles, 'customer-end-user']
+        : requiredRoles;
     const authHeader = request.header('Authorization')?.trim();
     let userId: string | undefined;
 
@@ -71,7 +77,7 @@ export class RolesGuard implements CanActivate {
     // Attach for downstream controllers.
     (request as Request & { userId?: string }).userId = userId;
 
-    const allowed = await this.iamService.hasAnyRole(userId, requiredRoles);
+    const allowed = await this.iamService.hasAnyRole(userId, rolesToCheck);
     if (!allowed) {
       throw new ForbiddenException(
         `User ${userId} does not have required role for this endpoint`,

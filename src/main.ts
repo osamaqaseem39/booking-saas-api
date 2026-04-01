@@ -150,6 +150,10 @@ async function bootstrap() {
           `);
           await dataSource.query(`
             ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "bannerImage" varchar(2048)
+          `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
             ADD COLUMN IF NOT EXISTS "gallery" text[] NOT NULL DEFAULT '{}'
           `);
           // Ensure booking tables exist even if migration history is out of sync.
