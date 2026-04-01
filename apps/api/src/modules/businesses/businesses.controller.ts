@@ -54,25 +54,21 @@ export class BusinessesController {
   }
 
   @Get('locations')
-  @Roles('platform-owner', 'business-admin', 'customer-end-user')
   async listLocations() {
     return this.businessesService.listAllLocationsPublic();
   }
 
   @Get('locations/cities')
-  @Roles('platform-owner', 'business-admin', 'customer-end-user')
   async listLocationCities(@Query() dto: ListLocationCitiesDto) {
     return this.businessesService.listLocationCitiesPublic(dto);
   }
 
   @Get('locations/location-types')
-  @Roles('platform-owner', 'business-admin', 'customer-end-user')
   async listLocationTypes() {
     return this.businessesService.listLocationTypesPublic();
   }
 
   @Get('locations/search')
-  @Roles('platform-owner', 'business-admin', 'customer-end-user')
   async searchLocations(@Query() dto: SearchLocationsQueryDto) {
     return this.businessesService.searchLocationsPublic(dto);
   }

@@ -66,7 +66,12 @@ export class RolesGuard implements CanActivate {
       }
     }
 
-    if (!userId) {
+    // Security: do not trust spoofable identity headers in normal environments.
+    // Keep an explicit opt-in for local/dev troubleshooting only.
+    const allowHeaderUserId =
+      process.env.ALLOW_INSECURE_USER_ID_HEADER === 'true' ||
+      process.env.ALLOW_INSECURE_USER_ID_HEADER === '1';
+    if (!userId && allowHeaderUserId) {
       userId = request.header('x-user-id')?.trim();
     }
 
