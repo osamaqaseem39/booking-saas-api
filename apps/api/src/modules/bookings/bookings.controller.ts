@@ -23,9 +23,14 @@ import { UpdateBookingDto } from './dto/update-booking.dto';
 export class BookingsController {
   constructor(private readonly bookingsService: BookingsService) {}
 
-  private requireTenantUuid(tenant: TenantContext): string {
+  private getTenantUuidOrNull(tenant: TenantContext): string | null {
     const tenantId = tenant?.tenantId?.trim() ?? '';
-    if (!isUUID(tenantId, 4)) {
+    return isUUID(tenantId, 4) ? tenantId : null;
+  }
+
+  private requireTenantUuid(tenant: TenantContext): string {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
       throw new BadRequestException(
         'Valid X-Tenant-Id UUID is required for bookings endpoints',
       );
@@ -43,8 +48,19 @@ export class BookingsController {
     @CurrentTenant() tenant: TenantContext,
     @Query() query: BookingAvailabilityQueryDto,
   ) {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      return {
+        date: query.date,
+        startTime: query.startTime,
+        endTime: query.endTime,
+        sportType: query.sportType,
+        availableCourts: [],
+        bookedSlots: [],
+      };
+    }
     return this.bookingsService.getAvailabilityByTime(
-      this.requireTenantUuid(tenant),
+      tenantId,
       query,
     );
   }
@@ -61,7 +77,16 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
-    return this.bookingsService.getCourtSlots(this.requireTenantUuid(tenant), {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      return {
+        date: query.date,
+        kind: courtKind as CourtKind,
+        courtId,
+        slots: [],
+      };
+    }
+    return this.bookingsService.getCourtSlots(tenantId, {
       kind: courtKind as CourtKind,
       courtId,
       date: query.date,
