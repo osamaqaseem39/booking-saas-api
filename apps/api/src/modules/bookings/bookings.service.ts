@@ -37,6 +37,13 @@ function formatDateOnly(d: Date | string): string {
   return String(d).slice(0, 10);
 }
 
+function toMinutes(time: string): number {
+  const [hRaw, mRaw] = time.split(':');
+  const h = Number(hRaw || 0);
+  const m = Number(mRaw || 0);
+  return h * 60 + m;
+}
+
 export type BookingApiRow = {
   bookingId: string;
   arenaId: string;
@@ -194,6 +201,7 @@ export class BookingsService {
     }
 
     for (const item of dto.items) {
+      this.assertFutureHalfHourBooking(dto.bookingDate, item);
       await this.assertCourtValidForSport(tenantId, dto.sportType, item);
     }
 
@@ -549,5 +557,37 @@ export class BookingsService {
     endB: string,
   ): boolean {
     return startA < endB && startB < endA;
+  }
+
+  private assertFutureHalfHourBooking(
+    bookingDate: string,
+    item: CreateBookingItemDto,
+  ): void {
+    const startMins = toMinutes(item.startTime);
+    const endMins = toMinutes(item.endTime);
+    if (endMins <= startMins) {
+      throw new BadRequestException('endTime must be after startTime');
+    }
+
+    const duration = endMins - startMins;
+    if (duration < 30) {
+      throw new BadRequestException('Booking duration must be at least 30 minutes');
+    }
+    if (startMins % 30 !== 0 || endMins % 30 !== 0 || duration % 30 !== 0) {
+      throw new BadRequestException(
+        'startTime/endTime must be on 30-minute intervals',
+      );
+    }
+
+    const startAt = new Date(`${bookingDate}T${item.startTime}:00`);
+    if (Number.isNaN(startAt.getTime())) {
+      throw new BadRequestException('Invalid bookingDate/startTime');
+    }
+    const minStart = new Date(Date.now() + 30 * 60 * 1000);
+    if (startAt.getTime() < minStart.getTime()) {
+      throw new BadRequestException(
+        'Bookings must be scheduled at least 30 minutes in the future',
+      );
+    }
   }
 }
