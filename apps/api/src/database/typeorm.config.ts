@@ -14,9 +14,12 @@ import { UserRole } from '../modules/iam/entities/user-role.entity';
 import { User } from '../modules/iam/entities/user.entity';
 
 function createTypeOrmOptions(): DataSourceOptions {
-  const poolMax = Number(process.env.DB_POOL_MAX ?? 1);
-  const poolIdleTimeoutMs = Number(process.env.DB_POOL_IDLE_MS ?? 10000);
-  const poolConnectTimeoutMs = Number(process.env.DB_POOL_CONNECT_MS ?? 10000);
+  const poolMax = toPositiveInt(process.env.DB_POOL_MAX, 1);
+  const poolIdleTimeoutMs = toPositiveInt(process.env.DB_POOL_IDLE_MS, 10000);
+  const poolConnectTimeoutMs = toPositiveInt(
+    process.env.DB_POOL_CONNECT_MS,
+    10000,
+  );
   const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
   if (url) {
     const parsed = new URL(url);
@@ -31,6 +34,7 @@ function createTypeOrmOptions(): DataSourceOptions {
       ssl: sslMode === 'require' ? { rejectUnauthorized: false } : false,
       extra: {
         max: poolMax,
+        min: 0,
         idleTimeoutMillis: poolIdleTimeoutMs,
         connectionTimeoutMillis: poolConnectTimeoutMs,
       },
@@ -49,10 +53,19 @@ function createTypeOrmOptions(): DataSourceOptions {
       process.env.DB_NAME ?? process.env.POSTGRES_DATABASE ?? 'backend_saas',
     extra: {
       max: poolMax,
+      min: 0,
       idleTimeoutMillis: poolIdleTimeoutMs,
       connectionTimeoutMillis: poolConnectTimeoutMs,
     },
   };
+}
+
+function toPositiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return fallback;
+  }
+  return Math.floor(parsed);
 }
 
 export const typeOrmOptions: DataSourceOptions = {

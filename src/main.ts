@@ -6,26 +6,35 @@ import dataSource from '../apps/api/src/database/typeorm.config';
 
 let cachedApp: NestExpressApplication;
 let migrationsPromise: Promise<void> | undefined;
+let bootstrapPromise: Promise<NestExpressApplication> | undefined;
 
 async function bootstrap() {
-  if (!cachedApp) {
-    // Running startup migrations in serverless can cause connection spikes.
-    // Keep this off by default and enable only when explicitly requested.
-    const runStartupMigrations =
-      (process.env.RUN_STARTUP_MIGRATIONS ?? 'false').toLowerCase() === 'true';
-    if (runStartupMigrations && !migrationsPromise) {
-      migrationsPromise = (async () => {
-        try {
-          await dataSource.initialize();
-          // Run migrations first (normal/expected path).
-          await dataSource.runMigrations();
+  if (cachedApp) {
+    return cachedApp.getHttpAdapter().getInstance();
+  }
 
-          // Fallback: in some deployments, the migration table can get out of
-          // sync with the actual schema. Ensure the core IAM tables exist
-          // so bootstrapping (and `/auth/login`) doesn't crash.
-          await dataSource.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
+  // Cold starts can receive concurrent requests. Ensure only one bootstrap path
+  // creates the Nest app (and the DB pool) at a time.
+  if (!bootstrapPromise) {
+    bootstrapPromise = (async () => {
+      // Running startup migrations in serverless can cause connection spikes.
+      // Keep this off by default and enable only when explicitly requested.
+      const runStartupMigrations =
+        (process.env.RUN_STARTUP_MIGRATIONS ?? 'false').toLowerCase() ===
+        'true';
+      if (runStartupMigrations && !migrationsPromise) {
+        migrationsPromise = (async () => {
+          try {
+            await dataSource.initialize();
+            // Run migrations first (normal/expected path).
+            await dataSource.runMigrations();
 
-          await dataSource.query(`
+            // Fallback: in some deployments, the migration table can get out of
+            // sync with the actual schema. Ensure the core IAM tables exist
+            // so bootstrapping (and `/auth/login`) doesn't crash.
+            await dataSource.query(`CREATE EXTENSION IF NOT EXISTS "pgcrypto";`);
+
+            await dataSource.query(`
             CREATE TABLE IF NOT EXISTS "users" (
               "id" uuid PRIMARY KEY DEFAULT gen_random_uuid(),
               "fullName" varchar(150) NOT NULL,
@@ -206,62 +215,69 @@ async function bootstrap() {
               CONSTRAINT "fk_booking_items_booking" FOREIGN KEY ("bookingId") REFERENCES "bookings"("id") ON DELETE CASCADE
             );
           `);
-          await dataSource.query(`
+            await dataSource.query(`
             CREATE INDEX IF NOT EXISTS "idx_booking_items_booking" ON "booking_items" ("bookingId")
           `);
-        } finally {
-          // Always close the connection to avoid keeping serverless sockets open.
-          if (dataSource.isInitialized) {
-            await dataSource.destroy();
+          } finally {
+            // Always close the connection to avoid keeping serverless sockets open.
+            if (dataSource.isInitialized) {
+              await dataSource.destroy();
+            }
           }
-        }
-      })();
-    }
-    if (migrationsPromise) {
-      await migrationsPromise;
-    } else if (!(globalThis as any).__startupMigrationLogOnce) {
-      (globalThis as any).__startupMigrationLogOnce = true;
-      console.log('[DB] startup migrations skipped (RUN_STARTUP_MIGRATIONS=false)');
-    }
+        })();
+      }
+      if (migrationsPromise) {
+        await migrationsPromise;
+      } else if (!(globalThis as any).__startupMigrationLogOnce) {
+        (globalThis as any).__startupMigrationLogOnce = true;
+        console.log(
+          '[DB] startup migrations skipped (RUN_STARTUP_MIGRATIONS=false)',
+        );
+      }
 
-    cachedApp = await NestFactory.create<NestExpressApplication>(AppModule);
+      cachedApp = await NestFactory.create<NestExpressApplication>(AppModule);
 
-    cachedApp.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-      }),
-    );
+      cachedApp.useGlobalPipes(
+        new ValidationPipe({
+          whitelist: true,
+          forbidNonWhitelisted: true,
+          transform: true,
+          transformOptions: {
+            enableImplicitConversion: true,
+          },
+        }),
+      );
 
-    // Match the working Vercel entrypoint pattern:
-    // enable CORS before init, so preflight OPTIONS gets CORS headers.
-    cachedApp.enableCors({
-      // Keep it open in this phase to prevent CORS-related 500s
-      // from breaking the browser preflight.
-      origin: true,
-      credentials: true,
-      methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-      allowedHeaders: [
-        'Content-Type',
-        'Authorization',
-        'X-Requested-With',
-        'Accept',
-        'Origin',
-        // Custom app headers (used by your frontend/guards)
-        'X-User-Id',
-        'X-Tenant-Id',
-      ],
-      exposedHeaders: ['Content-Range', 'X-Total-Count'],
-      maxAge: 600,
+      // Match the working Vercel entrypoint pattern:
+      // enable CORS before init, so preflight OPTIONS gets CORS headers.
+      cachedApp.enableCors({
+        // Keep it open in this phase to prevent CORS-related 500s
+        // from breaking the browser preflight.
+        origin: true,
+        credentials: true,
+        methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+        allowedHeaders: [
+          'Content-Type',
+          'Authorization',
+          'X-Requested-With',
+          'Accept',
+          'Origin',
+          // Custom app headers (used by your frontend/guards)
+          'X-User-Id',
+          'X-Tenant-Id',
+        ],
+        exposedHeaders: ['Content-Range', 'X-Total-Count'],
+        maxAge: 600,
+      });
+
+      await cachedApp.init();
+      return cachedApp;
+    })().finally(() => {
+      bootstrapPromise = undefined;
     });
-
-    await cachedApp.init();
   }
 
+  await bootstrapPromise;
   return cachedApp.getHttpAdapter().getInstance();
 }
 
