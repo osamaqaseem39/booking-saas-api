@@ -14,6 +14,9 @@ import { UserRole } from '../modules/iam/entities/user-role.entity';
 import { User } from '../modules/iam/entities/user.entity';
 
 function createTypeOrmOptions(): DataSourceOptions {
+  const poolMax = Number(process.env.DB_POOL_MAX ?? 2);
+  const poolIdleTimeoutMs = Number(process.env.DB_POOL_IDLE_MS ?? 10000);
+  const poolConnectTimeoutMs = Number(process.env.DB_POOL_CONNECT_MS ?? 10000);
   const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
   if (url) {
     const parsed = new URL(url);
@@ -26,6 +29,11 @@ function createTypeOrmOptions(): DataSourceOptions {
       password: parsed.password,
       database: parsed.pathname.replace(/^\//, ''),
       ssl: sslMode === 'require' ? { rejectUnauthorized: false } : false,
+      extra: {
+        max: poolMax,
+        idleTimeoutMillis: poolIdleTimeoutMs,
+        connectionTimeoutMillis: poolConnectTimeoutMs,
+      },
     };
   }
 
@@ -39,6 +47,11 @@ function createTypeOrmOptions(): DataSourceOptions {
       process.env.DB_PASSWORD ?? process.env.POSTGRES_PASSWORD ?? 'postgres',
     database:
       process.env.DB_NAME ?? process.env.POSTGRES_DATABASE ?? 'backend_saas',
+    extra: {
+      max: poolMax,
+      idleTimeoutMillis: poolIdleTimeoutMs,
+      connectionTimeoutMillis: poolConnectTimeoutMs,
+    },
   };
 }
 

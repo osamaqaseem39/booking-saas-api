@@ -14,6 +14,9 @@ import { ProductCatalogModule } from './modules/product-catalog/product-catalog.
 import { TenancyModule } from './tenancy/tenancy.module';
 
 function createTypeOrmConfig() {
+  const poolMax = Number(process.env.DB_POOL_MAX ?? 2);
+  const poolIdleTimeoutMs = Number(process.env.DB_POOL_IDLE_MS ?? 10000);
+  const poolConnectTimeoutMs = Number(process.env.DB_POOL_CONNECT_MS ?? 10000);
   const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
   if (url) {
     const parsed = new URL(url);
@@ -28,6 +31,11 @@ function createTypeOrmConfig() {
       autoLoadEntities: true,
       synchronize: (process.env.DB_SYNC ?? 'false') === 'true',
       ssl: sslMode === 'require' ? { rejectUnauthorized: false } : false,
+      extra: {
+        max: poolMax,
+        idleTimeoutMillis: poolIdleTimeoutMs,
+        connectionTimeoutMillis: poolConnectTimeoutMs,
+      },
     };
     if (!(globalThis as any).__dbEnvLogged) {
       (globalThis as any).__dbEnvLogged = true;
@@ -61,6 +69,11 @@ function createTypeOrmConfig() {
       process.env.DB_SSL === 'true'
         ? { rejectUnauthorized: false }
         : sslModeFromEnv(),
+    extra: {
+      max: poolMax,
+      idleTimeoutMillis: poolIdleTimeoutMs,
+      connectionTimeoutMillis: poolConnectTimeoutMs,
+    },
   };
   if (!(globalThis as any).__dbEnvLogged) {
     (globalThis as any).__dbEnvLogged = true;
