@@ -8,9 +8,9 @@ let cachedApp: NestExpressApplication | undefined;
 let migrationsPromise: Promise<void> | undefined;
 let bootstrapPromise: Promise<NestExpressApplication> | undefined;
 
-async function bootstrap(): Promise<any> {
+async function getOrCreateApp(): Promise<NestExpressApplication> {
   if (cachedApp) {
-    return cachedApp.getHttpAdapter().getInstance();
+    return cachedApp;
   }
 
   // Cold starts can receive concurrent requests. Ensure only one bootstrap path
@@ -277,11 +277,16 @@ async function bootstrap(): Promise<any> {
     });
   }
 
-  await bootstrapPromise;
-  if (!cachedApp) {
+  const app = await bootstrapPromise;
+  if (!app) {
     throw new Error('Nest application failed to bootstrap');
   }
-  return cachedApp.getHttpAdapter().getInstance();
+  return app;
+}
+
+async function bootstrap(): Promise<any> {
+  const app = await getOrCreateApp();
+  return app.getHttpAdapter().getInstance();
 }
 
 export default async function handler(req: any, res: any): Promise<void> {
