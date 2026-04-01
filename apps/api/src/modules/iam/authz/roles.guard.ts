@@ -35,7 +35,7 @@ export class RolesGuard implements CanActivate {
 
     const request = context.switchToHttp().getRequest<Request>();
     const requestMethod = request.method?.toUpperCase();
-    const rolesToCheck =
+    const rolesToCheck: SystemRole[] =
       requestMethod === 'GET' &&
       !requiredRoles.includes('customer-end-user')
         ? [...requiredRoles, 'customer-end-user']
