@@ -9,6 +9,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { COURT_KINDS, type CourtKind } from './booking.types';
 import { BookingAvailabilityQueryDto } from './dto/booking-availability-query.dto';
 import { CourtSlotsQueryDto } from './dto/court-slots-query.dto';
@@ -22,9 +23,19 @@ import { UpdateBookingDto } from './dto/update-booking.dto';
 export class BookingsController {
   constructor(private readonly bookingsService: BookingsService) {}
 
+  private requireTenantUuid(tenant: TenantContext): string {
+    const tenantId = tenant?.tenantId?.trim() ?? '';
+    if (!isUUID(tenantId, 4)) {
+      throw new BadRequestException(
+        'Valid X-Tenant-Id UUID is required for bookings endpoints',
+      );
+    }
+    return tenantId;
+  }
+
   @Get()
   list(@CurrentTenant() tenant: TenantContext) {
-    return this.bookingsService.list(tenant.tenantId);
+    return this.bookingsService.list(this.requireTenantUuid(tenant));
   }
 
   @Get('availability')
@@ -32,7 +43,10 @@ export class BookingsController {
     @CurrentTenant() tenant: TenantContext,
     @Query() query: BookingAvailabilityQueryDto,
   ) {
-    return this.bookingsService.getAvailabilityByTime(tenant.tenantId, query);
+    return this.bookingsService.getAvailabilityByTime(
+      this.requireTenantUuid(tenant),
+      query,
+    );
   }
 
   @Get('courts/:courtKind/:courtId/slots')
@@ -47,7 +61,7 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
-    return this.bookingsService.getCourtSlots(tenant.tenantId, {
+    return this.bookingsService.getCourtSlots(this.requireTenantUuid(tenant), {
       kind: courtKind as CourtKind,
       courtId,
       date: query.date,
@@ -59,7 +73,7 @@ export class BookingsController {
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
   ) {
-    return this.bookingsService.getOne(tenant.tenantId, bookingId);
+    return this.bookingsService.getOne(this.requireTenantUuid(tenant), bookingId);
   }
 
   @Post()
@@ -67,7 +81,7 @@ export class BookingsController {
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateBookingDto,
   ) {
-    return this.bookingsService.create(tenant.tenantId, dto);
+    return this.bookingsService.create(this.requireTenantUuid(tenant), dto);
   }
 
   @Patch(':bookingId')
@@ -76,6 +90,10 @@ export class BookingsController {
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Body() dto: UpdateBookingDto,
   ) {
-    return this.bookingsService.update(tenant.tenantId, bookingId, dto);
+    return this.bookingsService.update(
+      this.requireTenantUuid(tenant),
+      bookingId,
+      dto,
+    );
   }
 }
