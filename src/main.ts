@@ -4,11 +4,11 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../apps/api/src/app.module';
 import dataSource from '../apps/api/src/database/typeorm.config';
 
-let cachedApp: NestExpressApplication;
+let cachedApp: NestExpressApplication | undefined;
 let migrationsPromise: Promise<void> | undefined;
 let bootstrapPromise: Promise<NestExpressApplication> | undefined;
 
-async function bootstrap() {
+async function bootstrap(): Promise<any> {
   if (cachedApp) {
     return cachedApp.getHttpAdapter().getInstance();
   }
@@ -278,6 +278,9 @@ async function bootstrap() {
   }
 
   await bootstrapPromise;
+  if (!cachedApp) {
+    throw new Error('Nest application failed to bootstrap');
+  }
   return cachedApp.getHttpAdapter().getInstance();
 }
 
