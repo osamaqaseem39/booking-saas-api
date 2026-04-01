@@ -2,7 +2,10 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
+  IsDivisibleBy,
   IsIn,
+  IsInt,
+  Min,
   IsNumber,
   IsOptional,
   IsString,
@@ -209,9 +212,10 @@ export class CreateTurfCourtDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
-  @IsIn([30, 60])
-  slotDurationMinutes?: 30 | 60;
+  @IsInt()
+  @Min(60)
+  @IsDivisibleBy(30)
+  slotDurationMinutes?: number;
 
   @IsOptional()
   @Type(() => Number)

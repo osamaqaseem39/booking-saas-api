@@ -43,6 +43,11 @@ class LocationMetaDto {
   @IsOptional()
   @IsString()
   @MaxLength(400)
+  addressLine?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(400)
   address?: string;
 
   @IsOptional()

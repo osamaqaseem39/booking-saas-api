@@ -668,7 +668,8 @@ export class BusinessesService {
       }
     }
     const sourceName = dto.branchName ?? dto.name ?? 'Unnamed Branch';
-    const sourceAddress = dto.location?.address ?? dto.addressLine;
+    const sourceAddress =
+      dto.location?.addressLine ?? dto.location?.address ?? dto.addressLine;
     const sourceCity = dto.location?.city ?? dto.city;
     const sourceArea = dto.location?.area ?? dto.area;
     const sourceCountry = dto.location?.country ?? dto.country;
@@ -833,8 +834,13 @@ export class BusinessesService {
     }
     if (dto.locationType !== undefined) location.locationType = dto.locationType;
     if (dto.facilityTypes !== undefined) location.facilityTypes = dto.facilityTypes;
-    if (dto.addressLine !== undefined || dto.location?.address !== undefined) {
-      location.addressLine = dto.location?.address ?? dto.addressLine;
+    if (
+      dto.addressLine !== undefined ||
+      dto.location?.addressLine !== undefined ||
+      dto.location?.address !== undefined
+    ) {
+      location.addressLine =
+        dto.location?.addressLine ?? dto.location?.address ?? dto.addressLine;
     }
     if (dto.city !== undefined || dto.location?.city !== undefined) {
       location.city = dto.location?.city ?? dto.city;
