@@ -90,6 +90,7 @@ export const typeOrmOptions: DataSourceOptions = {
 // Helpful in Vercel: confirms env vars are being applied (no secrets logged).
 if (!(globalThis as any).__dbEnvLogged) {
   (globalThis as any).__dbEnvLogged = true;
+  const loggedPoolMax = Number(process.env.DB_POOL_MAX ?? 1);
 
   console.log(
     '[DB] host=',
@@ -99,7 +100,7 @@ if (!(globalThis as any).__dbEnvLogged) {
     'db=',
     process.env.DB_NAME ?? 'backend_saas',
     'poolMax=',
-    poolMax,
+    loggedPoolMax,
   );
 }
 
