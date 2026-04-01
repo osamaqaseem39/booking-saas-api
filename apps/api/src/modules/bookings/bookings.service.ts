@@ -542,7 +542,7 @@ export class BookingsService {
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
-      .andWhere('b.bookingDate = :dateOnly', { dateOnly })
+      .andWhere('DATE(b.bookingDate) = :dateOnly', { dateOnly })
       .andWhere("b.bookingStatus != 'cancelled'")
       .andWhere("i.itemStatus != 'cancelled'")
       .select([
@@ -571,7 +571,11 @@ export class BookingsService {
     startB: string,
     endB: string,
   ): boolean {
-    return startA < endB && startB < endA;
+    const startAMins = toMinutes(startA);
+    const endAMins = toMinutes(endA);
+    const startBMins = toMinutes(startB);
+    const endBMins = toMinutes(endB);
+    return startAMins < endBMins && startBMins < endAMins;
   }
 
   private assertFutureHalfHourBooking(
