@@ -43,25 +43,26 @@ export class BusinessesController {
     return this.businessesService.onboardBusiness(dto);
   }
 
-  /** No auth required; returns all locations for end-user discovery (see listAllLocationsPublic). */
   @Get('locations')
+  @Roles('platform-owner', 'business-admin', 'customer-end-user')
   async listLocations() {
     return this.businessesService.listAllLocationsPublic();
   }
 
   @Get('locations/cities')
+  @Roles('platform-owner', 'business-admin', 'customer-end-user')
   async listLocationCities(@Query() dto: ListLocationCitiesDto) {
     return this.businessesService.listLocationCitiesPublic(dto);
   }
 
-  /** No auth; distinct location types that have at least one active location. */
   @Get('locations/location-types')
+  @Roles('platform-owner', 'business-admin', 'customer-end-user')
   async listLocationTypes() {
     return this.businessesService.listLocationTypesPublic();
   }
 
-  /** Query filters: cities (comma-separated), locationType, bookingStatus=unbooked + date + startTime + endTime. */
   @Get('locations/search')
+  @Roles('platform-owner', 'business-admin', 'customer-end-user')
   async searchLocations(@Query() dto: SearchLocationsQueryDto) {
     return this.businessesService.searchLocationsPublic(dto);
   }
