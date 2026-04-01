@@ -9,9 +9,11 @@ let migrationsPromise: Promise<void> | undefined;
 
 async function bootstrap() {
   if (!cachedApp) {
-    // Ensure DB schema exists before Nest controllers/services run.
-    // This prevents runtime errors like `relation "users" does not exist`.
-    if (!migrationsPromise) {
+    // Running startup migrations in serverless can cause connection spikes.
+    // Keep this off by default and enable only when explicitly requested.
+    const runStartupMigrations =
+      (process.env.RUN_STARTUP_MIGRATIONS ?? 'false').toLowerCase() === 'true';
+    if (runStartupMigrations && !migrationsPromise) {
       migrationsPromise = (async () => {
         try {
           await dataSource.initialize();
@@ -215,7 +217,12 @@ async function bootstrap() {
         }
       })();
     }
-    await migrationsPromise;
+    if (migrationsPromise) {
+      await migrationsPromise;
+    } else if (!(globalThis as any).__startupMigrationLogOnce) {
+      (globalThis as any).__startupMigrationLogOnce = true;
+      console.log('[DB] startup migrations skipped (RUN_STARTUP_MIGRATIONS=false)');
+    }
 
     cachedApp = await NestFactory.create<NestExpressApplication>(AppModule);
 
