@@ -14,7 +14,7 @@ import { UserRole } from '../modules/iam/entities/user-role.entity';
 import { User } from '../modules/iam/entities/user.entity';
 
 function createTypeOrmOptions(): DataSourceOptions {
-  const poolMax = Number(process.env.DB_POOL_MAX ?? 2);
+  const poolMax = Number(process.env.DB_POOL_MAX ?? 1);
   const poolIdleTimeoutMs = Number(process.env.DB_POOL_IDLE_MS ?? 10000);
   const poolConnectTimeoutMs = Number(process.env.DB_POOL_CONNECT_MS ?? 10000);
   const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
@@ -98,6 +98,8 @@ if (!(globalThis as any).__dbEnvLogged) {
     process.env.DB_PORT ?? 5432,
     'db=',
     process.env.DB_NAME ?? 'backend_saas',
+    'poolMax=',
+    poolMax,
   );
 }
 

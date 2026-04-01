@@ -15,7 +15,7 @@ import { TenancyModule } from './tenancy/tenancy.module';
 
 
 function createTypeOrmConfig() {
-  const poolMax = Number(process.env.DB_POOL_MAX ?? 2);
+  const poolMax = Number(process.env.DB_POOL_MAX ?? 1);
   const poolIdleTimeoutMs = Number(process.env.DB_POOL_IDLE_MS ?? 10000);
   const poolConnectTimeoutMs = Number(process.env.DB_POOL_CONNECT_MS ?? 10000);
   const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
@@ -48,6 +48,8 @@ function createTypeOrmConfig() {
         cfg.port,
         'db=',
         cfg.database,
+        'poolMax=',
+        poolMax,
       );
     }
     return cfg;
@@ -80,6 +82,14 @@ function createTypeOrmConfig() {
     (globalThis as any).__dbEnvLogged = true;
 
     console.log('[DB] host=', cfg.host, 'port=', cfg.port, 'db=', cfg.database);
+    console.log(
+      '[DB] poolMax=',
+      poolMax,
+      'idleMs=',
+      poolIdleTimeoutMs,
+      'connectMs=',
+      poolConnectTimeoutMs,
+    );
   }
   return cfg;
 }
