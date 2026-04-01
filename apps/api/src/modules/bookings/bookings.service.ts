@@ -23,6 +23,7 @@ import type { CreateBookingDto } from './dto/create-booking.dto';
 import type { CreateBookingItemDto } from './dto/create-booking-item.dto';
 import type { UpdateBookingDto } from './dto/update-booking.dto';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
+import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { Booking } from './entities/booking.entity';
 import { getWorkingDayWindow } from './working-hours.util';
 
@@ -143,6 +144,11 @@ export type CourtSlotGridSegment =
       bookingId: string;
       itemId: string;
       status: BookingItemStatus;
+    }
+  | {
+      startTime: string;
+      endTime: string;
+      state: 'blocked';
     };
 
 export type CourtSlotGridApiRow = {
@@ -189,6 +195,8 @@ export class BookingsService {
     private readonly cricketRepo: Repository<CricketIndoorCourt>,
     @InjectRepository(BusinessLocation)
     private readonly locationRepo: Repository<BusinessLocation>,
+    @InjectRepository(CourtSlotBookingBlock)
+    private readonly slotBlockRepo: Repository<CourtSlotBookingBlock>,
   ) {}
 
   private toApi(booking: Booking): BookingApiRow {
@@ -261,6 +269,7 @@ export class BookingsService {
     for (const item of dto.items) {
       this.assertFutureHalfHourBooking(dto.bookingDate, item);
       await this.assertCourtValidForSport(tenantId, dto.sportType, item);
+      await this.assertItemSegmentsNotBlocked(tenantId, dto.bookingDate, item);
     }
 
     const paidAt = dto.payment.paidAt
@@ -496,9 +505,17 @@ export class BookingsService {
       .filter((it) => it.courtKind === params.kind && it.courtId === params.courtId)
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
+    const blockedStarts = await this.loadBlockedStartsSet(
+      tenantId,
+      params.kind,
+      params.courtId,
+      dateOnly,
+    );
+
     const segments: CourtSlotGridSegment[] = [];
     for (let segStart = startMin; segStart < endMin; segStart += 30) {
       const segEnd = segStart + 30;
+      const segStartLabel = minutesToTimeString(segStart);
       const overlap = bookings.find((b) =>
         this.segmentOverlapsMinutes(
           segStart,
@@ -509,16 +526,22 @@ export class BookingsService {
       );
       if (overlap) {
         segments.push({
-          startTime: minutesToTimeString(segStart),
+          startTime: segStartLabel,
           endTime: minutesToTimeString(segEnd),
           state: 'booked',
           bookingId: overlap.bookingId,
           itemId: overlap.id,
           status: overlap.itemStatus,
         });
+      } else if (blockedStarts.has(segStartLabel)) {
+        segments.push({
+          startTime: segStartLabel,
+          endTime: minutesToTimeString(segEnd),
+          state: 'blocked',
+        });
       } else {
         segments.push({
-          startTime: minutesToTimeString(segStart),
+          startTime: segStartLabel,
           endTime: minutesToTimeString(segEnd),
           state: 'free',
         });
@@ -542,6 +565,53 @@ export class BookingsService {
       availableOnly: params.availableOnly || undefined,
       segments: filtered,
     };
+  }
+
+  async setCourtSlotBlock(
+    tenantId: string,
+    params: {
+      kind: CourtKind;
+      courtId: string;
+      date: string;
+      startTime: string;
+      blocked: boolean;
+    },
+  ): Promise<{ ok: true }> {
+    const dateOnly = formatDateOnly(params.date);
+    this.assertSlotBlockStartTime(params.startTime);
+    await this.assertCourtExistsForTenant(tenantId, params.kind, params.courtId);
+
+    if (params.blocked) {
+      const existing = await this.slotBlockRepo.findOne({
+        where: {
+          tenantId,
+          courtKind: params.kind,
+          courtId: params.courtId,
+          blockDate: dateOnly,
+          startTime: params.startTime,
+        },
+      });
+      if (!existing) {
+        await this.slotBlockRepo.save(
+          this.slotBlockRepo.create({
+            tenantId,
+            courtKind: params.kind,
+            courtId: params.courtId,
+            blockDate: dateOnly,
+            startTime: params.startTime,
+          }),
+        );
+      }
+    } else {
+      await this.slotBlockRepo.delete({
+        tenantId,
+        courtKind: params.kind,
+        courtId: params.courtId,
+        blockDate: dateOnly,
+        startTime: params.startTime,
+      });
+    }
+    return { ok: true };
   }
 
   private async getBusinessLocationIdForCourt(
@@ -614,6 +684,105 @@ export class BookingsService {
     const bStart = toMinutes(bookingStart);
     const bEnd = toMinutes(bookingEnd);
     return segStartMin < bEnd && bStart < segEndMin;
+  }
+
+  private assertSlotBlockStartTime(time: string): void {
+    const m = toMinutes(time);
+    if (m < 0 || m > 23 * 60 + 30 || m % 30 !== 0) {
+      throw new BadRequestException(
+        'startTime must be a 30-minute slot start between 00:00 and 23:30',
+      );
+    }
+  }
+
+  private async loadBlockedStartsSet(
+    tenantId: string,
+    kind: CourtKind,
+    courtId: string,
+    dateOnly: string,
+  ): Promise<Set<string>> {
+    const rows = await this.slotBlockRepo.find({
+      where: { tenantId, courtKind: kind, courtId, blockDate: dateOnly },
+      select: ['startTime'],
+    });
+    return new Set(rows.map((r) => r.startTime));
+  }
+
+  private async assertItemSegmentsNotBlocked(
+    tenantId: string,
+    bookingDate: string,
+    item: CreateBookingItemDto,
+  ): Promise<void> {
+    const dateOnly = formatDateOnly(bookingDate);
+    const blocked = await this.loadBlockedStartsSet(
+      tenantId,
+      item.courtKind,
+      item.courtId,
+      dateOnly,
+    );
+    const startM = toMinutes(item.startTime);
+    const endM = toMinutes(item.endTime);
+    for (let m = startM; m < endM; m += 30) {
+      const key = minutesToTimeString(m);
+      if (blocked.has(key)) {
+        throw new BadRequestException(
+          `Booking not allowed: ${key} is blocked for this court`,
+        );
+      }
+    }
+  }
+
+  private async assertCourtExistsForTenant(
+    tenantId: string,
+    courtKind: CourtKind,
+    courtId: string,
+  ): Promise<void> {
+    switch (courtKind) {
+      case 'turf_court': {
+        const row = await this.turfRepo.findOne({
+          where: { id: courtId, tenantId },
+        });
+        if (!row) {
+          throw new BadRequestException(
+            `Turf court ${courtId} not found for this tenant`,
+          );
+        }
+        break;
+      }
+      case 'futsal_field': {
+        const row = await this.futsalRepo.findOne({
+          where: { id: courtId, tenantId },
+        });
+        if (!row) {
+          throw new BadRequestException(
+            `Futsal field ${courtId} not found for this tenant`,
+          );
+        }
+        break;
+      }
+      case 'padel_court': {
+        const row = await this.padelRepo.findOne({
+          where: { id: courtId, tenantId },
+        });
+        if (!row) {
+          throw new BadRequestException(
+            `Padel court ${courtId} not found for this tenant`,
+          );
+        }
+        break;
+      }
+      case 'cricket_indoor_court': {
+        const row = await this.cricketRepo.findOne({
+          where: { id: courtId, tenantId },
+        });
+        if (!row) {
+          throw new BadRequestException(
+            `Cricket indoor court ${courtId} not found for this tenant`,
+          );
+        }
+        break;
+      }
+    }
   }
 
   private async assertCourtValidForSport(

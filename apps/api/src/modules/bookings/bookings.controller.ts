@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
@@ -19,6 +20,7 @@ import { TenantContext } from '../../tenancy/tenant-context.interface';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
+import { SetCourtSlotBlockDto } from './dto/set-court-slot-block.dto';
 
 @Controller('bookings')
 export class BookingsController {
@@ -126,6 +128,27 @@ export class BookingsController {
       endTime: query.endTime,
       useWorkingHours: query.useWorkingHours === 'true',
       availableOnly: query.availableOnly === 'true',
+    });
+  }
+
+  @Put('courts/:courtKind/:courtId/slot-blocks')
+  setCourtSlotBlock(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('courtKind') courtKind: string,
+    @Param('courtId', ParseUUIDPipe) courtId: string,
+    @Body() dto: SetCourtSlotBlockDto,
+  ) {
+    if (!COURT_KINDS.includes(courtKind as CourtKind)) {
+      throw new BadRequestException(
+        `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
+      );
+    }
+    return this.bookingsService.setCourtSlotBlock(this.requireTenantUuid(tenant), {
+      kind: courtKind as CourtKind,
+      courtId,
+      date: dto.date,
+      startTime: dto.startTime,
+      blocked: dto.blocked,
     });
   }
 

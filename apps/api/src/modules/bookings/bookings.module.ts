@@ -7,6 +7,7 @@ import { TurfCourt } from '../arena/turf-court/entities/turf-court.entity';
 import { User } from '../iam/entities/user.entity';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
+import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { BookingItem } from './entities/booking-item.entity';
 import { Booking } from './entities/booking.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
@@ -22,6 +23,7 @@ import { BusinessLocation } from '../businesses/entities/business-location.entit
       PadelCourt,
       CricketIndoorCourt,
       BusinessLocation,
+      CourtSlotBookingBlock,
     ]),
   ],
   controllers: [BookingsController],
