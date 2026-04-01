@@ -37,6 +37,16 @@ export class BusinessesController {
     return this.businessesService.listForRequester(userId);
   }
 
+  @Get('dashboard')
+  @Roles('platform-owner', 'business-admin')
+  async dashboard(@Req() req: Request) {
+    const userId = (req as Request & { userId?: string }).userId?.trim();
+    if (!userId) {
+      throw new UnauthorizedException('Missing user');
+    }
+    return this.businessesService.getDashboardView(userId);
+  }
+
   @Post('onboard')
   @Roles('platform-owner')
   async onboard(@Body() dto: CreateBusinessDto) {

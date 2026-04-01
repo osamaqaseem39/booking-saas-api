@@ -13,6 +13,7 @@ import { FutsalField } from '../arena/futsal-field/entities/futsal-field.entity'
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { TurfCourt } from '../arena/turf-court/entities/turf-court.entity';
 import { BookingItem } from '../bookings/entities/booking-item.entity';
+import { Booking } from '../bookings/entities/booking.entity';
 import { IamService } from '../iam/iam.service';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
@@ -45,7 +46,20 @@ export class BusinessesService {
     private readonly cricketIndoorCourtRepository: Repository<CricketIndoorCourt>,
     @InjectRepository(BookingItem)
     private readonly bookingItemRepository: Repository<BookingItem>,
+    @InjectRepository(Booking)
+    private readonly bookingRepository: Repository<Booking>,
   ) {}
+
+  private toNumber(value: unknown): number {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : 0;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number.parseFloat(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    return 0;
+  }
 
   /**
    * API uses `status` as the single write field; `isActive` is derived and kept in sync for queries.
@@ -116,6 +130,188 @@ export class BusinessesService {
         (membership) => membership.businessId === business.id,
       ),
     }));
+  }
+
+  async getDashboardView(requesterUserId: string) {
+    const businesses = await this.listForRequester(requesterUserId);
+    if (businesses.length === 0) {
+      return {
+        generatedAt: new Date().toISOString(),
+        scope: { businessCount: 0, locationCount: 0 },
+        totals: {
+          courtCount: 0,
+          bookingCount: 0,
+          confirmedBookingCount: 0,
+          pendingBookingCount: 0,
+          cancelledBookingCount: 0,
+          revenueTotal: 0,
+          revenuePaid: 0,
+        },
+        businesses: [],
+      };
+    }
+
+    const businessIds = businesses.map((b) => b.id);
+    const tenantByBusinessId = new Map(
+      businesses.map((b) => [b.id, (b as Business).tenantId]),
+    );
+    const businessIdByTenantId = new Map(
+      businesses.map((b) => [(b as Business).tenantId, b.id]),
+    );
+
+    const locationCountRows = await this.locationsRepository
+      .createQueryBuilder('location')
+      .select('location.businessId', 'businessId')
+      .addSelect('COUNT(*)', 'count')
+      .where('location.businessId IN (:...businessIds)', { businessIds })
+      .groupBy('location.businessId')
+      .getRawMany<{ businessId: string; count: string }>();
+    const locationCountByBusinessId = new Map(
+      locationCountRows.map((row) => [row.businessId, Number.parseInt(row.count, 10)]),
+    );
+
+    const locations = await this.locationsRepository.find({
+      where: { businessId: In(businessIds) },
+      select: ['id', 'businessId'],
+    });
+    const locationIds = locations.map((x) => x.id);
+    const businessIdByLocationId = new Map(locations.map((x) => [x.id, x.businessId]));
+    const courtKeysByLocationId = await this.loadCourtKeysByLocationId(locationIds);
+
+    const courtCountByBusinessId = new Map<string, number>();
+    for (const [locationId, courtKeys] of courtKeysByLocationId.entries()) {
+      const businessId = businessIdByLocationId.get(locationId);
+      if (!businessId) {
+        continue;
+      }
+      courtCountByBusinessId.set(
+        businessId,
+        (courtCountByBusinessId.get(businessId) ?? 0) + courtKeys.length,
+      );
+    }
+
+    const tenantIds = Array.from(
+      new Set(businesses.map((b) => (b as Business).tenantId).filter(Boolean)),
+    );
+    let bookingRows: Array<{
+      tenantId: string;
+      bookingCount: string;
+      confirmedBookingCount: string;
+      pendingBookingCount: string;
+      cancelledBookingCount: string;
+      revenueTotal: string;
+      revenuePaid: string;
+    }> = [];
+    if (tenantIds.length > 0) {
+      bookingRows = await this.bookingRepository
+        .createQueryBuilder('booking')
+        .select('booking.tenantId', 'tenantId')
+        .addSelect('COUNT(*)', 'bookingCount')
+        .addSelect(
+          "SUM(CASE WHEN booking.bookingStatus = 'confirmed' THEN 1 ELSE 0 END)",
+          'confirmedBookingCount',
+        )
+        .addSelect(
+          "SUM(CASE WHEN booking.bookingStatus = 'pending' THEN 1 ELSE 0 END)",
+          'pendingBookingCount',
+        )
+        .addSelect(
+          "SUM(CASE WHEN booking.bookingStatus = 'cancelled' THEN 1 ELSE 0 END)",
+          'cancelledBookingCount',
+        )
+        .addSelect('COALESCE(SUM(booking.totalAmount), 0)', 'revenueTotal')
+        .addSelect(
+          "COALESCE(SUM(CASE WHEN booking.paymentStatus = 'paid' THEN booking.totalAmount ELSE 0 END), 0)",
+          'revenuePaid',
+        )
+        .where('booking.tenantId IN (:...tenantIds)', { tenantIds })
+        .groupBy('booking.tenantId')
+        .getRawMany();
+    }
+
+    const bookingByBusinessId = new Map<
+      string,
+      {
+        bookingCount: number;
+        confirmedBookingCount: number;
+        pendingBookingCount: number;
+        cancelledBookingCount: number;
+        revenueTotal: number;
+        revenuePaid: number;
+      }
+    >();
+    for (const row of bookingRows) {
+      const businessId = businessIdByTenantId.get(row.tenantId);
+      if (!businessId) {
+        continue;
+      }
+      bookingByBusinessId.set(businessId, {
+        bookingCount: Number.parseInt(row.bookingCount, 10) || 0,
+        confirmedBookingCount: Number.parseInt(row.confirmedBookingCount, 10) || 0,
+        pendingBookingCount: Number.parseInt(row.pendingBookingCount, 10) || 0,
+        cancelledBookingCount: Number.parseInt(row.cancelledBookingCount, 10) || 0,
+        revenueTotal: this.toNumber(row.revenueTotal),
+        revenuePaid: this.toNumber(row.revenuePaid),
+      });
+    }
+
+    const businessViews = businesses.map((business) => {
+      const typedBusiness = business as Business;
+      const locationCount = locationCountByBusinessId.get(typedBusiness.id) ?? 0;
+      const courtCount = courtCountByBusinessId.get(typedBusiness.id) ?? 0;
+      const booking = bookingByBusinessId.get(typedBusiness.id) ?? {
+        bookingCount: 0,
+        confirmedBookingCount: 0,
+        pendingBookingCount: 0,
+        cancelledBookingCount: 0,
+        revenueTotal: 0,
+        revenuePaid: 0,
+      };
+      return {
+        businessId: typedBusiness.id,
+        tenantId: tenantByBusinessId.get(typedBusiness.id),
+        businessName: typedBusiness.businessName,
+        status: typedBusiness.status,
+        locationCount,
+        courtCount,
+        ...booking,
+      };
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      scope: {
+        businessCount: businesses.length,
+        locationCount: businessViews.reduce((sum, row) => sum + row.locationCount, 0),
+      },
+      totals: {
+        courtCount: businessViews.reduce((sum, row) => sum + row.courtCount, 0),
+        bookingCount: businessViews.reduce((sum, row) => sum + row.bookingCount, 0),
+        confirmedBookingCount: businessViews.reduce(
+          (sum, row) => sum + row.confirmedBookingCount,
+          0,
+        ),
+        pendingBookingCount: businessViews.reduce(
+          (sum, row) => sum + row.pendingBookingCount,
+          0,
+        ),
+        cancelledBookingCount: businessViews.reduce(
+          (sum, row) => sum + row.cancelledBookingCount,
+          0,
+        ),
+        revenueTotal: Number(
+          businessViews
+            .reduce((sum, row) => sum + row.revenueTotal, 0)
+            .toFixed(2),
+        ),
+        revenuePaid: Number(
+          businessViews
+            .reduce((sum, row) => sum + row.revenuePaid, 0)
+            .toFixed(2),
+        ),
+      },
+      businesses: businessViews,
+    };
   }
 
   async onboardBusiness(dto: CreateBusinessDto) {
@@ -528,11 +724,24 @@ export class BusinessesService {
       .where('booking.bookingDate IN (:...dates)', { dates: queryDates })
       .andWhere('booking.bookingStatus != :c', { c: 'cancelled' })
       .andWhere('item.itemStatus != :ic', { ic: 'cancelled' })
-      .getMany();
+      .select([
+        'booking.bookingDate AS bookingDate',
+        'item.courtKind AS courtKind',
+        'item.courtId AS courtId',
+        'item.startTime AS startTime',
+        'item.endTime AS endTime',
+      ])
+      .getRawMany<{
+        bookingDate: string;
+        courtKind: string;
+        courtId: string;
+        startTime: string;
+        endTime: string;
+      }>();
 
     const busy = new Set<string>();
     for (const item of items) {
-      const bookingDate = item.booking?.bookingDate;
+      const bookingDate = item.bookingDate;
       if (!bookingDate) {
         continue;
       }
@@ -571,28 +780,40 @@ export class BusinessesService {
   private async loadCourtKeysByLocationId(
     locationIds: string[],
   ): Promise<Map<string, string[]>> {
-    const map = new Map<string, string[]>();
+    const map = new Map<string, Set<string>>();
     const push = (locId: string | null | undefined, kind: string, id: string) => {
       if (!locId) {
         return;
       }
       const key = `${kind}:${id}`;
-      const list = map.get(locId) ?? [];
-      list.push(key);
+      const list = map.get(locId) ?? new Set<string>();
+      list.add(key);
       map.set(locId, list);
     };
 
     if (locationIds.length === 0) {
-      return map;
+      return new Map<string, string[]>();
     }
 
     const whereLoc = { businessLocationId: In(locationIds) };
 
     const [turf, futsal, padel, cricket] = await Promise.all([
-      this.turfCourtRepository.find({ where: whereLoc }),
-      this.futsalFieldRepository.find({ where: whereLoc }),
-      this.padelCourtRepository.find({ where: whereLoc }),
-      this.cricketIndoorCourtRepository.find({ where: whereLoc }),
+      this.turfCourtRepository.find({
+        where: { ...whereLoc, courtStatus: 'active' },
+        select: ['id', 'businessLocationId'],
+      }),
+      this.futsalFieldRepository.find({
+        where: { ...whereLoc, isActive: true },
+        select: ['id', 'businessLocationId'],
+      }),
+      this.padelCourtRepository.find({
+        where: { ...whereLoc, isActive: true, courtStatus: 'active' },
+        select: ['id', 'businessLocationId'],
+      }),
+      this.cricketIndoorCourtRepository.find({
+        where: { ...whereLoc, isActive: true },
+        select: ['id', 'businessLocationId'],
+      }),
     ]);
 
     for (const row of turf) {
@@ -608,7 +829,11 @@ export class BusinessesService {
       push(row.businessLocationId, 'cricket_indoor_court', row.id);
     }
 
-    return map;
+    const out = new Map<string, string[]>();
+    for (const [locId, keys] of map.entries()) {
+      out.set(locId, Array.from(keys));
+    }
+    return out;
   }
 
   /**
