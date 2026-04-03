@@ -8,6 +8,34 @@ let cachedApp: NestExpressApplication | undefined;
 let migrationsPromise: Promise<void> | undefined;
 let bootstrapPromise: Promise<NestExpressApplication> | undefined;
 
+/** Runs even when RUN_STARTUP_MIGRATIONS=false (Vercel default). Idempotent. */
+let ensureLocationDetailsColumnPromise: Promise<void> | undefined;
+
+async function ensureBusinessLocationDetailsColumn(): Promise<void> {
+  if (!ensureLocationDetailsColumnPromise) {
+    ensureLocationDetailsColumnPromise = (async () => {
+      try {
+        await dataSource.initialize();
+        await dataSource.query(`
+          ALTER TABLE "business_locations"
+          ADD COLUMN IF NOT EXISTS "details" text
+        `);
+      } catch (err) {
+        console.error(
+          '[DB] ensure business_locations.details column failed:',
+          err,
+        );
+        throw err;
+      } finally {
+        if (dataSource.isInitialized) {
+          await dataSource.destroy();
+        }
+      }
+    })();
+  }
+  await ensureLocationDetailsColumnPromise;
+}
+
 async function getOrCreateApp(): Promise<NestExpressApplication> {
   if (cachedApp) {
     return cachedApp;
@@ -238,6 +266,8 @@ async function getOrCreateApp(): Promise<NestExpressApplication> {
           '[DB] startup migrations skipped (RUN_STARTUP_MIGRATIONS=false)',
         );
       }
+
+      await ensureBusinessLocationDetailsColumn();
 
       cachedApp = await NestFactory.create<NestExpressApplication>(AppModule);
 
