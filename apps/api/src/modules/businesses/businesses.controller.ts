@@ -73,6 +73,11 @@ export class BusinessesController {
     return this.businessesService.searchLocationsPublic(dto);
   }
 
+  @Get('locations/facility-counts')
+  async listLocationsWithFacilityCounts() {
+    return this.businessesService.listLocationsWithFacilityCountsPublic();
+  }
+
   @Post('locations')
   @Roles('platform-owner', 'business-admin')
   async createLocation(

@@ -499,6 +499,127 @@ export class BusinessesService {
     });
   }
 
+  /**
+   * Public listing of locations with active sub-facility counts per API facility type
+   * (padel courts, futsal fields, indoor cricket, legacy turf courts).
+   */
+  async listLocationsWithFacilityCountsPublic(): Promise<{
+    locations: Array<
+      ReturnType<BusinessesService['toLocationListRow']> & {
+        facilityCounts: Record<
+          'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+          number
+        >;
+      }
+    >;
+  }> {
+    const rows = await this.listAllLocationsPublic();
+    const locationIds = rows.map((r) => r.id);
+    const countsByLocationId =
+      await this.loadFacilityCountsByLocationId(locationIds);
+    return {
+      locations: rows.map((row) => ({
+        ...row,
+        facilityCounts:
+          countsByLocationId.get(row.id) ?? this.emptyFacilityCountsRecord(),
+      })),
+    };
+  }
+
+  private emptyFacilityCountsRecord(): Record<
+    'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+    number
+  > {
+    return {
+      'padel-court': 0,
+      'futsal-field': 0,
+      'cricket-indoor': 0,
+      'turf-court': 0,
+    };
+  }
+
+  private async loadFacilityCountsByLocationId(
+    locationIds: string[],
+  ): Promise<
+    Map<
+      string,
+      Record<
+        'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+        number
+      >
+    >
+  > {
+    const init = new Map<
+      string,
+      Record<
+        'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+        number
+      >
+    >();
+    for (const id of locationIds) {
+      init.set(id, this.emptyFacilityCountsRecord());
+    }
+    if (locationIds.length === 0) {
+      return init;
+    }
+
+    const [padelRows, futsalRows, cricketRows, turfRows] = await Promise.all([
+      this.padelCourtRepository
+        .createQueryBuilder('c')
+        .select('c.businessLocationId', 'locationId')
+        .addSelect('COUNT(*)', 'cnt')
+        .where('c.businessLocationId IN (:...locationIds)', { locationIds })
+        .andWhere('c.isActive = true')
+        .andWhere("c.courtStatus = 'active'")
+        .groupBy('c.businessLocationId')
+        .getRawMany<{ locationId: string; cnt: string }>(),
+      this.futsalFieldRepository
+        .createQueryBuilder('f')
+        .select('f.businessLocationId', 'locationId')
+        .addSelect('COUNT(*)', 'cnt')
+        .where('f.businessLocationId IN (:...locationIds)', { locationIds })
+        .andWhere('f.isActive = true')
+        .groupBy('f.businessLocationId')
+        .getRawMany<{ locationId: string; cnt: string }>(),
+      this.cricketIndoorCourtRepository
+        .createQueryBuilder('cr')
+        .select('cr.businessLocationId', 'locationId')
+        .addSelect('COUNT(*)', 'cnt')
+        .where('cr.businessLocationId IN (:...locationIds)', { locationIds })
+        .andWhere('cr.isActive = true')
+        .groupBy('cr.businessLocationId')
+        .getRawMany<{ locationId: string; cnt: string }>(),
+      this.turfCourtRepository
+        .createQueryBuilder('t')
+        .select('t.businessLocationId', 'locationId')
+        .addSelect('COUNT(*)', 'cnt')
+        .where('t.businessLocationId IN (:...locationIds)', { locationIds })
+        .andWhere("t.courtStatus = 'active'")
+        .groupBy('t.businessLocationId')
+        .getRawMany<{ locationId: string; cnt: string }>(),
+    ]);
+
+    const apply = (
+      raw: Array<{ locationId: string; cnt: string }>,
+      key: 'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+    ) => {
+      for (const row of raw) {
+        const locId = row.locationId;
+        if (!locId) continue;
+        const bucket = init.get(locId);
+        if (!bucket) continue;
+        bucket[key] = Number.parseInt(row.cnt, 10) || 0;
+      }
+    };
+
+    apply(padelRows, 'padel-court');
+    apply(futsalRows, 'futsal-field');
+    apply(cricketRows, 'cricket-indoor');
+    apply(turfRows, 'turf-court');
+
+    return init;
+  }
+
   private toLocationListRow(loc: BusinessLocation, b: Business | undefined) {
     return {
       id: loc.id,
