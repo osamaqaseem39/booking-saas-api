@@ -628,6 +628,7 @@ export class BusinessesService {
       facilityTypes: normalizeLocationFacilityTypesForApi(loc.facilityTypes),
       name: loc.name,
       addressLine: loc.addressLine,
+      details: loc.details ?? null,
       city: loc.city,
       area: loc.area,
       country: loc.country,
@@ -1034,12 +1035,22 @@ export class BusinessesService {
         ? []
         : dto.gallery.map((u) => u.trim()).filter((u) => u.length > 0);
 
+    const rawDetails = dto.details ?? dto.location?.details;
+    const detailsValue =
+      rawDetails !== undefined
+        ? (() => {
+            const t = rawDetails.trim();
+            return t.length > 0 ? t : null;
+          })()
+        : null;
+
     const row = this.locationsRepository.create({
       businessId: dto.businessId,
       locationType: dto.locationType ?? 'arena',
       facilityTypes: dto.facilityTypes?.length ? dto.facilityTypes : [],
       name: sourceName,
       addressLine: sourceAddress,
+      details: detailsValue,
       city: sourceCity,
       area: sourceArea,
       country: sourceCountry,
@@ -1187,6 +1198,14 @@ export class BusinessesService {
     ) {
       location.addressLine =
         dto.location?.addressLine ?? dto.location?.address ?? dto.addressLine;
+    }
+    if (dto.details !== undefined || dto.location?.details !== undefined) {
+      const next =
+        dto.details !== undefined ? dto.details : dto.location?.details;
+      if (next !== undefined) {
+        const t = next.trim();
+        location.details = t.length > 0 ? t : null;
+      }
     }
     if (dto.city !== undefined || dto.location?.city !== undefined) {
       location.city = dto.location?.city ?? dto.city;

@@ -167,6 +167,10 @@ async function getOrCreateApp(): Promise<NestExpressApplication> {
             ALTER TABLE "business_locations"
             ADD COLUMN IF NOT EXISTS "gallery" text[] NOT NULL DEFAULT '{}'
           `);
+          await dataSource.query(`
+            ALTER TABLE "business_locations"
+            ADD COLUMN IF NOT EXISTS "details" text
+          `);
           // Ensure booking tables exist even if migration history is out of sync.
           await dataSource.query(`
             CREATE TABLE IF NOT EXISTS "bookings" (

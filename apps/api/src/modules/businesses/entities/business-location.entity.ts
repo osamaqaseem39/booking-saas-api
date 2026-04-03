@@ -34,6 +34,10 @@ export class BusinessLocation {
   @Column({ type: 'varchar', length: 400, nullable: true })
   addressLine?: string;
 
+  /** Free-form description / amenities / notes for listings and staff. */
+  @Column({ type: 'text', nullable: true })
+  details?: string | null;
+
   @Column({ type: 'varchar', length: 120, nullable: true })
   city?: string;
 

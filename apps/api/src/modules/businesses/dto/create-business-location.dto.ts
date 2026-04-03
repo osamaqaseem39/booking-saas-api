@@ -51,6 +51,11 @@ class LocationMetaDto {
   address?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(10000)
+  details?: string;
+
+  @IsOptional()
   @ValidateNested()
   @Type(() => CoordinatesDto)
   coordinates?: CoordinatesDto;
@@ -103,6 +108,11 @@ export class CreateBusinessLocationDto {
   @IsOptional()
   @IsString()
   addressLine?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(10000)
+  details?: string;
 
   @IsOptional()
   @IsString()
