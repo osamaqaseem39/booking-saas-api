@@ -458,14 +458,12 @@ export class BusinessesService {
       );
       scoped = allLocations.filter((l) => allowedBusinessIds.has(l.businessId));
     }
-    return scoped.map((loc) => {
-      const b = businessById.get(loc.businessId);
-      return this.toLocationListRow(loc, b);
-    });
+    return this.buildLocationListRowsWithFacilityInfo(scoped, businessById);
   }
 
   /**
    * Public / unauthenticated listing: all locations (e.g. end-user discovery).
+   * Each row includes active facility court summaries and derived counts.
    */
   async listAllLocationsPublic() {
     let allLocations: BusinessLocation[];
@@ -493,37 +491,18 @@ export class BusinessesService {
       throw error;
     }
     const businessById = new Map(businesses.map((b) => [b.id, b]));
-    return allLocations.map((loc) => {
-      const b = businessById.get(loc.businessId);
-      return this.toLocationListRow(loc, b);
-    });
+    return this.buildLocationListRowsWithFacilityInfo(allLocations, businessById);
   }
 
   /**
-   * Public listing of locations with active sub-facility counts per API facility type
-   * (padel courts, futsal fields, indoor cricket, legacy turf courts).
+   * Same data as {@link listAllLocationsPublic}, wrapped as `{ locations }` for clients
+   * that already call `/businesses/locations/facility-counts`.
    */
   async listLocationsWithFacilityCountsPublic(): Promise<{
-    locations: Array<
-      ReturnType<BusinessesService['toLocationListRow']> & {
-        facilityCounts: Record<
-          'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
-          number
-        >;
-      }
-    >;
+    locations: Awaited<ReturnType<BusinessesService['listAllLocationsPublic']>>;
   }> {
-    const rows = await this.listAllLocationsPublic();
-    const locationIds = rows.map((r) => r.id);
-    const countsByLocationId =
-      await this.loadFacilityCountsByLocationId(locationIds);
-    return {
-      locations: rows.map((row) => ({
-        ...row,
-        facilityCounts:
-          countsByLocationId.get(row.id) ?? this.emptyFacilityCountsRecord(),
-      })),
-    };
+    const locations = await this.listAllLocationsPublic();
+    return { locations };
   }
 
   private emptyFacilityCountsRecord(): Record<
@@ -538,86 +517,148 @@ export class BusinessesService {
     };
   }
 
-  private async loadFacilityCountsByLocationId(
+  private countsFromCourtSummaries(
+    courts: Array<{
+      facilityType:
+        | 'padel-court'
+        | 'futsal-field'
+        | 'cricket-indoor'
+        | 'turf-court';
+    }>,
+  ): Record<
+    'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+    number
+  > {
+    const base = this.emptyFacilityCountsRecord();
+    for (const c of courts) {
+      base[c.facilityType]++;
+    }
+    return base;
+  }
+
+  private async buildLocationListRowsWithFacilityInfo(
+    locations: BusinessLocation[],
+    businessById: Map<string, Business>,
+  ): Promise<
+    Array<
+      ReturnType<BusinessesService['toLocationListRow']> & {
+        facilityCounts: Record<
+          'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+          number
+        >;
+        facilityCourts: Array<{
+          facilityType:
+            | 'padel-court'
+            | 'futsal-field'
+            | 'cricket-indoor'
+            | 'turf-court';
+          id: string;
+          name: string;
+        }>;
+      }
+    >
+  > {
+    const locationIds = locations.map((l) => l.id);
+    const courtsByLocationId =
+      await this.loadFacilityCourtSummariesByLocationId(locationIds);
+    return locations.map((loc) => {
+      const b = businessById.get(loc.businessId);
+      const facilityCourts = courtsByLocationId.get(loc.id) ?? [];
+      return {
+        ...this.toLocationListRow(loc, b),
+        facilityCounts: this.countsFromCourtSummaries(facilityCourts),
+        facilityCourts,
+      };
+    });
+  }
+
+  /** Active bookable courts/fields per location (same filters as booking discovery). */
+  private async loadFacilityCourtSummariesByLocationId(
     locationIds: string[],
   ): Promise<
     Map<
       string,
-      Record<
-        'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
-        number
-      >
+      Array<{
+        facilityType:
+          | 'padel-court'
+          | 'futsal-field'
+          | 'cricket-indoor'
+          | 'turf-court';
+        id: string;
+        name: string;
+      }>
     >
   > {
-    const init = new Map<
+    const map = new Map<
       string,
-      Record<
-        'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
-        number
-      >
+      Array<{
+        facilityType:
+          | 'padel-court'
+          | 'futsal-field'
+          | 'cricket-indoor'
+          | 'turf-court';
+        id: string;
+        name: string;
+      }>
     >();
     for (const id of locationIds) {
-      init.set(id, this.emptyFacilityCountsRecord());
+      map.set(id, []);
     }
     if (locationIds.length === 0) {
-      return init;
+      return map;
     }
 
-    const [padelRows, futsalRows, cricketRows, turfRows] = await Promise.all([
-      this.padelCourtRepository
-        .createQueryBuilder('c')
-        .select('c.businessLocationId', 'locationId')
-        .addSelect('COUNT(*)', 'cnt')
-        .where('c.businessLocationId IN (:...locationIds)', { locationIds })
-        .andWhere('c.isActive = true')
-        .andWhere("c.courtStatus = 'active'")
-        .groupBy('c.businessLocationId')
-        .getRawMany<{ locationId: string; cnt: string }>(),
-      this.futsalFieldRepository
-        .createQueryBuilder('f')
-        .select('f.businessLocationId', 'locationId')
-        .addSelect('COUNT(*)', 'cnt')
-        .where('f.businessLocationId IN (:...locationIds)', { locationIds })
-        .andWhere('f.isActive = true')
-        .groupBy('f.businessLocationId')
-        .getRawMany<{ locationId: string; cnt: string }>(),
-      this.cricketIndoorCourtRepository
-        .createQueryBuilder('cr')
-        .select('cr.businessLocationId', 'locationId')
-        .addSelect('COUNT(*)', 'cnt')
-        .where('cr.businessLocationId IN (:...locationIds)', { locationIds })
-        .andWhere('cr.isActive = true')
-        .groupBy('cr.businessLocationId')
-        .getRawMany<{ locationId: string; cnt: string }>(),
-      this.turfCourtRepository
-        .createQueryBuilder('t')
-        .select('t.businessLocationId', 'locationId')
-        .addSelect('COUNT(*)', 'cnt')
-        .where('t.businessLocationId IN (:...locationIds)', { locationIds })
-        .andWhere("t.courtStatus = 'active'")
-        .groupBy('t.businessLocationId')
-        .getRawMany<{ locationId: string; cnt: string }>(),
-    ]);
+    const whereLoc = { businessLocationId: In(locationIds) };
 
-    const apply = (
-      raw: Array<{ locationId: string; cnt: string }>,
-      key: 'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+    const push = (
+      locId: string | null | undefined,
+      facilityType:
+        | 'padel-court'
+        | 'futsal-field'
+        | 'cricket-indoor'
+        | 'turf-court',
+      id: string,
+      name: string,
     ) => {
-      for (const row of raw) {
-        const locId = row.locationId;
-        if (!locId) continue;
-        const bucket = init.get(locId);
-        if (!bucket) continue;
-        bucket[key] = Number.parseInt(row.cnt, 10) || 0;
-      }
+      if (!locId) return;
+      const list = map.get(locId);
+      if (!list) return;
+      list.push({ facilityType, id, name });
     };
 
-    apply(padelRows, 'padel-court');
-    apply(futsalRows, 'futsal-field');
-    apply(cricketRows, 'cricket-indoor');
-    apply(turfRows, 'turf-court');
+    const [padel, futsal, cricket, turf] = await Promise.all([
+      this.padelCourtRepository.find({
+        where: { ...whereLoc, isActive: true, courtStatus: 'active' },
+        select: ['id', 'name', 'businessLocationId'],
+      }),
+      this.futsalFieldRepository.find({
+        where: { ...whereLoc, isActive: true },
+        select: ['id', 'name', 'businessLocationId'],
+      }),
+      this.cricketIndoorCourtRepository.find({
+        where: { ...whereLoc, isActive: true },
+        select: ['id', 'name', 'businessLocationId'],
+      }),
+      this.turfCourtRepository.find({
+        where: { ...whereLoc, courtStatus: 'active' },
+        select: ['id', 'name', 'businessLocationId'],
+      }),
+    ]);
 
-    return init;
+    for (const row of padel) {
+      push(row.businessLocationId, 'padel-court', row.id, row.name);
+    }
+    for (const row of futsal) {
+      push(row.businessLocationId, 'futsal-field', row.id, row.name);
+    }
+    for (const row of cricket) {
+      push(row.businessLocationId, 'cricket-indoor', row.id, row.name);
+    }
+    for (const row of turf) {
+      push(row.businessLocationId, 'turf-court', row.id, row.name);
+    }
+
+    return map;
   }
 
   private toLocationListRow(loc: BusinessLocation, b: Business | undefined) {
