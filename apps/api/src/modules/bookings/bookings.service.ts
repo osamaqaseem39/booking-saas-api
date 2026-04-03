@@ -35,6 +35,12 @@ function numFromDec(v: string): number {
   return Number.parseFloat(v);
 }
 
+function optNumFromDec(v: string | null | undefined): number | null {
+  if (v == null || v === '') return null;
+  const n = Number.parseFloat(String(v));
+  return Number.isFinite(n) ? n : null;
+}
+
 function formatDateOnly(d: Date | string): string {
   if (d instanceof Date) return d.toISOString().slice(0, 10);
   return String(d).slice(0, 10);
@@ -99,6 +105,10 @@ type CourtOptionRow = {
   kind: CourtKind;
   id: string;
   name: string;
+  /** Base price for one booking slot when configured; null if not set on this facility. */
+  pricePerSlot: number | null;
+  /** Slot length in minutes from facility settings, when set. */
+  slotDurationMinutes: number | null;
 };
 
 export type BookingAvailabilityApiRow = {
@@ -883,7 +893,7 @@ export class BookingsService {
       const [turf, futsal] = await Promise.all([
         this.turfRepo.find({
           where: { tenantId, courtStatus: 'active', supportsFutsal: true },
-          select: ['id', 'name'],
+          select: ['id', 'name', 'futsalPricePerSlot', 'slotDurationMinutes'],
         }),
         this.futsalRepo.find({
           where: { tenantId, isActive: true },
@@ -891,13 +901,21 @@ export class BookingsService {
         }),
       ]);
       out.push(
-        ...turf.map((r) => ({ kind: 'turf_court' as const, id: r.id, name: r.name })),
+        ...turf.map((r) => ({
+          kind: 'turf_court' as const,
+          id: r.id,
+          name: r.name,
+          pricePerSlot: optNumFromDec(r.futsalPricePerSlot),
+          slotDurationMinutes: r.slotDurationMinutes ?? null,
+        })),
       );
       out.push(
         ...futsal.map((r) => ({
           kind: 'futsal_field' as const,
           id: r.id,
           name: r.name,
+          pricePerSlot: null,
+          slotDurationMinutes: null,
         })),
       );
     }
@@ -905,7 +923,7 @@ export class BookingsService {
       const [turf, indoor] = await Promise.all([
         this.turfRepo.find({
           where: { tenantId, courtStatus: 'active', supportsCricket: true },
-          select: ['id', 'name'],
+          select: ['id', 'name', 'cricketPricePerSlot', 'slotDurationMinutes'],
         }),
         this.cricketRepo.find({
           where: { tenantId, isActive: true },
@@ -913,23 +931,37 @@ export class BookingsService {
         }),
       ]);
       out.push(
-        ...turf.map((r) => ({ kind: 'turf_court' as const, id: r.id, name: r.name })),
+        ...turf.map((r) => ({
+          kind: 'turf_court' as const,
+          id: r.id,
+          name: r.name,
+          pricePerSlot: optNumFromDec(r.cricketPricePerSlot),
+          slotDurationMinutes: r.slotDurationMinutes ?? null,
+        })),
       );
       out.push(
         ...indoor.map((r) => ({
           kind: 'cricket_indoor_court' as const,
           id: r.id,
           name: r.name,
+          pricePerSlot: null,
+          slotDurationMinutes: null,
         })),
       );
     }
     if (!sport || sport === 'padel') {
       const rows = await this.padelRepo.find({
         where: { tenantId, isActive: true, courtStatus: 'active' },
-        select: ['id', 'name'],
+        select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
       });
       out.push(
-        ...rows.map((r) => ({ kind: 'padel_court' as const, id: r.id, name: r.name })),
+        ...rows.map((r) => ({
+          kind: 'padel_court' as const,
+          id: r.id,
+          name: r.name,
+          pricePerSlot: optNumFromDec(r.pricePerSlot),
+          slotDurationMinutes: r.slotDurationMinutes ?? null,
+        })),
       );
     }
     const seen = new Set<string>();

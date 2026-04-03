@@ -11,32 +11,37 @@ export type BusinessLocationTypeCode =
 
 /**
  * Sub-facility / court kinds this location can host (arena vertical).
- * Product: Arena Cricket, Futsal, Padel only — align with `ARENA_SUB_TYPE_CODES`.
+ * Product: Turf (combined futsal + cricket via `/arena/turf-courts`) and Padel.
  */
 export const BUSINESS_LOCATION_FACILITY_TYPE_CODES = [
-  'cricket-indoor',
-  'futsal-field',
+  'turf-court',
   'padel-court',
 ] as const;
 
 export type BusinessLocationFacilityTypeCode =
   (typeof BUSINESS_LOCATION_FACILITY_TYPE_CODES)[number];
 
-/** Stored on older rows; expanded in API responses to futsal + cricket. */
+/** Alias for turf in DB / clients; same canonical code as `turf-court`. */
 export const LEGACY_TURF_FACILITY_TYPE_CODE = 'turf-court' as const;
 
 const FACILITY_CODES_SET = new Set<string>(BUSINESS_LOCATION_FACILITY_TYPE_CODES);
 
-/** Normalize for API clients: legacy turf → both sports; drop unknown codes. */
+/** Sport-specific types stored on older rows map to canonical `turf-court`. */
+const TURF_FACILITY_ALIASES = new Set([
+  LEGACY_TURF_FACILITY_TYPE_CODE,
+  'futsal-field',
+  'cricket-indoor',
+]);
+
+/** Normalize for API clients: legacy sport rows → `turf-court`; drop unknown codes. */
 export function normalizeLocationFacilityTypesForApi(
   raw: string[] | null | undefined,
 ): string[] {
   if (!raw?.length) return [];
   const out = new Set<string>();
   for (const t of raw) {
-    if (t === LEGACY_TURF_FACILITY_TYPE_CODE) {
-      out.add('futsal-field');
-      out.add('cricket-indoor');
+    if (TURF_FACILITY_ALIASES.has(t)) {
+      out.add('turf-court');
     } else if (FACILITY_CODES_SET.has(t)) {
       out.add(t);
     }

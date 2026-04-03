@@ -16,7 +16,10 @@ export function assertFacilityTypeAllowedForLocation(
   }
 }
 
-/** Turf courts: allow legacy `turf-court` flag, or the sport-specific types for each mode. */
+/**
+ * Turf courts: `turf-court` covers all sport modes; older rows may still list
+ * `futsal-field` / `cricket-indoor` instead.
+ */
 export function assertTurfSportModesAllowedForLocation(
   location: BusinessLocation,
   sportMode: 'futsal_only' | 'cricket_only' | 'both',
@@ -30,12 +33,12 @@ export function assertTurfSportModesAllowedForLocation(
 
   if (needFutsal && !allowed.includes('futsal-field')) {
     throw new BadRequestException(
-      `Location "${location.name}" is not configured for Futsal. Enable it under location facility types first.`,
+      `Location "${location.name}" is not configured for Futsal. Enable Turf under location facility types first.`,
     );
   }
   if (needCricket && !allowed.includes('cricket-indoor')) {
     throw new BadRequestException(
-      `Location "${location.name}" is not configured for Arena Cricket. Enable it under location facility types first.`,
+      `Location "${location.name}" is not configured for cricket on turf. Enable Turf under location facility types first.`,
     );
   }
 }

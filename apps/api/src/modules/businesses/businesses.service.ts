@@ -25,6 +25,10 @@ import { BusinessLocation } from './entities/business-location.entity';
 import { Business } from './entities/business.entity';
 import { BusinessMembership } from './entities/business-membership.entity';
 import { normalizeLocationFacilityTypesForApi } from './business-location.constants';
+import {
+  coordinateToJsonNumber,
+  normalizeCoordinateForPersist,
+} from './geo-coordinates';
 
 @Injectable()
 export class BusinessesService {
@@ -673,8 +677,8 @@ export class BusinessesService {
       city: loc.city,
       area: loc.area,
       country: loc.country,
-      latitude: loc.latitude,
-      longitude: loc.longitude,
+      latitude: coordinateToJsonNumber(loc.latitude),
+      longitude: coordinateToJsonNumber(loc.longitude),
       phone: loc.phone,
       manager: loc.manager,
       workingHours: loc.workingHours,
@@ -1065,8 +1069,12 @@ export class BusinessesService {
     const sourceManager = dto.contact?.manager ?? dto.manager;
     const sourceTimezone = dto.settings?.timezone ?? dto.timezone;
     const sourceCurrency = dto.settings?.currency ?? dto.currency;
-    const sourceLatitude = dto.location?.coordinates?.lat ?? dto.latitude;
-    const sourceLongitude = dto.location?.coordinates?.lng ?? dto.longitude;
+    const sourceLatitude = normalizeCoordinateForPersist(
+      dto.location?.coordinates?.lat ?? dto.latitude,
+    );
+    const sourceLongitude = normalizeCoordinateForPersist(
+      dto.location?.coordinates?.lng ?? dto.longitude,
+    );
     const { status: nextStatus, isActive: nextIsActive } =
       this.normalizeLocationStatus(dto.status);
     const logoTrimmed = dto.logo?.trim();
@@ -1261,13 +1269,23 @@ export class BusinessesService {
       dto.latitude !== undefined ||
       dto.location?.coordinates?.lat !== undefined
     ) {
-      location.latitude = dto.location?.coordinates?.lat ?? dto.latitude;
+      const next = normalizeCoordinateForPersist(
+        dto.location?.coordinates?.lat ?? dto.latitude,
+      );
+      if (next !== undefined) {
+        location.latitude = next;
+      }
     }
     if (
       dto.longitude !== undefined ||
       dto.location?.coordinates?.lng !== undefined
     ) {
-      location.longitude = dto.location?.coordinates?.lng ?? dto.longitude;
+      const next = normalizeCoordinateForPersist(
+        dto.location?.coordinates?.lng ?? dto.longitude,
+      );
+      if (next !== undefined) {
+        location.longitude = next;
+      }
     }
     if (dto.phone !== undefined || dto.contact?.phone !== undefined) {
       location.phone = dto.contact?.phone ?? dto.phone;

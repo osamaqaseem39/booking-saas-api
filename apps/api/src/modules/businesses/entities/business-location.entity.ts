@@ -47,10 +47,10 @@ export class BusinessLocation {
   @Column({ type: 'varchar', length: 120, nullable: true })
   country?: string;
 
-  @Column({ type: 'decimal', precision: 10, scale: 6, nullable: true })
+  @Column({ type: 'double precision', nullable: true })
   latitude?: number;
 
-  @Column({ type: 'decimal', precision: 10, scale: 6, nullable: true })
+  @Column({ type: 'double precision', nullable: true })
   longitude?: number;
 
   @Column({ type: 'varchar', length: 60, nullable: true })
