@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { typeOrmOptions } from './database/typeorm.config';
 import { HealthModule } from './health/health.module';
 import { ArenaModule } from './modules/arena/arena.module';
 import { BillingModule } from './modules/billing/billing.module';
@@ -14,7 +15,13 @@ import { ProductCatalogModule } from './modules/product-catalog/product-catalog.
 import { TenancyModule } from './tenancy/tenancy.module';
 
 
-function createTypeOrmConfig() {
+function runMigrationsOnStartup(): boolean {
+  return (
+    (process.env.RUN_STARTUP_MIGRATIONS ?? '').toLowerCase().trim() === 'true'
+  );
+}
+
+function createTypeOrmConfig(): TypeOrmModuleOptions {
   const poolMax = toPositiveInt(process.env.DB_POOL_MAX, 1);
   const poolIdleTimeoutMs = toPositiveInt(process.env.DB_POOL_IDLE_MS, 10000);
   const poolConnectTimeoutMs = toPositiveInt(
@@ -25,8 +32,8 @@ function createTypeOrmConfig() {
   if (url) {
     const parsed = new URL(url);
     const sslMode = parsed.searchParams.get('sslmode');
-    const cfg = {
-      type: 'postgres' as const,
+    const cfg: TypeOrmModuleOptions = {
+      type: 'postgres',
       host: parsed.hostname,
       port: Number(parsed.port || 5432),
       username: parsed.username,
@@ -41,6 +48,8 @@ function createTypeOrmConfig() {
         idleTimeoutMillis: poolIdleTimeoutMs,
         connectionTimeoutMillis: poolConnectTimeoutMs,
       },
+      migrations: typeOrmOptions.migrations,
+      migrationsRun: runMigrationsOnStartup(),
     };
     if (!(globalThis as any).__dbEnvLogged) {
       (globalThis as any).__dbEnvLogged = true;
@@ -60,8 +69,8 @@ function createTypeOrmConfig() {
   }
 
   // Fallback: explicit DB_* vars
-  const cfg = {
-    type: 'postgres' as const,
+  const cfg: TypeOrmModuleOptions = {
+    type: 'postgres',
     host: process.env.DB_HOST ?? process.env.POSTGRES_HOST ?? 'localhost',
     port: Number(process.env.DB_PORT ?? 5432),
     username:
@@ -82,6 +91,8 @@ function createTypeOrmConfig() {
       idleTimeoutMillis: poolIdleTimeoutMs,
       connectionTimeoutMillis: poolConnectTimeoutMs,
     },
+    migrations: typeOrmOptions.migrations,
+    migrationsRun: runMigrationsOnStartup(),
   };
   if (!(globalThis as any).__dbEnvLogged) {
     (globalThis as any).__dbEnvLogged = true;

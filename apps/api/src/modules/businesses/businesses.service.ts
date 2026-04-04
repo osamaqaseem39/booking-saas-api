@@ -645,7 +645,7 @@ export class BusinessesService {
     } catch (error: unknown) {
       if (this.isMissingArenaCourtRelationError(error)) {
         throw new ServiceUnavailableException(
-          'Arena court tables are missing on this database. Run pending TypeORM migrations (e.g. 1711000000018-split-turf-into-futsal-cricket-courts, 1711000000019-migrate-legacy-fields-to-courts) against the same DATABASE_URL as this deployment.',
+          'Arena court tables are missing on this database. Apply pending TypeORM migrations against the same Postgres instance this API uses (env: POSTGRES_URL_NON_POOLING or POSTGRES_URL). Options: set RUN_STARTUP_MIGRATIONS=true on deploy so cold starts run migrations, or from the repo run `npm run migration:run` with those vars set. Relevant migrations include 1711000000018-split-turf-into-futsal-cricket-courts and 1711000000019-migrate-legacy-fields-to-courts.',
         );
       }
       throw error;
