@@ -82,20 +82,10 @@ export const typeOrmOptions: DataSourceOptions = {
     Booking,
     BookingItem,
   ],
-  // Vercel/build setups differ on where compiled migration files land.
-  // Include both the local src-relative location and dist-relative location.
-  migrations: [
-    join(__dirname, 'migrations', '*.js'),
-    join(
-      process.cwd(),
-      'dist',
-      'apps',
-      'api',
-      'database',
-      'migrations',
-      '*.js',
-    ),
-  ],
+  // Resolved from this file's directory (same for Nest and `migration:run -d dist/.../typeorm.config.js`).
+  // Do not add a second glob to `dist/.../migrations` from `process.cwd()` — it matches the same files and
+  // TypeORM throws "Duplicate migrations".
+  migrations: [join(__dirname, 'migrations', '*.js')],
 };
 
 // Helpful in Vercel: confirms env vars are being applied (no secrets logged).

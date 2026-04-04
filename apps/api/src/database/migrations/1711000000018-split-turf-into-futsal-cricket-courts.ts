@@ -312,20 +312,24 @@ export class SplitTurfIntoFutsalCricketCourts1711000000018
       UPDATE "booking_items" bi
       SET "courtKind" = 'futsal_court', "courtId" = m."futsalId"
       FROM "_turf_both_map" m
-      INNER JOIN "bookings" bk ON bk."id" = bi."bookingId"
       WHERE bi."courtKind" = 'turf_court'
         AND bi."courtId" = m."turfId"
-        AND bk."sportType" = 'futsal'
+        AND EXISTS (
+          SELECT 1 FROM "bookings" bk
+          WHERE bk."id" = bi."bookingId" AND bk."sportType" = 'futsal'
+        )
     `);
 
     await queryRunner.query(`
       UPDATE "booking_items" bi
       SET "courtKind" = 'cricket_court', "courtId" = m."cricketId"
       FROM "_turf_both_map" m
-      INNER JOIN "bookings" bk ON bk."id" = bi."bookingId"
       WHERE bi."courtKind" = 'turf_court'
         AND bi."courtId" = m."turfId"
-        AND bk."sportType" = 'cricket'
+        AND EXISTS (
+          SELECT 1 FROM "bookings" bk
+          WHERE bk."id" = bi."bookingId" AND bk."sportType" = 'cricket'
+        )
     `);
 
     await queryRunner.query(`
