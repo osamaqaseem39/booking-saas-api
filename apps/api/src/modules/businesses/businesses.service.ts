@@ -1388,4 +1388,169 @@ export class BusinessesService {
     await this.locationsRepository.delete({ id: locationId });
     return { deleted: true, locationId };
   }
+
+  /**
+   * Map/list pin payload for end-user apps (filters + sidebar + map markers).
+   */
+  toVenueMapMarker(
+    row: Awaited<
+      ReturnType<BusinessesService['listAllLocationsPublic']>
+    >[number],
+  ): {
+    venueId: string;
+    name: string;
+    address: string;
+    latitude: number | null;
+    longitude: number | null;
+    logo: string | null;
+    bannerImage: string | null;
+  } {
+    return {
+      venueId: row.id,
+      name: row.name,
+      address: row.addressLine ?? '',
+      latitude: row.latitude,
+      longitude: row.longitude,
+      logo: row.logo,
+      bannerImage: row.bannerImage,
+    };
+  }
+
+  /**
+   * Markers for one category: `all` (every active venue), `gaming`, or `FutsalArenas`.
+   */
+  async listVenueMarkersPublic(
+    category: 'all' | 'gaming' | 'FutsalArenas',
+  ): Promise<
+    Array<{
+      venueId: string;
+      name: string;
+      address: string;
+      latitude: number | null;
+      longitude: number | null;
+      logo: string | null;
+      bannerImage: string | null;
+    }>
+  > {
+    const rows = await this.listAllLocationsPublic();
+    const active = rows.filter((r) => r.isActive);
+    if (category === 'all') {
+      return active.map((r) => this.toVenueMapMarker(r));
+    }
+    if (category === 'gaming') {
+      const picked = active.filter((r) => {
+        const t = (r.locationType ?? '').trim().toLowerCase();
+        return (
+          t === 'gaming' ||
+          t === 'gaming-zone' ||
+          t.includes('gaming')
+        );
+      });
+      return picked.map((r) => this.toVenueMapMarker(r));
+    }
+    const picked = active.filter(
+      (r) =>
+        (r.facilityCounts['futsal-field'] ?? 0) > 0 ||
+        (r.facilityCounts['turf-court'] ?? 0) > 0,
+    );
+    return picked.map((r) => this.toVenueMapMarker(r));
+  }
+
+  private facilityCountsToAvailableList(
+    counts: Record<
+      'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+      number
+    >,
+  ): Array<{ label: string; count: number }> {
+    const labels: Record<string, string> = {
+      'padel-court': 'Padel Court',
+      'futsal-field': 'Futsal',
+      'cricket-indoor': 'Cricket',
+      'turf-court': 'Turf',
+    };
+    const out: Array<{ label: string; count: number }> = [];
+    for (const key of [
+      'padel-court',
+      'futsal-field',
+      'cricket-indoor',
+      'turf-court',
+    ] as const) {
+      const n = counts[key] ?? 0;
+      if (n > 0) {
+        out.push({ label: labels[key], count: n });
+      }
+    }
+    return out;
+  }
+
+  /** Public venue screen: gallery, club info, facilities, hours, booking hints. */
+  async getVenueDetailsPublic(locationId: string) {
+    let loc: BusinessLocation | null;
+    try {
+      loc = await this.locationsRepository.findOne({
+        where: { id: locationId },
+      });
+    } catch (error: unknown) {
+      if (this.isSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Business locations schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
+    if (!loc) {
+      throw new NotFoundException(`Venue ${locationId} not found`);
+    }
+
+    let business: Business | null;
+    try {
+      business = await this.businessesRepository.findOne({
+        where: { id: loc.businessId },
+      });
+    } catch (error: unknown) {
+      if (this.isBusinessSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Businesses schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
+
+    const businessById = new Map<string, Business>();
+    if (business) {
+      businessById.set(business.id, business);
+    }
+    const rows = await this.buildLocationListRowsWithFacilityInfo(
+      [loc],
+      businessById,
+    );
+    const row = rows[0];
+
+    return {
+      venueId: row.id,
+      name: row.name,
+      address: row.addressLine ?? '',
+      latitude: row.latitude,
+      longitude: row.longitude,
+      logo: row.logo,
+      bannerImage: row.bannerImage,
+      gallery: row.gallery ?? [],
+      clubDetails: {
+        businessName: business?.businessName ?? null,
+        description: row.details,
+        sportsOffered: business?.sportsOffered ?? [],
+      },
+      currency: row.currency,
+      price: null as number | null,
+      packages: [] as unknown[],
+      availability: {
+        tenantId: business?.tenantId ?? null,
+        note:
+          'Use GET /bookings/courts/{courtKind}/{courtId}/slot-grid with X-Tenant-Id for live slots.',
+      },
+      dailyOpenHours: row.workingHours ?? null,
+      facilityAvailable: this.facilityCountsToAvailableList(row.facilityCounts),
+      tenantId: business?.tenantId ?? null,
+    };
+  }
 }

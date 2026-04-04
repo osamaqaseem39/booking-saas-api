@@ -23,6 +23,8 @@ import type { CreateBookingDto } from './dto/create-booking.dto';
 import type { CreateBookingItemDto } from './dto/create-booking-item.dto';
 import type { UpdateBookingDto } from './dto/update-booking.dto';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
+import { Business } from '../businesses/entities/business.entity';
+import type { PlaceFutsalBookingDto } from './dto/place-futsal-booking.dto';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { Booking } from './entities/booking.entity';
 import { getWorkingDayWindow } from './working-hours.util';
@@ -210,6 +212,8 @@ export class BookingsService {
     private readonly cricketRepo: Repository<CricketIndoorCourt>,
     @InjectRepository(BusinessLocation)
     private readonly locationRepo: Repository<BusinessLocation>,
+    @InjectRepository(Business)
+    private readonly businessRepo: Repository<Business>,
     @InjectRepository(CourtSlotBookingBlock)
     private readonly slotBlockRepo: Repository<CourtSlotBookingBlock>,
   ) {}
@@ -1067,5 +1071,114 @@ export class BookingsService {
         'Bookings must be scheduled at least 30 minutes in the future',
       );
     }
+  }
+
+  /**
+   * End-user shortcut: resolves tenant from venueId and creates a futsal booking.
+   * `createdAt` is stored on the booking row by TypeORM (see response `placedAt`).
+   */
+  async placeFutsalBooking(dto: PlaceFutsalBookingDto): Promise<{
+    message: string;
+    bookingId: string;
+    placedAt: string;
+  }> {
+    const loc = await this.locationRepo.findOne({ where: { id: dto.venueId } });
+    if (!loc) {
+      throw new NotFoundException(`Venue ${dto.venueId} not found`);
+    }
+    const business = await this.businessRepo.findOne({
+      where: { id: loc.businessId },
+    });
+    if (!business) {
+      throw new BadRequestException('Venue has no business record');
+    }
+    const tenantId = business.tenantId;
+    const courtKind = this.normalizeFutsalFacilityToCourtKind(
+      dto.facilitySelected,
+    );
+    await this.assertFieldBelongsToVenue(
+      courtKind,
+      dto.fieldSelected,
+      dto.venueId,
+      tenantId,
+    );
+
+    const createDto: CreateBookingDto = {
+      userId: dto.userId,
+      sportType: 'futsal',
+      bookingDate: dto.date.slice(0, 10),
+      items: [
+        {
+          courtKind,
+          courtId: dto.fieldSelected,
+          startTime: dto.startTime,
+          endTime: dto.endTime,
+          price: 0,
+          currency: loc.currency ?? 'PKR',
+          status: 'reserved',
+        },
+      ],
+      pricing: {
+        subTotal: 0,
+        discount: 0,
+        tax: 0,
+        totalAmount: 0,
+      },
+      payment: {
+        paymentStatus: 'pending',
+        paymentMethod: 'cash',
+      },
+      bookingStatus: 'pending',
+    };
+    const created = await this.create(tenantId, createDto);
+    return {
+      message: 'Booking placed successfully',
+      bookingId: created.bookingId,
+      placedAt: created.createdAt,
+    };
+  }
+
+  private normalizeFutsalFacilityToCourtKind(raw: string): CourtKind {
+    const s = raw.trim().toLowerCase().replace(/-/g, '_');
+    if (s === 'futsal_field' || s === 'futsal' || s === 'futsalfield') {
+      return 'futsal_field';
+    }
+    if (s === 'turf_court' || s === 'turf' || s === 'turfcourt') {
+      return 'turf_court';
+    }
+    throw new BadRequestException(
+      `facilitySelected must be futsal_field or turf_court (got ${raw})`,
+    );
+  }
+
+  private async assertFieldBelongsToVenue(
+    courtKind: CourtKind,
+    courtId: string,
+    venueId: string,
+    tenantId: string,
+  ): Promise<void> {
+    if (courtKind === 'futsal_field') {
+      const row = await this.futsalRepo.findOne({
+        where: { id: courtId, tenantId },
+      });
+      if (!row || (row.businessLocationId ?? '') !== venueId) {
+        throw new BadRequestException(
+          'Futsal field does not belong to this venue',
+        );
+      }
+      return;
+    }
+    if (courtKind === 'turf_court') {
+      const row = await this.turfRepo.findOne({
+        where: { id: courtId, tenantId },
+      });
+      if (!row || (row.businessLocationId ?? '') !== venueId) {
+        throw new BadRequestException(
+          'Turf court does not belong to this venue',
+        );
+      }
+      return;
+    }
+    throw new BadRequestException('Unsupported facility for futsal booking');
   }
 }

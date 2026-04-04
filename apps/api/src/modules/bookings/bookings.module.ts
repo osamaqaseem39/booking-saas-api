@@ -11,6 +11,8 @@ import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entit
 import { BookingItem } from './entities/booking-item.entity';
 import { Booking } from './entities/booking.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
+import { Business } from '../businesses/entities/business.entity';
+import { PlaceFutsalBookingController } from './place-futsal-booking.controller';
 
 @Module({
   imports: [
@@ -23,10 +25,11 @@ import { BusinessLocation } from '../businesses/entities/business-location.entit
       PadelCourt,
       CricketIndoorCourt,
       BusinessLocation,
+      Business,
       CourtSlotBookingBlock,
     ]),
   ],
-  controllers: [BookingsController],
+  controllers: [BookingsController, PlaceFutsalBookingController],
   providers: [BookingsService],
 })
 export class BookingsModule {}
