@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule, type TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { shouldRunStartupMigrations } from './database/migration-startup.util';
 import { typeOrmOptions } from './database/typeorm.config';
 import { HealthModule } from './health/health.module';
 import { ArenaModule } from './modules/arena/arena.module';
@@ -14,12 +15,6 @@ import { IamModule } from './modules/iam/iam.module';
 import { ProductCatalogModule } from './modules/product-catalog/product-catalog.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
-
-function runMigrationsOnStartup(): boolean {
-  return (
-    (process.env.RUN_STARTUP_MIGRATIONS ?? '').toLowerCase().trim() === 'true'
-  );
-}
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
   const poolMax = toPositiveInt(process.env.DB_POOL_MAX, 1);
@@ -49,7 +44,7 @@ function createTypeOrmConfig(): TypeOrmModuleOptions {
         connectionTimeoutMillis: poolConnectTimeoutMs,
       },
       migrations: typeOrmOptions.migrations,
-      migrationsRun: runMigrationsOnStartup(),
+      migrationsRun: shouldRunStartupMigrations(),
     };
     if (!(globalThis as any).__dbEnvLogged) {
       (globalThis as any).__dbEnvLogged = true;
@@ -92,7 +87,7 @@ function createTypeOrmConfig(): TypeOrmModuleOptions {
       connectionTimeoutMillis: poolConnectTimeoutMs,
     },
     migrations: typeOrmOptions.migrations,
-    migrationsRun: runMigrationsOnStartup(),
+    migrationsRun: shouldRunStartupMigrations(),
   };
   if (!(globalThis as any).__dbEnvLogged) {
     (globalThis as any).__dbEnvLogged = true;

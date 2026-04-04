@@ -2,12 +2,13 @@ import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../apps/api/src/app.module';
+import { shouldRunStartupMigrations } from '../apps/api/src/database/migration-startup.util';
 import dataSource from '../apps/api/src/database/typeorm.config';
 
 let cachedApp: NestExpressApplication | undefined;
 let bootstrapPromise: Promise<NestExpressApplication> | undefined;
 
-/** Runs even when RUN_STARTUP_MIGRATIONS=false (Vercel default). Idempotent. */
+/** Runs before Nest boot. Idempotent. */
 let ensureLocationDetailsColumnPromise: Promise<void> | undefined;
 
 async function ensureBusinessLocationDetailsColumn(): Promise<void> {
@@ -44,22 +45,18 @@ async function getOrCreateApp(): Promise<NestExpressApplication> {
   // creates the Nest app (and the DB pool) at a time.
   if (!bootstrapPromise) {
     bootstrapPromise = (async () => {
-      // TypeORM migrations run inside Nest (AppModule) when RUN_STARTUP_MIGRATIONS=true
-      // (see TypeOrmModule.forRoot migrationsRun). No separate DataSource migration pass here.
-      if (
-        (process.env.RUN_STARTUP_MIGRATIONS ?? '').toLowerCase().trim() ===
-          'true' &&
-        !(globalThis as any).__startupMigrationLogOnce
-      ) {
+      // TypeORM migrations run inside Nest (AppModule migrationsRun). See shouldRunStartupMigrations().
+      if (!(globalThis as any).__startupMigrationLogOnce) {
         (globalThis as any).__startupMigrationLogOnce = true;
-        console.log(
-          '[DB] RUN_STARTUP_MIGRATIONS=true — pending TypeORM migrations will run on Nest DB connect.',
-        );
-      } else if (!(globalThis as any).__startupMigrationLogOnce) {
-        (globalThis as any).__startupMigrationLogOnce = true;
-        console.log(
-          '[DB] startup migrations skipped (set RUN_STARTUP_MIGRATIONS=true to run them on boot via Nest TypeORM, or run `npm run migration:run` with POSTGRES_URL / POSTGRES_URL_NON_POOLING).',
-        );
+        if (shouldRunStartupMigrations()) {
+          console.log(
+            '[DB] TypeORM migrations will run on connect (production default when RUN_STARTUP_MIGRATIONS is unset, or set to true).',
+          );
+        } else {
+          console.log(
+            '[DB] TypeORM migrations skipped (non-production, or RUN_STARTUP_MIGRATIONS=false). Remove RUN_STARTUP_MIGRATIONS in Vercel prod to enable auto-migrate, set it to true, or run npm run migration:run.',
+          );
+        }
       }
 
       await ensureBusinessLocationDetailsColumn();
