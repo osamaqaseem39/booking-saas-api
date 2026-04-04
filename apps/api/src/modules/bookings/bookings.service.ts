@@ -5,11 +5,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { CricketIndoorCourt } from '../arena/cricket-indoor/entities/cricket-indoor-court.entity';
-import { FutsalField } from '../arena/futsal-field/entities/futsal-field.entity';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
-import { TurfCourt } from '../arena/turf-court/entities/turf-court.entity';
-import { turfSportModeToFlags } from '../arena/turf-court/turf-sport-mode.util';
+import { CricketCourt } from '../arena/cricket-court/entities/cricket-court.entity';
+import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity';
 import { User } from '../iam/entities/user.entity';
 import type {
   BookingItemStatus,
@@ -202,14 +200,12 @@ export class BookingsService {
     private readonly bookingRepo: Repository<Booking>,
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
-    @InjectRepository(TurfCourt)
-    private readonly turfRepo: Repository<TurfCourt>,
-    @InjectRepository(FutsalField)
-    private readonly futsalRepo: Repository<FutsalField>,
+    @InjectRepository(FutsalCourt)
+    private readonly futsalCourtRepo: Repository<FutsalCourt>,
+    @InjectRepository(CricketCourt)
+    private readonly cricketCourtRepo: Repository<CricketCourt>,
     @InjectRepository(PadelCourt)
     private readonly padelRepo: Repository<PadelCourt>,
-    @InjectRepository(CricketIndoorCourt)
-    private readonly cricketRepo: Repository<CricketIndoorCourt>,
     @InjectRepository(BusinessLocation)
     private readonly locationRepo: Repository<BusinessLocation>,
     @InjectRepository(Business)
@@ -657,15 +653,15 @@ export class BookingsService {
     courtId: string,
   ): Promise<string | null> {
     switch (kind) {
-      case 'turf_court': {
-        const row = await this.turfRepo.findOne({
+      case 'futsal_court': {
+        const row = await this.futsalCourtRepo.findOne({
           where: { id: courtId, tenantId },
           select: ['businessLocationId'],
         });
         return row?.businessLocationId ?? null;
       }
-      case 'futsal_field': {
-        const row = await this.futsalRepo.findOne({
+      case 'cricket_court': {
+        const row = await this.cricketCourtRepo.findOne({
           where: { id: courtId, tenantId },
           select: ['businessLocationId'],
         });
@@ -673,13 +669,6 @@ export class BookingsService {
       }
       case 'padel_court': {
         const row = await this.padelRepo.findOne({
-          where: { id: courtId, tenantId },
-          select: ['businessLocationId'],
-        });
-        return row?.businessLocationId ?? null;
-      }
-      case 'cricket_indoor_court': {
-        const row = await this.cricketRepo.findOne({
           where: { id: courtId, tenantId },
           select: ['businessLocationId'],
         });
@@ -775,24 +764,24 @@ export class BookingsService {
     courtId: string,
   ): Promise<void> {
     switch (courtKind) {
-      case 'turf_court': {
-        const row = await this.turfRepo.findOne({
+      case 'futsal_court': {
+        const row = await this.futsalCourtRepo.findOne({
           where: { id: courtId, tenantId },
         });
         if (!row) {
           throw new BadRequestException(
-            `Turf court ${courtId} not found for this tenant`,
+            `Futsal court ${courtId} not found for this tenant`,
           );
         }
         break;
       }
-      case 'futsal_field': {
-        const row = await this.futsalRepo.findOne({
+      case 'cricket_court': {
+        const row = await this.cricketCourtRepo.findOne({
           where: { id: courtId, tenantId },
         });
         if (!row) {
           throw new BadRequestException(
-            `Futsal field ${courtId} not found for this tenant`,
+            `Cricket court ${courtId} not found for this tenant`,
           );
         }
         break;
@@ -804,17 +793,6 @@ export class BookingsService {
         if (!row) {
           throw new BadRequestException(
             `Padel court ${courtId} not found for this tenant`,
-          );
-        }
-        break;
-      }
-      case 'cricket_indoor_court': {
-        const row = await this.cricketRepo.findOne({
-          where: { id: courtId, tenantId },
-        });
-        if (!row) {
-          throw new BadRequestException(
-            `Cricket indoor court ${courtId} not found for this tenant`,
           );
         }
         break;
@@ -837,51 +815,45 @@ export class BookingsService {
     if (sport === 'futsal' && courtKind === 'padel_court') {
       throw new BadRequestException('futsal booking cannot use a padel court');
     }
-    if (sport === 'futsal' && courtKind === 'cricket_indoor_court') {
-      throw new BadRequestException(
-        'futsal booking cannot use cricket_indoor_court',
-      );
+    if (sport === 'futsal' && courtKind === 'cricket_court') {
+      throw new BadRequestException('futsal booking cannot use cricket_court');
+    }
+    if (sport === 'cricket' && courtKind === 'futsal_court') {
+      throw new BadRequestException('cricket booking cannot use futsal_court');
     }
     if (sport === 'cricket' && courtKind === 'padel_court') {
       throw new BadRequestException('cricket booking cannot use a padel court');
     }
-    if (sport === 'cricket' && courtKind === 'futsal_field') {
-      throw new BadRequestException('cricket booking cannot use futsal_field');
-    }
 
     switch (courtKind) {
-      case 'turf_court': {
-        const turf = await this.turfRepo.findOne({
-          where: { id: courtId, tenantId },
-        });
-        if (!turf) {
-          throw new BadRequestException(
-            `Turf court ${courtId} not found for this tenant`,
-          );
-        }
-        const flags = turfSportModeToFlags(turf.sportMode);
-        if (sport === 'futsal' && !flags.supportsFutsal) {
-          throw new BadRequestException(
-            `Turf court ${courtId} does not support futsal`,
-          );
-        }
-        if (sport === 'cricket' && !flags.supportsCricket) {
-          throw new BadRequestException(
-            `Turf court ${courtId} does not support cricket`,
-          );
-        }
-        if (sport === 'padel') {
-          throw new BadRequestException('padel cannot use turf_court');
-        }
-        break;
-      }
-      case 'futsal_field': {
-        const row = await this.futsalRepo.findOne({
+      case 'futsal_court': {
+        const row = await this.futsalCourtRepo.findOne({
           where: { id: courtId, tenantId },
         });
         if (!row) {
           throw new BadRequestException(
-            `Futsal field ${courtId} not found for this tenant`,
+            `Futsal court ${courtId} not found for this tenant`,
+          );
+        }
+        if (sport !== 'futsal') {
+          throw new BadRequestException(
+            `futsal_court ${courtId} only accepts futsal bookings`,
+          );
+        }
+        break;
+      }
+      case 'cricket_court': {
+        const row = await this.cricketCourtRepo.findOne({
+          where: { id: courtId, tenantId },
+        });
+        if (!row) {
+          throw new BadRequestException(
+            `Cricket court ${courtId} not found for this tenant`,
+          );
+        }
+        if (sport !== 'cricket') {
+          throw new BadRequestException(
+            `cricket_court ${courtId} only accepts cricket bookings`,
           );
         }
         break;
@@ -897,17 +869,6 @@ export class BookingsService {
         }
         break;
       }
-      case 'cricket_indoor_court': {
-        const row = await this.cricketRepo.findOne({
-          where: { id: courtId, tenantId },
-        });
-        if (!row) {
-          throw new BadRequestException(
-            `Cricket indoor court ${courtId} not found for this tenant`,
-          );
-        }
-        break;
-      }
     }
   }
 
@@ -917,62 +878,32 @@ export class BookingsService {
   ): Promise<CourtOptionRow[]> {
     const out: CourtOptionRow[] = [];
     if (!sport || sport === 'futsal') {
-      const [turf, futsal] = await Promise.all([
-        this.turfRepo.find({
-          where: { tenantId, courtStatus: 'active', supportsFutsal: true },
-          select: ['id', 'name', 'futsalPricePerSlot', 'slotDurationMinutes'],
-        }),
-        this.futsalRepo.find({
-          where: { tenantId, isActive: true },
-          select: ['id', 'name'],
-        }),
-      ]);
+      const futsalCourts = await this.futsalCourtRepo.find({
+        where: { tenantId, courtStatus: 'active' },
+        select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
+      });
       out.push(
-        ...turf.map((r) => ({
-          kind: 'turf_court' as const,
+        ...futsalCourts.map((r) => ({
+          kind: 'futsal_court' as const,
           id: r.id,
           name: r.name,
-          pricePerSlot: optNumFromDec(r.futsalPricePerSlot),
+          pricePerSlot: optNumFromDec(r.pricePerSlot),
           slotDurationMinutes: r.slotDurationMinutes ?? null,
-        })),
-      );
-      out.push(
-        ...futsal.map((r) => ({
-          kind: 'futsal_field' as const,
-          id: r.id,
-          name: r.name,
-          pricePerSlot: null,
-          slotDurationMinutes: null,
         })),
       );
     }
     if (!sport || sport === 'cricket') {
-      const [turf, indoor] = await Promise.all([
-        this.turfRepo.find({
-          where: { tenantId, courtStatus: 'active', supportsCricket: true },
-          select: ['id', 'name', 'cricketPricePerSlot', 'slotDurationMinutes'],
-        }),
-        this.cricketRepo.find({
-          where: { tenantId, isActive: true },
-          select: ['id', 'name'],
-        }),
-      ]);
+      const cricketCourts = await this.cricketCourtRepo.find({
+        where: { tenantId, courtStatus: 'active' },
+        select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
+      });
       out.push(
-        ...turf.map((r) => ({
-          kind: 'turf_court' as const,
+        ...cricketCourts.map((r) => ({
+          kind: 'cricket_court' as const,
           id: r.id,
           name: r.name,
-          pricePerSlot: optNumFromDec(r.cricketPricePerSlot),
+          pricePerSlot: optNumFromDec(r.pricePerSlot),
           slotDurationMinutes: r.slotDurationMinutes ?? null,
-        })),
-      );
-      out.push(
-        ...indoor.map((r) => ({
-          kind: 'cricket_indoor_court' as const,
-          id: r.id,
-          name: r.name,
-          pricePerSlot: null,
-          slotDurationMinutes: null,
         })),
       );
     }
@@ -1140,14 +1071,19 @@ export class BookingsService {
 
   private normalizeFutsalFacilityToCourtKind(raw: string): CourtKind {
     const s = raw.trim().toLowerCase().replace(/-/g, '_');
-    if (s === 'futsal_field' || s === 'futsal' || s === 'futsalfield') {
-      return 'futsal_field';
-    }
-    if (s === 'turf_court' || s === 'turf' || s === 'turfcourt') {
-      return 'turf_court';
+    if (
+      s === 'futsal_court' ||
+      s === 'futsal_field' ||
+      s === 'futsal' ||
+      s === 'futsalfield' ||
+      s === 'turf_court' ||
+      s === 'turf' ||
+      s === 'turfcourt'
+    ) {
+      return 'futsal_court';
     }
     throw new BadRequestException(
-      `facilitySelected must be futsal_field or turf_court (got ${raw})`,
+      `facilitySelected must be futsal_court (legacy futsal_field / turf_court accepted) (got ${raw})`,
     );
   }
 
@@ -1157,28 +1093,16 @@ export class BookingsService {
     venueId: string,
     tenantId: string,
   ): Promise<void> {
-    if (courtKind === 'futsal_field') {
-      const row = await this.futsalRepo.findOne({
-        where: { id: courtId, tenantId },
-      });
-      if (!row || (row.businessLocationId ?? '') !== venueId) {
-        throw new BadRequestException(
-          'Futsal field does not belong to this venue',
-        );
-      }
-      return;
+    if (courtKind !== 'futsal_court') {
+      throw new BadRequestException('Unsupported facility for futsal booking');
     }
-    if (courtKind === 'turf_court') {
-      const row = await this.turfRepo.findOne({
-        where: { id: courtId, tenantId },
-      });
-      if (!row || (row.businessLocationId ?? '') !== venueId) {
-        throw new BadRequestException(
-          'Turf court does not belong to this venue',
-        );
-      }
-      return;
+    const row = await this.futsalCourtRepo.findOne({
+      where: { id: courtId, tenantId },
+    });
+    if (!row || (row.businessLocationId ?? '') !== venueId) {
+      throw new BadRequestException(
+        'Futsal court does not belong to this venue',
+      );
     }
-    throw new BadRequestException('Unsupported facility for futsal booking');
   }
 }

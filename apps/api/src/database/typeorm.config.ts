@@ -1,9 +1,8 @@
 import { DataSource, DataSourceOptions } from 'typeorm';
 import { join } from 'path';
-import { CricketIndoorCourt } from '../modules/arena/cricket-indoor/entities/cricket-indoor-court.entity';
-import { FutsalField } from '../modules/arena/futsal-field/entities/futsal-field.entity';
+import { CricketCourt } from '../modules/arena/cricket-court/entities/cricket-court.entity';
+import { FutsalCourt } from '../modules/arena/futsal-court/entities/futsal-court.entity';
 import { PadelCourt } from '../modules/arena/padel-court/entities/padel-court.entity';
-import { TurfCourt } from '../modules/arena/turf-court/entities/turf-court.entity';
 import { BookingItem } from '../modules/bookings/entities/booking-item.entity';
 import { Booking } from '../modules/bookings/entities/booking.entity';
 import { BusinessLocation } from '../modules/businesses/entities/business-location.entity';
@@ -77,10 +76,9 @@ export const typeOrmOptions: DataSourceOptions = {
     Business,
     BusinessLocation,
     BusinessMembership,
-    CricketIndoorCourt,
-    FutsalField,
+    CricketCourt,
+    FutsalCourt,
     PadelCourt,
-    TurfCourt,
     Booking,
     BookingItem,
   ],

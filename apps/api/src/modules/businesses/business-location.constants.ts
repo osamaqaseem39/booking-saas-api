@@ -9,42 +9,65 @@ export const BUSINESS_LOCATION_TYPE_CODES = [
 export type BusinessLocationTypeCode =
   (typeof BUSINESS_LOCATION_TYPE_CODES)[number];
 
-/**
- * Sub-facility / court kinds this location can host (arena vertical).
- * Product: Turf (combined futsal + cricket via `/arena/turf-courts`) and Padel.
- */
+/** Canonical arena sub-facility codes stored on locations (API + persist). */
 export const BUSINESS_LOCATION_FACILITY_TYPE_CODES = [
-  'turf-court',
-  'padel-court',
+  'futsal',
+  'cricket',
+  'padel',
 ] as const;
 
 export type BusinessLocationFacilityTypeCode =
   (typeof BUSINESS_LOCATION_FACILITY_TYPE_CODES)[number];
 
-/** Alias for turf in DB / clients; same canonical code as `turf-court`. */
-export const LEGACY_TURF_FACILITY_TYPE_CODE = 'turf-court' as const;
-
-const FACILITY_CODES_SET = new Set<string>(BUSINESS_LOCATION_FACILITY_TYPE_CODES);
-
-/** Sport-specific types stored on older rows map to canonical `turf-court`. */
-const TURF_FACILITY_ALIASES = new Set([
-  LEGACY_TURF_FACILITY_TYPE_CODE,
+/** Accepted on create/update; normalized to canonical codes before persist. */
+export const BUSINESS_LOCATION_FACILITY_LEGACY_TYPE_CODES = [
+  'turf-court',
+  'turf-court-futsal',
+  'turf-court-cricket',
   'futsal-field',
   'cricket-indoor',
-]);
+  'padel-court',
+] as const;
 
-/** Normalize for API clients: legacy sport rows → `turf-court`; drop unknown codes. */
+export const ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES = [
+  ...BUSINESS_LOCATION_FACILITY_TYPE_CODES,
+  ...BUSINESS_LOCATION_FACILITY_LEGACY_TYPE_CODES,
+] as const;
+
+/**
+ * Normalize location facility type tags to `futsal` | `cricket` | `padel`.
+ */
 export function normalizeLocationFacilityTypesForApi(
   raw: string[] | null | undefined,
 ): string[] {
   if (!raw?.length) return [];
   const out = new Set<string>();
   for (const t of raw) {
-    if (TURF_FACILITY_ALIASES.has(t)) {
-      out.add('turf-court');
-    } else if (FACILITY_CODES_SET.has(t)) {
-      out.add(t);
+    if (
+      t === 'futsal-field' ||
+      t === 'turf-court-futsal' ||
+      t === 'futsal'
+    ) {
+      out.add('futsal');
+    } else if (
+      t === 'cricket-indoor' ||
+      t === 'turf-court-cricket' ||
+      t === 'cricket'
+    ) {
+      out.add('cricket');
+    } else if (t === 'padel-court' || t === 'padel') {
+      out.add('padel');
+    } else if (t === 'turf-court') {
+      out.add('futsal');
+      out.add('cricket');
     }
   }
   return [...out].sort();
+}
+
+/** Same expansion as API normalization; use when persisting location facilityTypes. */
+export function normalizeLocationFacilityTypesForPersist(
+  raw: string[] | null | undefined,
+): string[] {
+  return normalizeLocationFacilityTypesForApi(raw);
 }

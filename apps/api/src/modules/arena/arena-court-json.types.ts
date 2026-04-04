@@ -1,18 +1,18 @@
-/** JSONB shapes stored on turf_courts */
-export type TurfVentilation = 'natural' | 'fans' | 'ac';
+/** JSONB shapes on `futsal_courts` / `cricket_courts` (shared type-only definitions). */
+export type ArenaVentilation = 'natural' | 'fans' | 'ac';
 
-export interface TurfPeakPricing {
+export interface ArenaPeakPricing {
   weekdayEvening?: number;
   weekend?: number;
 }
 
-export interface TurfDiscountMembership {
+export interface ArenaDiscountMembership {
   label?: string;
   amount?: number;
   percentOff?: number;
 }
 
-export interface TurfAmenities {
+export interface ArenaAmenities {
   changingRoom?: boolean;
   washroom?: boolean;
   parking?: boolean;
@@ -20,7 +20,7 @@ export interface TurfAmenities {
   seatingArea?: boolean;
 }
 
-export interface TurfRules {
+export interface ArenaRules {
   maxPlayers?: number;
   safetyInstructions?: string;
   cancellationPolicy?: string;

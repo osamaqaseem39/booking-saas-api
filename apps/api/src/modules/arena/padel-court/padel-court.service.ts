@@ -12,7 +12,7 @@ import { CreatePadelCourtDto } from './dto/create-padel-court.dto';
 import { UpdatePadelCourtDto } from './dto/update-padel-court.dto';
 import { PadelCourt } from './entities/padel-court.entity';
 
-const PADEL_LOCATION_FACILITY_CODE = 'padel-court' as const;
+const PADEL_LOCATION_FACILITY_CODE = 'padel' as const;
 
 function dec(n?: number): string | undefined {
   if (n === undefined || n === null || Number.isNaN(n)) return undefined;

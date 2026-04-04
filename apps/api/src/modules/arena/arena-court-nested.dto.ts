@@ -5,10 +5,10 @@ import {
   IsOptional,
   IsString,
   MaxLength,
-  ValidateNested,
 } from 'class-validator';
 
-export class TurfPeakPricingDto {
+/** Nested DTOs reused by CreateFutsalCourtDto / CreateCricketCourtDto. */
+export class ArenaPeakPricingDto {
   @IsOptional()
   @IsNumber()
   weekdayEvening?: number;
@@ -18,7 +18,7 @@ export class TurfPeakPricingDto {
   weekend?: number;
 }
 
-export class TurfDiscountMembershipDto {
+export class ArenaDiscountMembershipDto {
   @IsOptional()
   @IsString()
   @MaxLength(120)
@@ -33,7 +33,7 @@ export class TurfDiscountMembershipDto {
   percentOff?: number;
 }
 
-export class TurfAmenitiesDto {
+export class ArenaAmenitiesDto {
   @IsOptional()
   @IsBoolean()
   changingRoom?: boolean;
@@ -55,7 +55,7 @@ export class TurfAmenitiesDto {
   seatingArea?: boolean;
 }
 
-export class TurfRulesDto {
+export class ArenaRulesDto {
   @IsOptional()
   @IsNumber()
   maxPlayers?: number;

@@ -14,7 +14,7 @@ export class PlaceFutsalBookingDto {
   })
   endTime!: string;
 
-  /** e.g. `futsal_field` or `turf_court` (hyphen or underscore allowed). */
+  /** e.g. `futsal_court` (legacy `futsal_field` / `turf_court` strings accepted). */
   @IsString()
   facilitySelected!: string;
 

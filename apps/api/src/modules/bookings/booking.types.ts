@@ -35,9 +35,8 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 /** Which physical court table `courtId` refers to */
 export const COURT_KINDS = [
-  'turf_court',
-  'futsal_field',
+  'futsal_court',
+  'cricket_court',
   'padel_court',
-  'cricket_indoor_court',
 ] as const;
 export type CourtKind = (typeof COURT_KINDS)[number];

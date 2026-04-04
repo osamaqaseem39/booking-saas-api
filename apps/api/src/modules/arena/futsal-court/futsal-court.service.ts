@@ -5,16 +5,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { BusinessesService } from '../../businesses/businesses.service';
-import { assertTurfSportModesAllowedForLocation } from '../location-facility.util';
-import { CreateTurfCourtDto } from './dto/create-turf-court.dto';
-import { UpdateTurfCourtDto } from './dto/update-turf-court.dto';
-import { TurfCourt } from './entities/turf-court.entity';
-import {
-  turfSportModeToFlags,
-  type TurfSportFilter,
-} from './turf-sport-mode.util';
+import { assertFacilityTypeAllowedForLocation } from '../location-facility.util';
+import { CreateFutsalCourtDto } from './dto/create-futsal-court.dto';
+import { UpdateFutsalCourtDto } from './dto/update-futsal-court.dto';
+import { FutsalCourt } from './entities/futsal-court.entity';
 
 function dec(n?: number): string | undefined {
   if (n === undefined || n === null || Number.isNaN(n)) return undefined;
@@ -22,10 +18,10 @@ function dec(n?: number): string | undefined {
 }
 
 @Injectable()
-export class TurfCourtService {
+export class FutsalCourtService {
   constructor(
-    @InjectRepository(TurfCourt)
-    private readonly repo: Repository<TurfCourt>,
+    @InjectRepository(FutsalCourt)
+    private readonly repo: Repository<FutsalCourt>,
     private readonly businessesService: BusinessesService,
   ) {}
 
@@ -39,9 +35,8 @@ export class TurfCourtService {
 
   async list(
     tenantId: string,
-    sport?: TurfSportFilter,
     businessLocationId?: string,
-  ): Promise<TurfCourt[]> {
+  ): Promise<FutsalCourt[]> {
     if (!tenantId || tenantId === 'public') return [];
     if (
       businessLocationId !== undefined &&
@@ -54,48 +49,24 @@ export class TurfCourtService {
       businessLocationId && businessLocationId !== ''
         ? { businessLocationId }
         : {};
-    if (sport === 'futsal') {
-      return this.repo.find({
-        where: {
-          tenantId,
-          sportMode: In(['futsal_only', 'both']),
-          ...locWhere,
-        },
-        order: { name: 'ASC' },
-      });
-    }
-    if (sport === 'cricket') {
-      return this.repo.find({
-        where: {
-          tenantId,
-          sportMode: In(['cricket_only', 'both']),
-          ...locWhere,
-        },
-        order: { name: 'ASC' },
-      });
-    }
     return this.repo.find({
       where: { tenantId, ...locWhere },
       order: { name: 'ASC' },
     });
   }
 
-  async create(tenantId: string, dto: CreateTurfCourtDto): Promise<TurfCourt> {
+  async create(tenantId: string, dto: CreateFutsalCourtDto): Promise<FutsalCourt> {
     this.requireTenant(tenantId);
     const location = await this.businessesService.assertLocationBelongsToTenant(
       dto.businessLocationId,
       tenantId,
     );
-    assertTurfSportModesAllowedForLocation(location, dto.sportMode);
-    const { supportsFutsal, supportsCricket } = turfSportModeToFlags(
-      dto.sportMode,
-    );
+    assertFacilityTypeAllowedForLocation(location, 'futsal');
 
     const row = this.repo.create({
       tenantId,
       businessLocationId: dto.businessLocationId,
       name: dto.name,
-      sportMode: dto.sportMode,
       arenaLabel: dto.arenaLabel,
       courtStatus: dto.courtStatus ?? 'active',
       imageUrls: dto.imageUrls ?? [],
@@ -112,18 +83,11 @@ export class TurfCourtService {
       surfaceType: dto.surfaceType,
       turfQuality: dto.turfQuality,
       shockAbsorptionLayer: dto.shockAbsorptionLayer,
-      supportsFutsal,
-      supportsCricket,
       futsalFormat: dto.futsalFormat,
       futsalGoalPostsAvailable: dto.futsalGoalPostsAvailable,
       futsalGoalPostSize: dto.futsalGoalPostSize,
       futsalLineMarkings: dto.futsalLineMarkings,
-      cricketFormat: dto.cricketFormat,
-      cricketStumpsAvailable: dto.cricketStumpsAvailable,
-      cricketBowlingMachine: dto.cricketBowlingMachine,
-      cricketPracticeMode: dto.cricketPracticeMode,
-      futsalPricePerSlot: dec(dto.futsalPricePerSlot),
-      cricketPricePerSlot: dec(dto.cricketPricePerSlot),
+      pricePerSlot: dec(dto.pricePerSlot),
       peakPricing: dto.peakPricing,
       discountMembership: dto.discountMembership,
       slotDurationMinutes: dto.slotDurationMinutes,
@@ -135,11 +99,11 @@ export class TurfCourtService {
     return this.repo.save(row);
   }
 
-  async findOne(tenantId: string, id: string): Promise<TurfCourt> {
+  async findOne(tenantId: string, id: string): Promise<FutsalCourt> {
     this.requireTenant(tenantId);
     const row = await this.repo.findOne({ where: { id, tenantId } });
     if (!row) {
-      throw new NotFoundException(`Turf court ${id} not found`);
+      throw new NotFoundException(`Futsal court ${id} not found`);
     }
     return row;
   }
@@ -147,30 +111,27 @@ export class TurfCourtService {
   async update(
     tenantId: string,
     id: string,
-    dto: UpdateTurfCourtDto,
-  ): Promise<TurfCourt> {
+    dto: UpdateFutsalCourtDto,
+  ): Promise<FutsalCourt> {
     const row = await this.findOne(tenantId, id);
 
-    if (dto.sportMode !== undefined) {
-      if (!row.businessLocationId) {
-        throw new BadRequestException(
-          'Turf court is not linked to a business location',
-        );
-      }
+    if (dto.businessLocationId !== undefined) {
       const location = await this.businessesService.assertLocationBelongsToTenant(
-        row.businessLocationId,
+        dto.businessLocationId,
         tenantId,
       );
-      assertTurfSportModesAllowedForLocation(location, dto.sportMode);
+      assertFacilityTypeAllowedForLocation(location, 'futsal');
     }
 
-    const patch: Partial<TurfCourt> = {};
-    const assign = <K extends keyof TurfCourt>(key: K, val: TurfCourt[K]) => {
+    const patch: Partial<FutsalCourt> = {};
+    const assign = <K extends keyof FutsalCourt>(key: K, val: FutsalCourt[K]) => {
       if (val !== undefined)
         (patch as Record<string, unknown>)[key as string] = val;
     };
 
     if (dto.name !== undefined) assign('name', dto.name);
+    if (dto.businessLocationId !== undefined)
+      assign('businessLocationId', dto.businessLocationId);
     if (dto.arenaLabel !== undefined) assign('arenaLabel', dto.arenaLabel);
     if (dto.courtStatus !== undefined) assign('courtStatus', dto.courtStatus);
     if (dto.imageUrls !== undefined) assign('imageUrls', dto.imageUrls);
@@ -191,12 +152,6 @@ export class TurfCourtService {
     if (dto.turfQuality !== undefined) assign('turfQuality', dto.turfQuality);
     if (dto.shockAbsorptionLayer !== undefined)
       assign('shockAbsorptionLayer', dto.shockAbsorptionLayer);
-    if (dto.sportMode !== undefined) {
-      const flags = turfSportModeToFlags(dto.sportMode);
-      assign('sportMode', dto.sportMode);
-      assign('supportsFutsal', flags.supportsFutsal);
-      assign('supportsCricket', flags.supportsCricket);
-    }
     if (dto.futsalFormat !== undefined)
       assign('futsalFormat', dto.futsalFormat);
     if (dto.futsalGoalPostsAvailable !== undefined)
@@ -205,18 +160,8 @@ export class TurfCourtService {
       assign('futsalGoalPostSize', dto.futsalGoalPostSize);
     if (dto.futsalLineMarkings !== undefined)
       assign('futsalLineMarkings', dto.futsalLineMarkings);
-    if (dto.cricketFormat !== undefined)
-      assign('cricketFormat', dto.cricketFormat);
-    if (dto.cricketStumpsAvailable !== undefined)
-      assign('cricketStumpsAvailable', dto.cricketStumpsAvailable);
-    if (dto.cricketBowlingMachine !== undefined)
-      assign('cricketBowlingMachine', dto.cricketBowlingMachine);
-    if (dto.cricketPracticeMode !== undefined)
-      assign('cricketPracticeMode', dto.cricketPracticeMode);
-    if (dto.futsalPricePerSlot !== undefined)
-      assign('futsalPricePerSlot', dec(dto.futsalPricePerSlot));
-    if (dto.cricketPricePerSlot !== undefined)
-      assign('cricketPricePerSlot', dec(dto.cricketPricePerSlot));
+    if (dto.pricePerSlot !== undefined)
+      assign('pricePerSlot', dec(dto.pricePerSlot));
     if (dto.peakPricing !== undefined) assign('peakPricing', dto.peakPricing);
     if (dto.discountMembership !== undefined)
       assign('discountMembership', dto.discountMembership);

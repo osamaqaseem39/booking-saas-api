@@ -14,14 +14,14 @@ import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
 import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../../tenancy/tenant-context.interface';
-import { CreateFutsalFieldDto } from './dto/create-futsal-field.dto';
-import { UpdateFutsalFieldDto } from './dto/update-futsal-field.dto';
-import { FutsalFieldService } from './futsal-field.service';
+import { CreateCricketCourtDto } from './dto/create-cricket-court.dto';
+import { UpdateCricketCourtDto } from './dto/update-cricket-court.dto';
+import { CricketCourtService } from './cricket-court.service';
 
-@Controller('arena/futsal-field')
+@Controller('arena/cricket-courts')
 @UseGuards(RolesGuard)
-export class FutsalFieldController {
-  constructor(private readonly service: FutsalFieldService) {}
+export class CricketCourtController {
+  constructor(private readonly service: CricketCourtService) {}
 
   @Get()
   list(
@@ -43,7 +43,7 @@ export class FutsalFieldController {
   @Roles('platform-owner', 'business-admin')
   create(
     @CurrentTenant() tenant: TenantContext,
-    @Body() dto: CreateFutsalFieldDto,
+    @Body() dto: CreateCricketCourtDto,
   ) {
     return this.service.create(tenant.tenantId, dto);
   }
@@ -53,7 +53,7 @@ export class FutsalFieldController {
   patch(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdateFutsalFieldDto,
+    @Body() dto: UpdateCricketCourtDto,
   ) {
     return this.service.update(tenant.tenantId, id, dto);
   }

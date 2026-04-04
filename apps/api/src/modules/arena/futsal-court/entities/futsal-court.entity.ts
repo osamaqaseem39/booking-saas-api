@@ -9,26 +9,23 @@ import {
 } from 'typeorm';
 import { BusinessLocation } from '../../../businesses/entities/business-location.entity';
 import type {
-  TurfAmenities,
-  TurfDiscountMembership,
-  TurfPeakPricing,
-  TurfRules,
-} from '../turf-court.types';
-import type { TurfSportMode } from '../turf-sport-mode.util';
+  ArenaAmenities,
+  ArenaDiscountMembership,
+  ArenaPeakPricing,
+  ArenaRules,
+} from '../../arena-court-json.types';
 
-export type TurfCourtStatus = 'active' | 'maintenance';
-export type TurfCeilingUnit = 'ft' | 'm';
-export type TurfCoveredType = 'open' | 'semi_covered' | 'fully_indoor';
-export type TurfBoundaryType = 'net' | 'wall';
-export type TurfLighting = 'led_floodlights' | 'mixed' | 'daylight';
-export type TurfSurfaceType = 'artificial_turf' | 'hard_surface';
-export type TurfFutsalFormat = '5v5' | '6v6' | '7v7';
-export type TurfFutsalLineMarkings = 'permanent' | 'temporary';
-export type TurfCricketFormat = 'tape_ball' | 'tennis_ball' | 'hard_ball';
-export type TurfCricketPracticeMode = 'full_ground' | 'nets_mode';
+export type FutsalCourtStatus = 'active' | 'maintenance';
+export type FutsalCeilingUnit = 'ft' | 'm';
+export type FutsalCoveredType = 'open' | 'semi_covered' | 'fully_indoor';
+export type FutsalBoundaryType = 'net' | 'wall';
+export type FutsalLighting = 'led_floodlights' | 'mixed' | 'daylight';
+export type FutsalSurfaceType = 'artificial_turf' | 'hard_surface';
+export type FutsalFormat = '5v5' | '6v6' | '7v7';
+export type FutsalLineMarkings = 'permanent' | 'temporary';
 
-@Entity({ name: 'turf_courts' })
-export class TurfCourt {
+@Entity({ name: 'futsal_courts' })
+export class FutsalCourt {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
@@ -42,7 +39,6 @@ export class TurfCourt {
   @JoinColumn({ name: 'businessLocationId' })
   businessLocation?: BusinessLocation;
 
-  /** Display label for Arena dropdown (business may use name or external id) */
   @Column({ type: 'varchar', length: 160 })
   name!: string;
 
@@ -50,7 +46,7 @@ export class TurfCourt {
   arenaLabel?: string;
 
   @Column({ type: 'varchar', length: 20, default: 'active' })
-  courtStatus!: TurfCourtStatus;
+  courtStatus!: FutsalCourtStatus;
 
   @Column({ type: 'jsonb', nullable: true })
   imageUrls?: string[];
@@ -59,10 +55,10 @@ export class TurfCourt {
   ceilingHeightValue?: string;
 
   @Column({ type: 'varchar', length: 2, nullable: true })
-  ceilingHeightUnit?: TurfCeilingUnit;
+  ceilingHeightUnit?: FutsalCeilingUnit;
 
   @Column({ type: 'varchar', length: 20, nullable: true })
-  coveredType?: TurfCoveredType;
+  coveredType?: FutsalCoveredType;
 
   @Column({ type: 'boolean', nullable: true })
   sideNetting?: boolean;
@@ -71,13 +67,13 @@ export class TurfCourt {
   netHeight?: string;
 
   @Column({ type: 'varchar', length: 10, nullable: true })
-  boundaryType?: TurfBoundaryType;
+  boundaryType?: FutsalBoundaryType;
 
   @Column({ type: 'jsonb', nullable: true })
   ventilation?: string[];
 
   @Column({ type: 'varchar', length: 24, nullable: true })
-  lighting?: TurfLighting;
+  lighting?: FutsalLighting;
 
   @Column({ type: 'decimal', precision: 10, scale: 2, nullable: true })
   lengthM?: string;
@@ -86,7 +82,7 @@ export class TurfCourt {
   widthM?: string;
 
   @Column({ type: 'varchar', length: 24, nullable: true })
-  surfaceType?: TurfSurfaceType;
+  surfaceType?: FutsalSurfaceType;
 
   @Column({ type: 'varchar', length: 120, nullable: true })
   turfQuality?: string;
@@ -94,18 +90,8 @@ export class TurfCourt {
   @Column({ type: 'boolean', nullable: true })
   shockAbsorptionLayer?: boolean;
 
-  /** Single form control: only futsal, only cricket, or both (kept in sync with supports* flags) */
-  @Column({ type: 'varchar', length: 16, default: 'both' })
-  sportMode!: TurfSportMode;
-
-  @Column({ type: 'boolean', default: false })
-  supportsFutsal!: boolean;
-
-  @Column({ type: 'boolean', default: false })
-  supportsCricket!: boolean;
-
   @Column({ type: 'varchar', length: 8, nullable: true })
-  futsalFormat?: TurfFutsalFormat;
+  futsalFormat?: FutsalFormat;
 
   @Column({ type: 'boolean', nullable: true })
   futsalGoalPostsAvailable?: boolean;
@@ -114,31 +100,16 @@ export class TurfCourt {
   futsalGoalPostSize?: string;
 
   @Column({ type: 'varchar', length: 16, nullable: true })
-  futsalLineMarkings?: TurfFutsalLineMarkings;
-
-  @Column({ type: 'varchar', length: 16, nullable: true })
-  cricketFormat?: TurfCricketFormat;
-
-  @Column({ type: 'boolean', nullable: true })
-  cricketStumpsAvailable?: boolean;
-
-  @Column({ type: 'boolean', nullable: true })
-  cricketBowlingMachine?: boolean;
-
-  @Column({ type: 'varchar', length: 16, nullable: true })
-  cricketPracticeMode?: TurfCricketPracticeMode;
+  futsalLineMarkings?: FutsalLineMarkings;
 
   @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
-  futsalPricePerSlot?: string;
-
-  @Column({ type: 'decimal', precision: 12, scale: 2, nullable: true })
-  cricketPricePerSlot?: string;
+  pricePerSlot?: string;
 
   @Column({ type: 'jsonb', nullable: true })
-  peakPricing?: TurfPeakPricing;
+  peakPricing?: ArenaPeakPricing;
 
   @Column({ type: 'jsonb', nullable: true })
-  discountMembership?: TurfDiscountMembership;
+  discountMembership?: ArenaDiscountMembership;
 
   @Column({ type: 'int', nullable: true })
   slotDurationMinutes?: number;
@@ -150,10 +121,10 @@ export class TurfCourt {
   allowParallelBooking?: boolean;
 
   @Column({ type: 'jsonb', nullable: true })
-  amenities?: TurfAmenities;
+  amenities?: ArenaAmenities;
 
   @Column({ type: 'jsonb', nullable: true })
-  rules?: TurfRules;
+  rules?: ArenaRules;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

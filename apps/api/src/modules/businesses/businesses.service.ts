@@ -8,10 +8,9 @@ import {
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
-import { CricketIndoorCourt } from '../arena/cricket-indoor/entities/cricket-indoor-court.entity';
-import { FutsalField } from '../arena/futsal-field/entities/futsal-field.entity';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
-import { TurfCourt } from '../arena/turf-court/entities/turf-court.entity';
+import { CricketCourt } from '../arena/cricket-court/entities/cricket-court.entity';
+import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity';
 import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { IamService } from '../iam/iam.service';
@@ -24,7 +23,11 @@ import { UpdateBusinessLocationDto } from './dto/update-business-location.dto';
 import { BusinessLocation } from './entities/business-location.entity';
 import { Business } from './entities/business.entity';
 import { BusinessMembership } from './entities/business-membership.entity';
-import { normalizeLocationFacilityTypesForApi } from './business-location.constants';
+import {
+  BUSINESS_LOCATION_TYPE_CODES,
+  normalizeLocationFacilityTypesForApi,
+  normalizeLocationFacilityTypesForPersist,
+} from './business-location.constants';
 import {
   coordinateToJsonNumber,
   normalizeCoordinateForPersist,
@@ -40,14 +43,12 @@ export class BusinessesService {
     private readonly membershipsRepository: Repository<BusinessMembership>,
     @InjectRepository(BusinessLocation)
     private readonly locationsRepository: Repository<BusinessLocation>,
-    @InjectRepository(TurfCourt)
-    private readonly turfCourtRepository: Repository<TurfCourt>,
-    @InjectRepository(FutsalField)
-    private readonly futsalFieldRepository: Repository<FutsalField>,
+    @InjectRepository(FutsalCourt)
+    private readonly futsalCourtRepository: Repository<FutsalCourt>,
+    @InjectRepository(CricketCourt)
+    private readonly cricketCourtRepository: Repository<CricketCourt>,
     @InjectRepository(PadelCourt)
     private readonly padelCourtRepository: Repository<PadelCourt>,
-    @InjectRepository(CricketIndoorCourt)
-    private readonly cricketIndoorCourtRepository: Repository<CricketIndoorCourt>,
     @InjectRepository(BookingItem)
     private readonly bookingItemRepository: Repository<BookingItem>,
     @InjectRepository(Booking)
@@ -510,29 +511,21 @@ export class BusinessesService {
   }
 
   private emptyFacilityCountsRecord(): Record<
-    'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
+    'futsal' | 'cricket' | 'padel',
     number
   > {
     return {
-      'padel-court': 0,
-      'futsal-field': 0,
-      'cricket-indoor': 0,
-      'turf-court': 0,
+      futsal: 0,
+      cricket: 0,
+      padel: 0,
     };
   }
 
   private countsFromCourtSummaries(
     courts: Array<{
-      facilityType:
-        | 'padel-court'
-        | 'futsal-field'
-        | 'cricket-indoor'
-        | 'turf-court';
+      facilityType: 'futsal' | 'cricket' | 'padel';
     }>,
-  ): Record<
-    'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
-    number
-  > {
+  ): Record<'futsal' | 'cricket' | 'padel', number> {
     const base = this.emptyFacilityCountsRecord();
     for (const c of courts) {
       base[c.facilityType]++;
@@ -546,16 +539,9 @@ export class BusinessesService {
   ): Promise<
     Array<
       ReturnType<BusinessesService['toLocationListRow']> & {
-        facilityCounts: Record<
-          'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
-          number
-        >;
+        facilityCounts: Record<'futsal' | 'cricket' | 'padel', number>;
         facilityCourts: Array<{
-          facilityType:
-            | 'padel-court'
-            | 'futsal-field'
-            | 'cricket-indoor'
-            | 'turf-court';
+          facilityType: 'futsal' | 'cricket' | 'padel';
           id: string;
           name: string;
         }>;
@@ -583,11 +569,7 @@ export class BusinessesService {
     Map<
       string,
       Array<{
-        facilityType:
-          | 'padel-court'
-          | 'futsal-field'
-          | 'cricket-indoor'
-          | 'turf-court';
+        facilityType: 'futsal' | 'cricket' | 'padel';
         id: string;
         name: string;
       }>
@@ -596,11 +578,7 @@ export class BusinessesService {
     const map = new Map<
       string,
       Array<{
-        facilityType:
-          | 'padel-court'
-          | 'futsal-field'
-          | 'cricket-indoor'
-          | 'turf-court';
+        facilityType: 'futsal' | 'cricket' | 'padel';
         id: string;
         name: string;
       }>
@@ -616,11 +594,7 @@ export class BusinessesService {
 
     const push = (
       locId: string | null | undefined,
-      facilityType:
-        | 'padel-court'
-        | 'futsal-field'
-        | 'cricket-indoor'
-        | 'turf-court',
+      facilityType: 'futsal' | 'cricket' | 'padel',
       id: string,
       name: string,
     ) => {
@@ -630,36 +604,29 @@ export class BusinessesService {
       list.push({ facilityType, id, name });
     };
 
-    const [padel, futsal, cricket, turf] = await Promise.all([
+    const [padel, futsalCourt, cricketCourt] = await Promise.all([
       this.padelCourtRepository.find({
         where: { ...whereLoc, isActive: true, courtStatus: 'active' },
         select: ['id', 'name', 'businessLocationId'],
       }),
-      this.futsalFieldRepository.find({
-        where: { ...whereLoc, isActive: true },
+      this.futsalCourtRepository.find({
+        where: { ...whereLoc, courtStatus: 'active' },
         select: ['id', 'name', 'businessLocationId'],
       }),
-      this.cricketIndoorCourtRepository.find({
-        where: { ...whereLoc, isActive: true },
-        select: ['id', 'name', 'businessLocationId'],
-      }),
-      this.turfCourtRepository.find({
+      this.cricketCourtRepository.find({
         where: { ...whereLoc, courtStatus: 'active' },
         select: ['id', 'name', 'businessLocationId'],
       }),
     ]);
 
     for (const row of padel) {
-      push(row.businessLocationId, 'padel-court', row.id, row.name);
+      push(row.businessLocationId, 'padel', row.id, row.name);
     }
-    for (const row of futsal) {
-      push(row.businessLocationId, 'futsal-field', row.id, row.name);
+    for (const row of futsalCourt) {
+      push(row.businessLocationId, 'futsal', row.id, row.name);
     }
-    for (const row of cricket) {
-      push(row.businessLocationId, 'cricket-indoor', row.id, row.name);
-    }
-    for (const row of turf) {
-      push(row.businessLocationId, 'turf-court', row.id, row.name);
+    for (const row of cricketCourt) {
+      push(row.businessLocationId, 'cricket', row.id, row.name);
     }
 
     return map;
@@ -766,6 +733,38 @@ export class BusinessesService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Product-registered codes plus every distinct `locationType` ever stored
+   * (any location row). For app filters / pickers; superset of
+   * {@link listLocationTypesPublic} which only lists types with an active site.
+   */
+  async listAllRegisteredLocationTypesPublic(): Promise<{
+    locationTypes: string[];
+  }> {
+    const codes = new Set<string>([...BUSINESS_LOCATION_TYPE_CODES]);
+    try {
+      const raw = await this.locationsRepository
+        .createQueryBuilder('l')
+        .select('DISTINCT l.locationType', 'locationType')
+        .where('l.locationType IS NOT NULL')
+        .andWhere("TRIM(l.locationType) != ''")
+        .getRawMany<{ locationType: string }>();
+      for (const row of raw) {
+        const t = row.locationType?.trim();
+        if (t) codes.add(t);
+      }
+    } catch (error: unknown) {
+      if (this.isSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Business locations schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
+    const locationTypes = Array.from(codes).sort((a, b) => a.localeCompare(b));
+    return { locationTypes };
   }
 
   /**
@@ -964,36 +963,29 @@ export class BusinessesService {
 
     const whereLoc = { businessLocationId: In(locationIds) };
 
-    const [turf, futsal, padel, cricket] = await Promise.all([
-      this.turfCourtRepository.find({
+    const [futsalCourt, cricketCourt, padel] = await Promise.all([
+      this.futsalCourtRepository.find({
         where: { ...whereLoc, courtStatus: 'active' },
         select: ['id', 'businessLocationId'],
       }),
-      this.futsalFieldRepository.find({
-        where: { ...whereLoc, isActive: true },
+      this.cricketCourtRepository.find({
+        where: { ...whereLoc, courtStatus: 'active' },
         select: ['id', 'businessLocationId'],
       }),
       this.padelCourtRepository.find({
         where: { ...whereLoc, isActive: true, courtStatus: 'active' },
         select: ['id', 'businessLocationId'],
       }),
-      this.cricketIndoorCourtRepository.find({
-        where: { ...whereLoc, isActive: true },
-        select: ['id', 'businessLocationId'],
-      }),
     ]);
 
-    for (const row of turf) {
-      push(row.businessLocationId, 'turf_court', row.id);
+    for (const row of futsalCourt) {
+      push(row.businessLocationId, 'futsal_court', row.id);
     }
-    for (const row of futsal) {
-      push(row.businessLocationId, 'futsal_field', row.id);
+    for (const row of cricketCourt) {
+      push(row.businessLocationId, 'cricket_court', row.id);
     }
     for (const row of padel) {
       push(row.businessLocationId, 'padel_court', row.id);
-    }
-    for (const row of cricket) {
-      push(row.businessLocationId, 'cricket_indoor_court', row.id);
     }
 
     const out = new Map<string, string[]>();
@@ -1096,7 +1088,9 @@ export class BusinessesService {
     const row = this.locationsRepository.create({
       businessId: dto.businessId,
       locationType: dto.locationType ?? 'arena',
-      facilityTypes: dto.facilityTypes?.length ? dto.facilityTypes : [],
+      facilityTypes: normalizeLocationFacilityTypesForPersist(
+        dto.facilityTypes?.length ? dto.facilityTypes : [],
+      ),
       name: sourceName,
       addressLine: sourceAddress,
       details: detailsValue,
@@ -1239,7 +1233,11 @@ export class BusinessesService {
       location.name = dto.branchName ?? dto.name ?? location.name;
     }
     if (dto.locationType !== undefined) location.locationType = dto.locationType;
-    if (dto.facilityTypes !== undefined) location.facilityTypes = dto.facilityTypes;
+    if (dto.facilityTypes !== undefined) {
+      location.facilityTypes = normalizeLocationFacilityTypesForPersist(
+        dto.facilityTypes,
+      );
+    }
     if (
       dto.addressLine !== undefined ||
       dto.location?.addressLine !== undefined ||
@@ -1449,32 +1447,21 @@ export class BusinessesService {
       return picked.map((r) => this.toVenueMapMarker(r));
     }
     const picked = active.filter(
-      (r) =>
-        (r.facilityCounts['futsal-field'] ?? 0) > 0 ||
-        (r.facilityCounts['turf-court'] ?? 0) > 0,
+      (r) => (r.facilityCounts.futsal ?? 0) > 0,
     );
     return picked.map((r) => this.toVenueMapMarker(r));
   }
 
   private facilityCountsToAvailableList(
-    counts: Record<
-      'padel-court' | 'futsal-field' | 'cricket-indoor' | 'turf-court',
-      number
-    >,
+    counts: Record<'futsal' | 'cricket' | 'padel', number>,
   ): Array<{ label: string; count: number }> {
     const labels: Record<string, string> = {
-      'padel-court': 'Padel Court',
-      'futsal-field': 'Futsal',
-      'cricket-indoor': 'Cricket',
-      'turf-court': 'Turf',
+      futsal: 'Futsal',
+      cricket: 'Cricket',
+      padel: 'Padel',
     };
     const out: Array<{ label: string; count: number }> = [];
-    for (const key of [
-      'padel-court',
-      'futsal-field',
-      'cricket-indoor',
-      'turf-court',
-    ] as const) {
+    for (const key of ['futsal', 'cricket', 'padel'] as const) {
       const n = counts[key] ?? 0;
       if (n > 0) {
         out.push({ label: labels[key], count: n });

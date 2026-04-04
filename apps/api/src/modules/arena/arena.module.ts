@@ -1,17 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ArenaMetaController } from './arena-meta.controller';
-import { CricketIndoorModule } from './cricket-indoor/cricket-indoor.module';
-import { FutsalFieldModule } from './futsal-field/futsal-field.module';
+import { CricketCourtModule } from './cricket-court/cricket-court.module';
+import { FutsalCourtModule } from './futsal-court/futsal-court.module';
 import { PadelCourtModule } from './padel-court/padel-court.module';
-import { TurfCourtModule } from './turf-court/turf-court.module';
 
 @Module({
-  imports: [
-    CricketIndoorModule,
-    FutsalFieldModule,
-    PadelCourtModule,
-    TurfCourtModule,
-  ],
+  imports: [CricketCourtModule, FutsalCourtModule, PadelCourtModule],
   controllers: [ArenaMetaController],
 })
 export class ArenaModule {}

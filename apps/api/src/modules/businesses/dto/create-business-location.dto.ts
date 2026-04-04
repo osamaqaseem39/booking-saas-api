@@ -12,7 +12,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
-  BUSINESS_LOCATION_FACILITY_TYPE_CODES,
+  ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES,
   BUSINESS_LOCATION_TYPE_CODES,
 } from '../business-location.constants';
 
@@ -98,7 +98,7 @@ export class CreateBusinessLocationDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @IsIn([...BUSINESS_LOCATION_FACILITY_TYPE_CODES], { each: true })
+  @IsIn([...ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES], { each: true })
   facilityTypes?: string[];
 
   @IsOptional()

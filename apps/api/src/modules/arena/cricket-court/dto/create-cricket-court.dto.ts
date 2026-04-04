@@ -11,15 +11,14 @@ import {
   IsString,
   IsUUID,
   MaxLength,
-  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import {
-  TurfAmenitiesDto,
-  TurfDiscountMembershipDto,
-  TurfPeakPricingDto,
-  TurfRulesDto,
-} from './turf-court-nested.dto';
+  ArenaAmenitiesDto,
+  ArenaDiscountMembershipDto,
+  ArenaPeakPricingDto,
+  ArenaRulesDto,
+} from '../../arena-court-nested.dto';
 
 const COURT_STATUS = ['active', 'maintenance'] as const;
 const CEILING_UNIT = ['ft', 'm'] as const;
@@ -27,23 +26,17 @@ const COVERED = ['open', 'semi_covered', 'fully_indoor'] as const;
 const BOUNDARY = ['net', 'wall'] as const;
 const LIGHTING = ['led_floodlights', 'mixed', 'daylight'] as const;
 const SURFACE = ['artificial_turf', 'hard_surface'] as const;
-const FUTSAL_FMT = ['5v5', '6v6', '7v7'] as const;
-const LINE_MARK = ['permanent', 'temporary'] as const;
 const CRICKET_FMT = ['tape_ball', 'tennis_ball', 'hard_ball'] as const;
 const PRACTICE = ['full_ground', 'nets_mode'] as const;
 const VENT = ['natural', 'fans', 'ac'] as const;
-const SPORT_MODE = ['futsal_only', 'cricket_only', 'both'] as const;
 
-export class CreateTurfCourtDto {
+export class CreateCricketCourtDto {
   @IsString()
   @MaxLength(160)
   name!: string;
 
   @IsUUID('4')
   businessLocationId!: string;
-
-  @IsIn(SPORT_MODE)
-  sportMode!: (typeof SPORT_MODE)[number];
 
   @IsOptional()
   @IsString()
@@ -117,98 +110,36 @@ export class CreateTurfCourtDto {
   @IsBoolean()
   shockAbsorptionLayer?: boolean;
 
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'futsal_only' || o.sportMode === 'both',
-  )
-  @IsOptional()
-  @IsIn(FUTSAL_FMT)
-  futsalFormat?: (typeof FUTSAL_FMT)[number];
-
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'futsal_only' || o.sportMode === 'both',
-  )
-  @IsOptional()
-  @IsBoolean()
-  futsalGoalPostsAvailable?: boolean;
-
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'futsal_only' || o.sportMode === 'both',
-  )
-  @IsOptional()
-  @IsString()
-  @MaxLength(80)
-  futsalGoalPostSize?: string;
-
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'futsal_only' || o.sportMode === 'both',
-  )
-  @IsOptional()
-  @IsIn(LINE_MARK)
-  futsalLineMarkings?: (typeof LINE_MARK)[number];
-
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'cricket_only' || o.sportMode === 'both',
-  )
   @IsOptional()
   @IsIn(CRICKET_FMT)
   cricketFormat?: (typeof CRICKET_FMT)[number];
 
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'cricket_only' || o.sportMode === 'both',
-  )
   @IsOptional()
   @IsBoolean()
   cricketStumpsAvailable?: boolean;
 
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'cricket_only' || o.sportMode === 'both',
-  )
   @IsOptional()
   @IsBoolean()
   cricketBowlingMachine?: boolean;
 
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'cricket_only' || o.sportMode === 'both',
-  )
   @IsOptional()
   @IsIn(PRACTICE)
   cricketPracticeMode?: (typeof PRACTICE)[number];
 
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'futsal_only' || o.sportMode === 'both',
-  )
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  futsalPricePerSlot?: number;
-
-  @ValidateIf(
-    (o: CreateTurfCourtDto) =>
-      o.sportMode === 'cricket_only' || o.sportMode === 'both',
-  )
-  @IsOptional()
-  @Type(() => Number)
-  @IsNumber()
-  cricketPricePerSlot?: number;
+  pricePerSlot?: number;
 
   @IsOptional()
   @ValidateNested()
-  @Type(() => TurfPeakPricingDto)
-  peakPricing?: TurfPeakPricingDto;
+  @Type(() => ArenaPeakPricingDto)
+  peakPricing?: ArenaPeakPricingDto;
 
   @IsOptional()
   @ValidateNested()
-  @Type(() => TurfDiscountMembershipDto)
-  discountMembership?: TurfDiscountMembershipDto;
+  @Type(() => ArenaDiscountMembershipDto)
+  discountMembership?: ArenaDiscountMembershipDto;
 
   @IsOptional()
   @Type(() => Number)
@@ -228,11 +159,11 @@ export class CreateTurfCourtDto {
 
   @IsOptional()
   @ValidateNested()
-  @Type(() => TurfAmenitiesDto)
-  amenities?: TurfAmenitiesDto;
+  @Type(() => ArenaAmenitiesDto)
+  amenities?: ArenaAmenitiesDto;
 
   @IsOptional()
   @ValidateNested()
-  @Type(() => TurfRulesDto)
-  rules?: TurfRulesDto;
+  @Type(() => ArenaRulesDto)
+  rules?: ArenaRulesDto;
 }

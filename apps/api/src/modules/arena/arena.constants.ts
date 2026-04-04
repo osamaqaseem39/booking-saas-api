@@ -2,8 +2,8 @@
 export const ARENA_VERTICAL_CODE = 'arena' as const;
 
 export const ARENA_SUB_TYPE_CODES = [
-  'cricket-indoor',
-  'futsal-field',
+  'futsal-court',
+  'cricket-court',
   'padel-court',
 ] as const;
 

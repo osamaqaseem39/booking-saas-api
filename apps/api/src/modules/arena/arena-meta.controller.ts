@@ -9,15 +9,15 @@ export class ArenaMetaController {
       vertical: ARENA_VERTICAL_CODE,
       subTypes: [...ARENA_SUB_TYPE_CODES],
       locationScoped: true,
+      facilityTypeCodes: ['futsal', 'cricket', 'padel'],
       note: 'POST create bodies require businessLocationId; list with ?businessLocationId= to scope courts to a business location.',
       resources: {
-        'cricket-indoor': { path: '/arena/cricket-indoor', label: 'Arena Cricket' },
-        'futsal-field': { path: '/arena/futsal-field', label: 'Futsal' },
-        'padel-court': { path: '/arena/padel-court', label: 'Padel' },
-        'turf-courts': {
-          path: '/arena/turf-courts',
-          note: 'Optional combined pitch; location must enable Futsal and/or Arena Cricket by sportMode.',
+        'futsal-courts': { path: '/arena/futsal-courts', label: 'Futsal pitch' },
+        'cricket-courts': {
+          path: '/arena/cricket-courts',
+          label: 'Cricket pitch',
         },
+        'padel-court': { path: '/arena/padel-court', label: 'Padel' },
       },
     };
   }

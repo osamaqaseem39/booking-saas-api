@@ -1,14 +1,14 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { CricketIndoorCourt } from '../arena/cricket-indoor/entities/cricket-indoor-court.entity';
-import { FutsalField } from '../arena/futsal-field/entities/futsal-field.entity';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
-import { TurfCourt } from '../arena/turf-court/entities/turf-court.entity';
+import { CricketCourt } from '../arena/cricket-court/entities/cricket-court.entity';
+import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity';
 import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { IamModule } from '../iam/iam.module';
 import { BusinessesController } from './businesses.controller';
 import { GetAllCitiesController } from './get-all-cities.controller';
+import { GetAllLocationTypesController } from './get-all-location-types.controller';
 import { GetVenueDetailsController } from './get-venue-details.controller';
 import { GetVenuesController } from './get-venues.controller';
 import { BusinessLocation } from './entities/business-location.entity';
@@ -23,10 +23,9 @@ import { BusinessesService } from './businesses.service';
       Business,
       BusinessMembership,
       BusinessLocation,
-      TurfCourt,
-      FutsalField,
+      FutsalCourt,
+      CricketCourt,
       PadelCourt,
-      CricketIndoorCourt,
       Booking,
       BookingItem,
     ]),
@@ -34,6 +33,7 @@ import { BusinessesService } from './businesses.service';
   controllers: [
     BusinessesController,
     GetAllCitiesController,
+    GetAllLocationTypesController,
     GetVenuesController,
     GetVenueDetailsController,
   ],
