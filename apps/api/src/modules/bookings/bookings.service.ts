@@ -159,6 +159,11 @@ export type CourtSlotGridSegment =
       startTime: string;
       endTime: string;
       state: 'blocked';
+    }
+  | {
+      startTime: string;
+      endTime: string;
+      state: 'closed';
     };
 
 export type CourtSlotGridApiRow = {
@@ -463,6 +468,8 @@ export class BookingsService {
     const dateOnly = formatDateOnly(params.date);
     let workingHoursApplied = false;
     let locationClosed = false;
+    /** Entire grid window is non-bookable (marked closed in weekly hours). */
+    let dayClosedByWorkingHours = false;
 
     const explicitWindow =
       params.startTime !== undefined || params.endTime !== undefined;
@@ -489,21 +496,29 @@ export class BookingsService {
           workingHoursApplied = true;
           if (win.closed) {
             locationClosed = true;
-            return {
-              date: dateOnly,
-              kind: params.kind,
-              courtId: params.courtId,
-              segmentMinutes: 30,
-              gridStartTime: win.open,
-              gridEndTime: win.close,
-              workingHoursApplied,
-              locationClosed,
-              availableOnly: params.availableOnly,
-              segments: [],
-            };
+            startT = win.open;
+            endT = win.close === '24:00' ? '24:00' : win.close;
+            try {
+              this.parseSlotGridWindow(startT, endT);
+              dayClosedByWorkingHours = true;
+            } catch {
+              return {
+                date: dateOnly,
+                kind: params.kind,
+                courtId: params.courtId,
+                segmentMinutes: 30,
+                gridStartTime: win.open,
+                gridEndTime: win.close,
+                workingHoursApplied,
+                locationClosed,
+                availableOnly: params.availableOnly,
+                segments: [],
+              };
+            }
+          } else {
+            startT = win.open;
+            endT = win.close === '24:00' ? '24:00' : win.close;
           }
-          startT = win.open;
-          endT = win.close === '24:00' ? '24:00' : win.close;
         }
       }
     }
@@ -526,6 +541,14 @@ export class BookingsService {
     for (let segStart = startMin; segStart < endMin; segStart += 30) {
       const segEnd = segStart + 30;
       const segStartLabel = minutesToTimeString(segStart);
+      if (dayClosedByWorkingHours) {
+        segments.push({
+          startTime: segStartLabel,
+          endTime: minutesToTimeString(segEnd),
+          state: 'closed',
+        });
+        continue;
+      }
       const overlap = bookings.find((b) =>
         this.segmentOverlapsMinutes(
           segStart,
@@ -978,7 +1001,7 @@ export class BookingsService {
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
-      .andWhere('DATE(b.bookingDate) = :dateOnly', { dateOnly })
+      .andWhere('b.bookingDate = :dateOnly', { dateOnly })
       .andWhere("b.bookingStatus != 'cancelled'")
       .andWhere("i.itemStatus != 'cancelled'")
       .select([
