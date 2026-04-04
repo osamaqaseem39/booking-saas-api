@@ -263,7 +263,10 @@ async function getOrCreateApp(): Promise<NestExpressApplication> {
       } else if (!(globalThis as any).__startupMigrationLogOnce) {
         (globalThis as any).__startupMigrationLogOnce = true;
         console.log(
-          '[DB] startup migrations skipped (RUN_STARTUP_MIGRATIONS=false)',
+          '[DB] startup migrations skipped (RUN_STARTUP_MIGRATIONS is not true). ' +
+            'Schema will not update on boot. Set RUN_STARTUP_MIGRATIONS=true on this deployment ' +
+            'to run TypeORM migrations on cold start, or run `npm run migration:run` locally/CI ' +
+            'with the same DB URL (use Supabase direct / non-pooling URL for migrations if the pooler fails).',
         );
       }
 
