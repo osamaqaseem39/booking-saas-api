@@ -10,6 +10,7 @@ import { BusinessesController } from './businesses.controller';
 import { GetAllCitiesController } from './get-all-cities.controller';
 import { GetAllLocationTypesController } from './get-all-location-types.controller';
 import { GetVenueDetailsController } from './get-venue-details.controller';
+import { GetVenueSportController } from './get-venue-sport.controller';
 import { GetVenuesController } from './get-venues.controller';
 import { BusinessLocation } from './entities/business-location.entity';
 import { BusinessMembership } from './entities/business-membership.entity';
@@ -35,6 +36,7 @@ import { BusinessesService } from './businesses.service';
     GetAllCitiesController,
     GetAllLocationTypesController,
     GetVenuesController,
+    GetVenueSportController,
     GetVenueDetailsController,
   ],
   providers: [BusinessesService],

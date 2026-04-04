@@ -104,6 +104,26 @@ export class BusinessesService {
     );
   }
 
+  /** Postgres 42P01: expected arena court tables not created (migrations not run). */
+  private isMissingArenaCourtRelationError(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) {
+      return false;
+    }
+    const driver = (
+      error as QueryFailedError & { driverError?: { code?: string } }
+    ).driverError;
+    if (driver?.code !== '42P01') {
+      return false;
+    }
+    const message = `${error.message ?? ''}`.toLowerCase();
+    return (
+      message.includes('futsal_courts') ||
+      message.includes('cricket_courts') ||
+      message.includes('padel_courts') ||
+      message.includes('turf_courts')
+    );
+  }
+
   async listForRequester(requesterUserId: string) {
     let businesses: Business[];
     try {
@@ -604,20 +624,32 @@ export class BusinessesService {
       list.push({ facilityType, id, name });
     };
 
-    const [padel, futsalCourt, cricketCourt] = await Promise.all([
-      this.padelCourtRepository.find({
-        where: { ...whereLoc, isActive: true, courtStatus: 'active' },
-        select: ['id', 'name', 'businessLocationId'],
-      }),
-      this.futsalCourtRepository.find({
-        where: { ...whereLoc, courtStatus: 'active' },
-        select: ['id', 'name', 'businessLocationId'],
-      }),
-      this.cricketCourtRepository.find({
-        where: { ...whereLoc, courtStatus: 'active' },
-        select: ['id', 'name', 'businessLocationId'],
-      }),
-    ]);
+    let padel: PadelCourt[];
+    let futsalCourt: FutsalCourt[];
+    let cricketCourt: CricketCourt[];
+    try {
+      [padel, futsalCourt, cricketCourt] = await Promise.all([
+        this.padelCourtRepository.find({
+          where: { ...whereLoc, isActive: true, courtStatus: 'active' },
+          select: ['id', 'name', 'businessLocationId'],
+        }),
+        this.futsalCourtRepository.find({
+          where: { ...whereLoc, courtStatus: 'active' },
+          select: ['id', 'name', 'businessLocationId'],
+        }),
+        this.cricketCourtRepository.find({
+          where: { ...whereLoc, courtStatus: 'active' },
+          select: ['id', 'name', 'businessLocationId'],
+        }),
+      ]);
+    } catch (error: unknown) {
+      if (this.isMissingArenaCourtRelationError(error)) {
+        throw new ServiceUnavailableException(
+          'Arena court tables are missing on this database. Run pending TypeORM migrations (e.g. 1711000000018-split-turf-into-futsal-cricket-courts, 1711000000019-migrate-legacy-fields-to-courts) against the same DATABASE_URL as this deployment.',
+        );
+      }
+      throw error;
+    }
 
     for (const row of padel) {
       push(row.businessLocationId, 'padel', row.id, row.name);
@@ -1415,10 +1447,17 @@ export class BusinessesService {
   }
 
   /**
-   * Markers for one category: `all` (every active venue), `gaming`, or `FutsalArenas`.
+   * Markers for one category: `all`, `gaming`, arena sport (`futsal` | `cricket` | `padel`),
+   * or legacy `FutsalArenas` (same as `futsal`).
    */
   async listVenueMarkersPublic(
-    category: 'all' | 'gaming' | 'FutsalArenas',
+    category:
+      | 'all'
+      | 'gaming'
+      | 'FutsalArenas'
+      | 'futsal'
+      | 'cricket'
+      | 'padel',
   ): Promise<
     Array<{
       venueId: string;
@@ -1446,9 +1485,19 @@ export class BusinessesService {
       });
       return picked.map((r) => this.toVenueMapMarker(r));
     }
-    const picked = active.filter(
-      (r) => (r.facilityCounts.futsal ?? 0) > 0,
-    );
+    if (category === 'FutsalArenas' || category === 'futsal') {
+      const picked = active.filter(
+        (r) => (r.facilityCounts.futsal ?? 0) > 0,
+      );
+      return picked.map((r) => this.toVenueMapMarker(r));
+    }
+    if (category === 'cricket') {
+      const picked = active.filter(
+        (r) => (r.facilityCounts.cricket ?? 0) > 0,
+      );
+      return picked.map((r) => this.toVenueMapMarker(r));
+    }
+    const picked = active.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
     return picked.map((r) => this.toVenueMapMarker(r));
   }
 

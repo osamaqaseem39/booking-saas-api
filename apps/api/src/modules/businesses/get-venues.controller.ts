@@ -5,6 +5,7 @@ import { BusinessesService } from './businesses.service';
  * End-user venue discovery.
  * - GET /getVenues — full rows (same as GET /businesses/locations).
  * - GET /getVenues/all|gaming|FutsalArenas — compact map-marker payloads.
+ * - GET /getVenue/futsal|cricket|padel — same marker shape, filtered by sport facility counts.
  */
 @Controller('getVenues')
 export class GetVenuesController {
