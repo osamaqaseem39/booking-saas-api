@@ -65,6 +65,24 @@ function minutesToTimeString(m: number): string {
   return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
+/** First 30-minute slot start at or after this time (working-hours open → grid start). */
+function snapUpToSlotBoundary(time: string): string {
+  const m = toMinutes(time);
+  const up = Math.ceil(m / 30) * 30;
+  if (up >= 24 * 60) return '24:00';
+  return minutesToTimeString(up);
+}
+
+/**
+ * Exclusive grid end: largest time on a 30-minute boundary ≤ `close` (last segment ends here or earlier).
+ */
+function snapDownExclusiveEnd(close: string): string {
+  if (close === '24:00') return '24:00';
+  const m = toMinutes(close);
+  const down = Math.floor(m / 30) * 30;
+  return minutesToTimeString(down);
+}
+
 export type BookingApiRow = {
   bookingId: string;
   arenaId: string;
@@ -539,8 +557,24 @@ export class BookingsService {
               };
             }
           } else {
-            startT = win.open;
-            endT = win.close === '24:00' ? '24:00' : win.close;
+            startT = snapUpToSlotBoundary(win.open);
+            endT =
+              win.close === '24:00' ? '24:00' : snapDownExclusiveEnd(win.close);
+            const openM = toMinutes(startT);
+            const endM = endT === '24:00' ? 24 * 60 : toMinutes(endT);
+            if (openM >= endM) {
+              return {
+                date: dateOnly,
+                kind: params.kind,
+                courtId: params.courtId,
+                segmentMinutes: 30,
+                gridStartTime: startT,
+                gridEndTime: endT,
+                workingHoursApplied,
+                availableOnly: params.availableOnly,
+                segments: [],
+              };
+            }
           }
         }
       }
