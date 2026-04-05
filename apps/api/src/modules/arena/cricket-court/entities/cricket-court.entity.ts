@@ -15,7 +15,9 @@ import type {
   ArenaRules,
 } from '../../arena-court-json.types';
 
-export type CricketCourtStatus = 'active' | 'maintenance';
+export type CricketCourtStatus = 'active' | 'maintenance' | 'draft';
+
+export type CricketLinkedTwinKind = 'futsal_court' | 'cricket_court';
 export type CricketCeilingUnit = 'ft' | 'm';
 export type CricketCoveredType = 'open' | 'semi_covered' | 'fully_indoor';
 export type CricketBoundaryType = 'net' | 'wall';
@@ -119,6 +121,13 @@ export class CricketCourt {
 
   @Column({ type: 'boolean', nullable: true })
   allowParallelBooking?: boolean;
+
+  /** When set with {@link linkedTwinCourtId}, bookings on this pitch share the calendar with the linked futsal pitch. */
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  linkedTwinCourtKind?: CricketLinkedTwinKind;
+
+  @Column({ type: 'uuid', nullable: true })
+  linkedTwinCourtId?: string;
 
   @Column({ type: 'jsonb', nullable: true })
   amenities?: ArenaAmenities;

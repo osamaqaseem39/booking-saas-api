@@ -17,7 +17,7 @@ import {
   PadelRulesDto,
 } from './padel-court-nested.dto';
 
-const COURT_STATUS = ['active', 'maintenance'] as const;
+const COURT_STATUS = ['active', 'maintenance', 'draft'] as const;
 const CEILING_UNIT = ['ft', 'm'] as const;
 const COVERED = ['indoor', 'semi_covered'] as const;
 const WALL = ['full_glass', 'glass_mesh'] as const;

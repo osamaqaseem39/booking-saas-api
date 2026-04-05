@@ -17,6 +17,8 @@ import { Roles } from './authz/roles.decorator';
 import { AssignRoleDto } from './dto/assign-role.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
+import type { TenantContext } from '../../tenancy/tenant-context.interface';
 import { IamService } from './iam.service';
 import { SYSTEM_ROLES } from './iam.constants';
 
@@ -25,24 +27,38 @@ import { SYSTEM_ROLES } from './iam.constants';
 export class IamController {
   constructor(private readonly iamService: IamService) {}
 
-  @Get('me')
-  @Roles(...SYSTEM_ROLES)
-  async me(@Req() req: Request) {
+  private requesterUserId(req: Request): string {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) {
       throw new UnauthorizedException('Missing user');
     }
+    return userId;
+  }
+
+  @Get('me')
+  @Roles(...SYSTEM_ROLES)
+  async me(@Req() req: Request) {
+    const userId = this.requesterUserId(req);
     return this.iamService.getMe(userId);
   }
 
   @Get('users')
   @Roles('platform-owner', 'business-admin')
   async listUsers(
+    @Req() req: Request,
     @Query('search') search?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
   ) {
-    return this.iamService.listUsers({ search, sortBy, sortOrder });
+    const requesterId = this.requesterUserId(req);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
+      'platform-owner',
+    ]);
+    return this.iamService.listUsers(requesterId, isPlatformOwner, {
+      search,
+      sortBy,
+      sortOrder,
+    });
   }
 
   @Get('end-users')
@@ -53,23 +69,50 @@ export class IamController {
 
   @Post('users')
   @Roles('platform-owner', 'business-admin')
-  async createUser(@Body() dto: CreateUserDto) {
-    return this.iamService.createUser(dto);
+  async createUser(
+    @Req() req: Request,
+    @Body() dto: CreateUserDto,
+    @CurrentTenant() tenant: TenantContext,
+  ) {
+    const requesterId = this.requesterUserId(req);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
+      'platform-owner',
+    ]);
+    return this.iamService.createUser(dto, {
+      requesterId,
+      isPlatformOwner,
+      tenantId: tenant.tenantId,
+    });
   }
 
   @Patch('users/:userId')
   @Roles('platform-owner', 'business-admin')
   async updateUser(
+    @Req() req: Request,
     @Param('userId') userId: string,
     @Body() dto: UpdateUserDto,
   ) {
-    return this.iamService.updateUser(userId, dto);
+    const requesterId = this.requesterUserId(req);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
+      'platform-owner',
+    ]);
+    return this.iamService.updateUser(userId, dto, {
+      requesterId,
+      isPlatformOwner,
+    });
   }
 
   @Delete('users/:userId')
   @Roles('platform-owner', 'business-admin')
-  async deleteUser(@Param('userId') userId: string) {
-    return this.iamService.deleteUser(userId);
+  async deleteUser(@Req() req: Request, @Param('userId') userId: string) {
+    const requesterId = this.requesterUserId(req);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
+      'platform-owner',
+    ]);
+    return this.iamService.deleteUser(userId, {
+      requesterId,
+      isPlatformOwner,
+    });
   }
 
   @Post('roles/assign')

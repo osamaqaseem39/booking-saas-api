@@ -3,6 +3,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { RolesGuard } from './authz/roles.guard';
 import { IamController } from './iam.controller';
+import { Business } from '../businesses/entities/business.entity';
+import { BusinessMembership } from '../businesses/entities/business-membership.entity';
 import { Role } from './entities/role.entity';
 import { User } from './entities/user.entity';
 import { UserRole } from './entities/user-role.entity';
@@ -10,7 +12,7 @@ import { IamService } from './iam.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Role, UserRole]),
+    TypeOrmModule.forFeature([User, Role, UserRole, Business, BusinessMembership]),
     JwtModule.register({
       secret:
         process.env.JWT_SECRET ??

@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
 import { Repository } from 'typeorm';
 import { BusinessesService } from '../../businesses/businesses.service';
+import { ArenaTurfTwinLinkService } from '../arena-turf-twin-link.service';
 import { assertFacilityTypeAllowedForLocation } from '../location-facility.util';
 import { CreateFutsalCourtDto } from './dto/create-futsal-court.dto';
 import { UpdateFutsalCourtDto } from './dto/update-futsal-court.dto';
@@ -23,6 +24,7 @@ export class FutsalCourtService {
     @InjectRepository(FutsalCourt)
     private readonly repo: Repository<FutsalCourt>,
     private readonly businessesService: BusinessesService,
+    private readonly turfTwinLink: ArenaTurfTwinLinkService,
   ) {}
 
   private requireTenant(tenantId: string): void {
@@ -95,8 +97,12 @@ export class FutsalCourtService {
       allowParallelBooking: dto.allowParallelBooking,
       amenities: dto.amenities,
       rules: dto.rules,
+      linkedTwinCourtKind: dto.linkedTwinCourtKind,
+      linkedTwinCourtId: dto.linkedTwinCourtId,
     });
-    return this.repo.save(row);
+    const saved = await this.repo.save(row);
+    await this.turfTwinLink.applyAfterFutsalSaved(tenantId, saved, null);
+    return saved;
   }
 
   async findOne(tenantId: string, id: string): Promise<FutsalCourt> {
@@ -114,6 +120,7 @@ export class FutsalCourtService {
     dto: UpdateFutsalCourtDto,
   ): Promise<FutsalCourt> {
     const row = await this.findOne(tenantId, id);
+    const previousTwinId = row.linkedTwinCourtId ?? null;
 
     if (dto.businessLocationId !== undefined) {
       const location = await this.businessesService.assertLocationBelongsToTenant(
@@ -173,13 +180,24 @@ export class FutsalCourtService {
       assign('allowParallelBooking', dto.allowParallelBooking);
     if (dto.amenities !== undefined) assign('amenities', dto.amenities);
     if (dto.rules !== undefined) assign('rules', dto.rules);
+    if (dto.linkedTwinCourtKind !== undefined)
+      assign('linkedTwinCourtKind', dto.linkedTwinCourtKind);
+    if (dto.linkedTwinCourtId !== undefined)
+      assign('linkedTwinCourtId', dto.linkedTwinCourtId);
 
     Object.assign(row, patch);
-    return this.repo.save(row);
+    const saved = await this.repo.save(row);
+    await this.turfTwinLink.applyAfterFutsalSaved(
+      tenantId,
+      saved,
+      previousTwinId,
+    );
+    return saved;
   }
 
   async remove(tenantId: string, id: string): Promise<void> {
     const row = await this.findOne(tenantId, id);
+    await this.turfTwinLink.clearPartnerForDeletedFutsal(tenantId, row);
     await this.repo.remove(row);
   }
 }

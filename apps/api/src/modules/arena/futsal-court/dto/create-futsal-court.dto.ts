@@ -20,7 +20,8 @@ import {
   ArenaRulesDto,
 } from '../../arena-court-nested.dto';
 
-const COURT_STATUS = ['active', 'maintenance'] as const;
+const COURT_STATUS = ['active', 'maintenance', 'draft'] as const;
+const TWIN_KIND = ['futsal_court', 'cricket_court'] as const;
 const CEILING_UNIT = ['ft', 'm'] as const;
 const COVERED = ['open', 'semi_covered', 'fully_indoor'] as const;
 const BOUNDARY = ['net', 'wall'] as const;
@@ -167,4 +168,12 @@ export class CreateFutsalCourtDto {
   @ValidateNested()
   @Type(() => ArenaRulesDto)
   rules?: ArenaRulesDto;
+
+  @IsOptional()
+  @IsIn(TWIN_KIND)
+  linkedTwinCourtKind?: (typeof TWIN_KIND)[number];
+
+  @IsOptional()
+  @IsUUID('4')
+  linkedTwinCourtId?: string;
 }

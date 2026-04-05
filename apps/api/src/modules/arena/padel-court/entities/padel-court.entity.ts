@@ -15,7 +15,7 @@ import type {
   PadelRules,
 } from '../padel-court.types';
 
-export type PadelCourtStatus = 'active' | 'maintenance';
+export type PadelCourtStatus = 'active' | 'maintenance' | 'draft';
 export type PadelCeilingUnit = 'ft' | 'm';
 export type PadelCoveredType = 'indoor' | 'semi_covered';
 export type PadelWallType = 'full_glass' | 'glass_mesh';

@@ -285,6 +285,7 @@ export class BookingsService {
       this.assertFutureHalfHourBooking(dto.bookingDate, item);
       await this.assertCourtValidForSport(tenantId, dto.sportType, item);
       await this.assertItemSegmentsNotBlocked(tenantId, dto.bookingDate, item);
+      await this.assertNoBookingOverlapForItem(tenantId, dto.bookingDate, item);
     }
 
     const paidAt = dto.payment.paidAt
@@ -396,22 +397,36 @@ export class BookingsService {
     const courts = await this.listCourtsBySport(tenantId, params.sportType);
     const courtByKey = new Set(courts.map((c) => `${c.kind}:${c.id}`));
     const items = await this.listBookedItemsForDate(tenantId, dateOnly);
-    const overlapping = items.filter(
-      (it) =>
-        this.timesOverlap(
-          params.startTime,
-          params.endTime,
-          it.startTime,
-          it.endTime,
-        ) && courtByKey.has(`${it.courtKind}:${it.courtId}`),
+    const allOverlap = items.filter((it) =>
+      this.timesOverlap(
+        params.startTime,
+        params.endTime,
+        it.startTime,
+        it.endTime,
+      ),
     );
-    const blocked = new Set(overlapping.map((it) => `${it.courtKind}:${it.courtId}`));
+    const blockedExpanded = new Set<string>();
+    for (const it of allOverlap) {
+      const keys = await this.resolveBookingLinkedCourtKeys(
+        tenantId,
+        it.courtKind,
+        it.courtId,
+      );
+      for (const k of keys) {
+        blockedExpanded.add(`${k.kind}:${k.courtId}`);
+      }
+    }
+    const overlapping = allOverlap.filter((it) =>
+      courtByKey.has(`${it.courtKind}:${it.courtId}`),
+    );
     return {
       date: dateOnly,
       startTime: params.startTime,
       endTime: params.endTime,
       sportType: params.sportType,
-      availableCourts: courts.filter((c) => !blocked.has(`${c.kind}:${c.id}`)),
+      availableCourts: courts.filter(
+        (c) => !blockedExpanded.has(`${c.kind}:${c.id}`),
+      ),
       bookedSlots: overlapping.map((it) => ({
         kind: it.courtKind,
         courtId: it.courtId,
@@ -430,8 +445,16 @@ export class BookingsService {
   ): Promise<CourtSlotsApiRow> {
     const dateOnly = formatDateOnly(params.date);
     const rows = await this.listBookedItemsForDate(tenantId, dateOnly);
+    const gridKeys = await this.resolveBookingLinkedCourtKeys(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+    const gridKeySet = new Set(
+      gridKeys.map((k) => `${k.kind}:${k.courtId}`),
+    );
     const slots = rows
-      .filter((it) => it.courtKind === params.kind && it.courtId === params.courtId)
+      .filter((it) => gridKeySet.has(`${it.courtKind}:${it.courtId}`))
       .map((it) => ({
         startTime: it.startTime,
         endTime: it.endTime,
@@ -526,11 +549,19 @@ export class BookingsService {
     const { startMin, endMin } = this.parseSlotGridWindow(startT, endT);
 
     const rows = await this.listBookedItemsForDate(tenantId, dateOnly);
+    const gridKeys = await this.resolveBookingLinkedCourtKeys(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+    const gridKeySet = new Set(
+      gridKeys.map((k) => `${k.kind}:${k.courtId}`),
+    );
     const bookings = rows
-      .filter((it) => it.courtKind === params.kind && it.courtId === params.courtId)
+      .filter((it) => gridKeySet.has(`${it.courtKind}:${it.courtId}`))
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
 
-    const blockedStarts = await this.loadBlockedStartsSet(
+    const blockedStarts = await this.loadBlockedStartsSetMerged(
       tenantId,
       params.kind,
       params.courtId,
@@ -614,35 +645,42 @@ export class BookingsService {
     this.assertSlotBlockStartTime(params.startTime);
     await this.assertCourtExistsForTenant(tenantId, params.kind, params.courtId);
 
-    if (params.blocked) {
-      const existing = await this.slotBlockRepo.findOne({
-        where: {
-          tenantId,
-          courtKind: params.kind,
-          courtId: params.courtId,
-          blockDate: dateOnly,
-          startTime: params.startTime,
-        },
-      });
-      if (!existing) {
-        await this.slotBlockRepo.save(
-          this.slotBlockRepo.create({
+    const blockKeys = await this.resolveBookingLinkedCourtKeys(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+    for (const k of blockKeys) {
+      if (params.blocked) {
+        const existing = await this.slotBlockRepo.findOne({
+          where: {
             tenantId,
-            courtKind: params.kind,
-            courtId: params.courtId,
+            courtKind: k.kind,
+            courtId: k.courtId,
             blockDate: dateOnly,
             startTime: params.startTime,
-          }),
-        );
+          },
+        });
+        if (!existing) {
+          await this.slotBlockRepo.save(
+            this.slotBlockRepo.create({
+              tenantId,
+              courtKind: k.kind,
+              courtId: k.courtId,
+              blockDate: dateOnly,
+              startTime: params.startTime,
+            }),
+          );
+        }
+      } else {
+        await this.slotBlockRepo.delete({
+          tenantId,
+          courtKind: k.kind,
+          courtId: k.courtId,
+          blockDate: dateOnly,
+          startTime: params.startTime,
+        });
       }
-    } else {
-      await this.slotBlockRepo.delete({
-        tenantId,
-        courtKind: params.kind,
-        courtId: params.courtId,
-        blockDate: dateOnly,
-        startTime: params.startTime,
-      });
     }
     return { ok: true };
   }
@@ -734,13 +772,106 @@ export class BookingsService {
     return new Set(rows.map((r) => r.startTime));
   }
 
+  /** Slot blocks for this court and any linked futsal/cricket twin. */
+  private async loadBlockedStartsSetMerged(
+    tenantId: string,
+    kind: CourtKind,
+    courtId: string,
+    dateOnly: string,
+  ): Promise<Set<string>> {
+    const keys = await this.resolveBookingLinkedCourtKeys(
+      tenantId,
+      kind,
+      courtId,
+    );
+    const merged = new Set<string>();
+    for (const k of keys) {
+      const part = await this.loadBlockedStartsSet(
+        tenantId,
+        k.kind,
+        k.courtId,
+        dateOnly,
+      );
+      for (const t of part) merged.add(t);
+    }
+    return merged;
+  }
+
+  private async resolveBookingLinkedCourtKeys(
+    tenantId: string,
+    kind: CourtKind,
+    courtId: string,
+  ): Promise<Array<{ kind: CourtKind; courtId: string }>> {
+    const self = { kind, courtId };
+    if (kind === 'padel_court') {
+      return [self];
+    }
+    if (kind === 'futsal_court') {
+      const row = await this.futsalCourtRepo.findOne({
+        where: { id: courtId, tenantId },
+        select: ['linkedTwinCourtKind', 'linkedTwinCourtId'],
+      });
+      if (
+        row?.linkedTwinCourtId &&
+        row.linkedTwinCourtKind === 'cricket_court'
+      ) {
+        return [self, { kind: 'cricket_court', courtId: row.linkedTwinCourtId }];
+      }
+      return [self];
+    }
+    if (kind === 'cricket_court') {
+      const row = await this.cricketCourtRepo.findOne({
+        where: { id: courtId, tenantId },
+        select: ['linkedTwinCourtKind', 'linkedTwinCourtId'],
+      });
+      if (
+        row?.linkedTwinCourtId &&
+        row.linkedTwinCourtKind === 'futsal_court'
+      ) {
+        return [self, { kind: 'futsal_court', courtId: row.linkedTwinCourtId }];
+      }
+      return [self];
+    }
+    return [self];
+  }
+
+  private async assertNoBookingOverlapForItem(
+    tenantId: string,
+    bookingDate: string,
+    item: CreateBookingItemDto,
+  ): Promise<void> {
+    const keys = await this.resolveBookingLinkedCourtKeys(
+      tenantId,
+      item.courtKind,
+      item.courtId,
+    );
+    const keySet = new Set(keys.map((k) => `${k.kind}:${k.courtId}`));
+    const dateOnly = formatDateOnly(bookingDate);
+    const existing = await this.listBookedItemsForDate(tenantId, dateOnly);
+    for (const e of existing) {
+      if (!keySet.has(`${e.courtKind}:${e.courtId}`)) continue;
+      if (
+        this.timesOverlap(
+          item.startTime,
+          item.endTime,
+          e.startTime,
+          e.endTime,
+        )
+      ) {
+        throw new BadRequestException(
+          'That time range is already booked for this pitch (including any linked futsal/cricket twin)',
+        );
+      }
+    }
+  }
+
   private async assertItemSegmentsNotBlocked(
     tenantId: string,
     bookingDate: string,
     item: CreateBookingItemDto,
   ): Promise<void> {
     const dateOnly = formatDateOnly(bookingDate);
-    const blocked = await this.loadBlockedStartsSet(
+    const blocked = await this.loadBlockedStartsSetMerged(
       tenantId,
       item.courtKind,
       item.courtId,
@@ -840,6 +971,11 @@ export class BookingsService {
             `futsal_court ${courtId} only accepts futsal bookings`,
           );
         }
+        if (row.courtStatus !== 'active') {
+          throw new BadRequestException(
+            'This futsal pitch is not active and cannot be booked',
+          );
+        }
         break;
       }
       case 'cricket_court': {
@@ -856,6 +992,11 @@ export class BookingsService {
             `cricket_court ${courtId} only accepts cricket bookings`,
           );
         }
+        if (row.courtStatus !== 'active') {
+          throw new BadRequestException(
+            'This cricket pitch is not active and cannot be booked',
+          );
+        }
         break;
       }
       case 'padel_court': {
@@ -865,6 +1006,11 @@ export class BookingsService {
         if (!row) {
           throw new BadRequestException(
             `Padel court ${courtId} not found for this tenant`,
+          );
+        }
+        if (row.courtStatus !== 'active' || row.isActive === false) {
+          throw new BadRequestException(
+            'This padel court is not active and cannot be booked',
           );
         }
         break;
@@ -1102,6 +1248,11 @@ export class BookingsService {
     if (!row || (row.businessLocationId ?? '') !== venueId) {
       throw new BadRequestException(
         'Futsal court does not belong to this venue',
+      );
+    }
+    if (row.courtStatus !== 'active') {
+      throw new BadRequestException(
+        'Futsal court is not active and cannot be booked',
       );
     }
   }

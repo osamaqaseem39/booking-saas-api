@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
   OnModuleInit,
@@ -7,6 +8,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
+import { Business } from '../businesses/entities/business.entity';
+import { BusinessMembership } from '../businesses/entities/business-membership.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { SystemRole } from './iam.constants';
@@ -23,6 +26,10 @@ export class IamService implements OnModuleInit {
     private readonly userRolesRepository: Repository<UserRole>,
     @InjectRepository(Role)
     private readonly rolesRepository: Repository<Role>,
+    @InjectRepository(Business)
+    private readonly businessesRepository: Repository<Business>,
+    @InjectRepository(BusinessMembership)
+    private readonly membershipsRepository: Repository<BusinessMembership>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -45,16 +52,58 @@ export class IamService implements OnModuleInit {
     };
   }
 
-  async listUsers(input?: {
-    search?: string;
-    sortBy?: string;
-    sortOrder?: string;
-  }) {
+  private async coworkerUserIdsFor(requesterUserId: string): Promise<string[]> {
+    const myMemberships = await this.membershipsRepository.find({
+      where: { userId: requesterUserId },
+    });
+    const businessIds = [...new Set(myMemberships.map((m) => m.businessId))];
+    if (businessIds.length === 0) return [];
+    const rows = await this.membershipsRepository.find({
+      where: { businessId: In(businessIds) },
+    });
+    return [...new Set(rows.map((r) => r.userId))];
+  }
+
+  private async assertCanManageUser(
+    requesterId: string,
+    targetUserId: string,
+    isPlatformOwner: boolean,
+    action: 'update' | 'delete',
+  ): Promise<void> {
+    if (isPlatformOwner) return;
+    if (action === 'delete' && requesterId === targetUserId) {
+      throw new BadRequestException('Cannot delete your own account');
+    }
+    if (requesterId === targetUserId) {
+      return;
+    }
+    const myCoworkers = new Set(await this.coworkerUserIdsFor(requesterId));
+    if (!myCoworkers.has(targetUserId)) {
+      throw new ForbiddenException('You can only manage users in your business');
+    }
+    if (await this.hasAnyRole(targetUserId, ['platform-owner'])) {
+      throw new ForbiddenException('Insufficient permissions');
+    }
+  }
+
+  async listUsers(
+    requesterUserId: string,
+    isPlatformOwner: boolean,
+    input?: {
+      search?: string;
+      sortBy?: string;
+      sortOrder?: string;
+    },
+  ) {
     const businessRoles: SystemRole[] = ['business-admin', 'business-staff'];
     const businessRoleRows = await this.userRolesRepository.find({
       where: { roleCode: In(businessRoles) },
     });
-    const businessUserIds = [...new Set(businessRoleRows.map((r) => r.userId))];
+    let businessUserIds = [...new Set(businessRoleRows.map((r) => r.userId))];
+    if (!isPlatformOwner) {
+      const coworkers = new Set(await this.coworkerUserIdsFor(requesterUserId));
+      businessUserIds = businessUserIds.filter((id) => coworkers.has(id));
+    }
     if (businessUserIds.length === 0) return [];
 
     const search = (input?.search ?? '').trim().toLowerCase();
@@ -120,7 +169,10 @@ export class IamService implements OnModuleInit {
     }));
   }
 
-  async createUser(dto: CreateUserDto): Promise<User> {
+  async createUser(
+    dto: CreateUserDto,
+    opts?: { requesterId: string; isPlatformOwner: boolean; tenantId: string },
+  ): Promise<User> {
     const email = dto.email.toLowerCase();
     const existing = await this.usersRepository.findOne({ where: { email } });
     if (existing) {
@@ -137,10 +189,50 @@ export class IamService implements OnModuleInit {
       isActive: true,
       passwordHash,
     });
-    return this.usersRepository.save(created);
+    const saved = await this.usersRepository.save(created);
+
+    if (opts && !opts.isPlatformOwner) {
+      const tid = (opts.tenantId ?? '').trim();
+      if (!tid || tid === 'public') {
+        throw new BadRequestException(
+          'Send x-tenant-id for the business when creating users as a business admin',
+        );
+      }
+      const business = await this.businessesRepository.findOne({
+        where: { tenantId: tid },
+      });
+      if (!business) {
+        throw new NotFoundException('Business not found for this tenant');
+      }
+      const requesterMember = await this.membershipsRepository.findOne({
+        where: { businessId: business.id, userId: opts.requesterId },
+      });
+      if (!requesterMember) {
+        throw new ForbiddenException('You are not a member of this business');
+      }
+      await this.assignRole(saved.id, 'business-staff');
+      const membership = this.membershipsRepository.create({
+        businessId: business.id,
+        userId: saved.id,
+        membershipRole: 'staff',
+      });
+      await this.membershipsRepository.save(membership);
+    }
+
+    return saved;
   }
 
-  async updateUser(userId: string, dto: UpdateUserDto): Promise<User> {
+  async updateUser(
+    userId: string,
+    dto: UpdateUserDto,
+    opts: { requesterId: string; isPlatformOwner: boolean },
+  ): Promise<User> {
+    await this.assertCanManageUser(
+      opts.requesterId,
+      userId,
+      opts.isPlatformOwner,
+      'update',
+    );
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException(`User ${userId} not found`);
@@ -167,7 +259,16 @@ export class IamService implements OnModuleInit {
     return this.usersRepository.save(user);
   }
 
-  async deleteUser(userId: string): Promise<{ deleted: true; userId: string }> {
+  async deleteUser(
+    userId: string,
+    opts: { requesterId: string; isPlatformOwner: boolean },
+  ): Promise<{ deleted: true; userId: string }> {
+    await this.assertCanManageUser(
+      opts.requesterId,
+      userId,
+      opts.isPlatformOwner,
+      'delete',
+    );
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new NotFoundException(`User ${userId} not found`);
