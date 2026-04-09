@@ -200,7 +200,7 @@ const GROUPS = [
   {
     name: 'Venue discovery (public aliases)',
     description:
-      'Legacy / mobile paths; overlap with `GET /businesses/locations` and related public routes.',
+      'Public discovery for maps and venue screens; complements `GET /businesses/locations` (authenticated).',
     routes: [
       { name: 'GET /getVenues', method: 'GET', path: ['getVenues'], auth: 'none' },
       { name: 'GET /getVenues/all', method: 'GET', path: ['getVenues', 'all'], auth: 'none' },
@@ -301,13 +301,8 @@ const GROUPS = [
         body:
           '{\n  "bookingStatus": "confirmed",\n  "notes": "",\n  "payment": { "paymentStatus": "paid", "paymentMethod": "cash" },\n  "itemStatuses": [{ "itemId": "{{bookingItemId}}", "status": "confirmed" }]\n}',
       },
-    ],
-  },
-  {
-    name: 'Legacy — placeFutsalBooking',
-    routes: [
       {
-        name: 'POST /placeFutsalBooking',
+        name: 'POST /placeFutsalBooking (futsal; tenant resolved from venueId)',
         method: 'POST',
         path: ['placeFutsalBooking'],
         auth: 'none',

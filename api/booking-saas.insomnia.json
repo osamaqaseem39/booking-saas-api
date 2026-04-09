@@ -1,7 +1,7 @@
 {
   "_type": "export",
   "__export_format": 4,
-  "__export_date": "2026-04-09T17:52:33.279Z",
+  "__export_date": "2026-04-09T18:04:21.991Z",
   "__export_source": "backend-saas/scripts/generate-api-collections.mjs",
   "resources": [
     {
@@ -488,7 +488,7 @@
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
       "name": "Venue discovery (public aliases)",
-      "description": "Legacy / mobile paths; overlap with `GET /businesses/locations` and related public routes."
+      "description": "Public discovery for maps and venue screens; complements `GET /businesses/locations` (authenticated)."
     },
     {
       "_id": "req_31",
@@ -829,16 +829,10 @@
       }
     },
     {
-      "_id": "fld_legacy_placefutsalbooking_53",
-      "_type": "request_group",
-      "parentId": "wrk_booking_saas",
-      "name": "Legacy — placeFutsalBooking"
-    },
-    {
-      "_id": "req_54",
+      "_id": "req_53",
       "_type": "request",
-      "parentId": "fld_legacy_placefutsalbooking_53",
-      "name": "POST /placeFutsalBooking",
+      "parentId": "fld_bookings_44",
+      "name": "POST /placeFutsalBooking (futsal; tenant resolved from venueId)",
       "method": "POST",
       "url": "{{ base_url }}/placeFutsalBooking",
       "headers": [
@@ -856,15 +850,15 @@
       }
     },
     {
-      "_id": "fld_billing_55",
+      "_id": "fld_billing_54",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
       "name": "Billing"
     },
     {
-      "_id": "req_56",
+      "_id": "req_55",
       "_type": "request",
-      "parentId": "fld_billing_55",
+      "parentId": "fld_billing_54",
       "name": "GET /billing/invoices",
       "method": "GET",
       "url": "{{ base_url }}/billing/invoices",
@@ -881,9 +875,9 @@
       }
     },
     {
-      "_id": "req_57",
+      "_id": "req_56",
       "_type": "request",
-      "parentId": "fld_billing_55",
+      "parentId": "fld_billing_54",
       "name": "POST /billing/invoices",
       "method": "POST",
       "url": "{{ base_url }}/billing/invoices",
@@ -908,15 +902,15 @@
       }
     },
     {
-      "_id": "fld_arena_58",
+      "_id": "fld_arena_57",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
       "name": "Arena"
     },
     {
-      "_id": "req_59",
+      "_id": "req_58",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "GET /arena (meta)",
       "method": "GET",
       "url": "{{ base_url }}/arena",
@@ -926,9 +920,9 @@
       }
     },
     {
-      "_id": "req_60",
+      "_id": "req_59",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "GET /arena/futsal-courts",
       "method": "GET",
       "url": "{{ base_url }}/arena/futsal-courts?businessLocationId=",
@@ -945,9 +939,9 @@
       }
     },
     {
-      "_id": "req_61",
+      "_id": "req_60",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "GET /arena/futsal-courts/:id",
       "method": "GET",
       "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
@@ -964,9 +958,9 @@
       }
     },
     {
-      "_id": "req_62",
+      "_id": "req_61",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "POST /arena/futsal-courts",
       "method": "POST",
       "url": "{{ base_url }}/arena/futsal-courts",
@@ -991,9 +985,9 @@
       }
     },
     {
-      "_id": "req_63",
+      "_id": "req_62",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "PATCH /arena/futsal-courts/:id",
       "method": "PATCH",
       "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
@@ -1018,9 +1012,9 @@
       }
     },
     {
-      "_id": "req_64",
+      "_id": "req_63",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "DELETE /arena/futsal-courts/:id",
       "method": "DELETE",
       "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
@@ -1037,9 +1031,9 @@
       }
     },
     {
-      "_id": "req_65",
+      "_id": "req_64",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "GET /arena/cricket-courts",
       "method": "GET",
       "url": "{{ base_url }}/arena/cricket-courts?businessLocationId=",
@@ -1056,9 +1050,9 @@
       }
     },
     {
-      "_id": "req_66",
+      "_id": "req_65",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "GET /arena/cricket-courts/:id",
       "method": "GET",
       "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
@@ -1075,9 +1069,9 @@
       }
     },
     {
-      "_id": "req_67",
+      "_id": "req_66",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "POST /arena/cricket-courts",
       "method": "POST",
       "url": "{{ base_url }}/arena/cricket-courts",
@@ -1102,9 +1096,9 @@
       }
     },
     {
-      "_id": "req_68",
+      "_id": "req_67",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "PATCH /arena/cricket-courts/:id",
       "method": "PATCH",
       "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
@@ -1129,9 +1123,9 @@
       }
     },
     {
-      "_id": "req_69",
+      "_id": "req_68",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "DELETE /arena/cricket-courts/:id",
       "method": "DELETE",
       "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
@@ -1148,9 +1142,9 @@
       }
     },
     {
-      "_id": "req_70",
+      "_id": "req_69",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "GET /arena/padel-court",
       "method": "GET",
       "url": "{{ base_url }}/arena/padel-court?businessLocationId=",
@@ -1167,9 +1161,9 @@
       }
     },
     {
-      "_id": "req_71",
+      "_id": "req_70",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "GET /arena/padel-court/:id",
       "method": "GET",
       "url": "{{ base_url }}/arena/padel-court/{{ courtId }}",
@@ -1186,9 +1180,9 @@
       }
     },
     {
-      "_id": "req_72",
+      "_id": "req_71",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "POST /arena/padel-court",
       "method": "POST",
       "url": "{{ base_url }}/arena/padel-court",
@@ -1213,9 +1207,9 @@
       }
     },
     {
-      "_id": "req_73",
+      "_id": "req_72",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "PATCH /arena/padel-court/:id",
       "method": "PATCH",
       "url": "{{ base_url }}/arena/padel-court/{{ courtId }}",
@@ -1240,9 +1234,9 @@
       }
     },
     {
-      "_id": "req_74",
+      "_id": "req_73",
       "_type": "request",
-      "parentId": "fld_arena_58",
+      "parentId": "fld_arena_57",
       "name": "DELETE /arena/padel-court/:id",
       "method": "DELETE",
       "url": "{{ base_url }}/arena/padel-court/{{ courtId }}",
@@ -1259,15 +1253,15 @@
       }
     },
     {
-      "_id": "fld_product_catalog_75",
+      "_id": "fld_product_catalog_74",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
       "name": "Product catalog"
     },
     {
-      "_id": "req_76",
+      "_id": "req_75",
       "_type": "request",
-      "parentId": "fld_product_catalog_75",
+      "parentId": "fld_product_catalog_74",
       "name": "GET /product-catalog",
       "method": "GET",
       "url": "{{ base_url }}/product-catalog",
@@ -1277,15 +1271,15 @@
       }
     },
     {
-      "_id": "fld_facility_catalog_77",
+      "_id": "fld_facility_catalog_76",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
       "name": "Facility catalog"
     },
     {
-      "_id": "req_78",
+      "_id": "req_77",
       "_type": "request",
-      "parentId": "fld_facility_catalog_77",
+      "parentId": "fld_facility_catalog_76",
       "name": "GET /facility-types",
       "method": "GET",
       "url": "{{ base_url }}/facility-types",
@@ -1302,9 +1296,9 @@
       }
     },
     {
-      "_id": "req_79",
+      "_id": "req_78",
       "_type": "request",
-      "parentId": "fld_facility_catalog_77",
+      "parentId": "fld_facility_catalog_76",
       "name": "POST /facility-types",
       "method": "POST",
       "url": "{{ base_url }}/facility-types",
@@ -1329,9 +1323,9 @@
       }
     },
     {
-      "_id": "req_80",
+      "_id": "req_79",
       "_type": "request",
-      "parentId": "fld_facility_catalog_77",
+      "parentId": "fld_facility_catalog_76",
       "name": "GET /sub-facility-types",
       "method": "GET",
       "url": "{{ base_url }}/sub-facility-types",
@@ -1348,9 +1342,9 @@
       }
     },
     {
-      "_id": "req_81",
+      "_id": "req_80",
       "_type": "request",
-      "parentId": "fld_facility_catalog_77",
+      "parentId": "fld_facility_catalog_76",
       "name": "POST /sub-facility-types",
       "method": "POST",
       "url": "{{ base_url }}/sub-facility-types",
