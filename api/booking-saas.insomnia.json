@@ -1,0 +1,1378 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2026-04-09T17:52:33.279Z",
+  "__export_source": "backend-saas/scripts/generate-api-collections.mjs",
+  "resources": [
+    {
+      "_id": "wrk_booking_saas",
+      "_type": "workspace",
+      "name": "Booking SaaS API",
+      "description": "Import this file into Insomnia."
+    },
+    {
+      "_id": "env_booking_saas_base",
+      "_type": "environment",
+      "parentId": "wrk_booking_saas",
+      "name": "Base",
+      "data": {
+        "base_url": "http://localhost:3000",
+        "authToken": "",
+        "refreshToken": "",
+        "tenantId": "",
+        "userId": "",
+        "businessId": "",
+        "locationId": "",
+        "courtId": "",
+        "courtKind": "futsal_court",
+        "bookingId": "",
+        "bookingItemId": "",
+        "facilityTypeId": ""
+      }
+    },
+    {
+      "_id": "fld_health_1",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Health"
+    },
+    {
+      "_id": "req_2",
+      "_type": "request",
+      "parentId": "fld_health_1",
+      "name": "GET /health",
+      "method": "GET",
+      "url": "{{ base_url }}/health",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "fld_auth_3",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Auth"
+    },
+    {
+      "_id": "req_4",
+      "_type": "request",
+      "parentId": "fld_auth_3",
+      "name": "POST /auth/login",
+      "method": "POST",
+      "url": "{{ base_url }}/auth/login",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"email\": \"owner@example.com\",\n  \"password\": \"your-password\"\n}"
+      },
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_5",
+      "_type": "request",
+      "parentId": "fld_auth_3",
+      "name": "POST /auth/refresh",
+      "method": "POST",
+      "url": "{{ base_url }}/auth/refresh",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"refreshToken\": \"{{ refreshToken }}\"\n}"
+      },
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_6",
+      "_type": "request",
+      "parentId": "fld_auth_3",
+      "name": "POST /auth/bootstrap-first-owner",
+      "method": "POST",
+      "url": "{{ base_url }}/auth/bootstrap-first-owner",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"fullName\": \"Platform Owner\",\n  \"email\": \"owner@example.com\",\n  \"password\": \"your-password\",\n  \"phone\": \"+923001234567\"\n}"
+      },
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_7",
+      "_type": "request",
+      "parentId": "fld_auth_3",
+      "name": "POST /auth/register-end-user",
+      "method": "POST",
+      "url": "{{ base_url }}/auth/register-end-user",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"fullName\": \"End User\",\n  \"email\": \"user@example.com\",\n  \"password\": \"your-password\",\n  \"phone\": \"+923001234567\"\n}"
+      },
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "fld_iam_8",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "IAM"
+    },
+    {
+      "_id": "req_9",
+      "_type": "request",
+      "parentId": "fld_iam_8",
+      "name": "GET /iam/me",
+      "method": "GET",
+      "url": "{{ base_url }}/iam/me",
+      "headers": [],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_10",
+      "_type": "request",
+      "parentId": "fld_iam_8",
+      "name": "GET /iam/users",
+      "method": "GET",
+      "url": "{{ base_url }}/iam/users?search=&sortBy=&sortOrder=",
+      "headers": [],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_11",
+      "_type": "request",
+      "parentId": "fld_iam_8",
+      "name": "GET /iam/end-users",
+      "method": "GET",
+      "url": "{{ base_url }}/iam/end-users",
+      "headers": [],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_12",
+      "_type": "request",
+      "parentId": "fld_iam_8",
+      "name": "POST /iam/users",
+      "method": "POST",
+      "url": "{{ base_url }}/iam/users",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"fullName\": \"New User\",\n  \"email\": \"new@example.com\",\n  \"password\": \"Password@123\",\n  \"phone\": \"+923001112233\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_13",
+      "_type": "request",
+      "parentId": "fld_iam_8",
+      "name": "PATCH /iam/users/:userId",
+      "method": "PATCH",
+      "url": "{{ base_url }}/iam/users/{{ userId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"fullName\": \"Updated Name\",\n  \"phone\": \"+923009998877\",\n  \"isActive\": true\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_14",
+      "_type": "request",
+      "parentId": "fld_iam_8",
+      "name": "DELETE /iam/users/:userId",
+      "method": "DELETE",
+      "url": "{{ base_url }}/iam/users/{{ userId }}",
+      "headers": [],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_15",
+      "_type": "request",
+      "parentId": "fld_iam_8",
+      "name": "POST /iam/roles/assign",
+      "method": "POST",
+      "url": "{{ base_url }}/iam/roles/assign",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"userId\": \"{{ userId }}\",\n  \"role\": \"business-admin\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "fld_businesses_16",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Businesses"
+    },
+    {
+      "_id": "req_17",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "GET /businesses",
+      "method": "GET",
+      "url": "{{ base_url }}/businesses",
+      "headers": [],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_18",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "GET /businesses/dashboard",
+      "method": "GET",
+      "url": "{{ base_url }}/businesses/dashboard",
+      "headers": [],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_19",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "POST /businesses/onboard",
+      "method": "POST",
+      "url": "{{ base_url }}/businesses/onboard",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"businessName\": \"Example Club\",\n  \"admin\": {\n    \"fullName\": \"Admin User\",\n    \"email\": \"admin@example.com\",\n    \"phone\": \"+923001010101\",\n    \"password\": \"Password@123\"\n  }\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_20",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "GET /businesses/locations",
+      "method": "GET",
+      "url": "{{ base_url }}/businesses/locations",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_21",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "GET /businesses/locations/cities",
+      "method": "GET",
+      "url": "{{ base_url }}/businesses/locations/cities?q=&limit=",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_22",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "GET /businesses/locations/location-types",
+      "method": "GET",
+      "url": "{{ base_url }}/businesses/locations/location-types",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_23",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "GET /businesses/locations/search",
+      "method": "GET",
+      "url": "{{ base_url }}/businesses/locations/search?cities=&locationType=&bookingStatus=unbooked&date=2026-04-09&startTime=18%3A00&endTime=20%3A00",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_24",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "GET /businesses/locations/facility-counts",
+      "method": "GET",
+      "url": "{{ base_url }}/businesses/locations/facility-counts",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_25",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "POST /businesses/locations",
+      "method": "POST",
+      "url": "{{ base_url }}/businesses/locations",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"businessId\": \"{{ businessId }}\",\n  \"branchName\": \"Main\",\n  \"name\": \"Branch One\",\n  \"city\": \"Lahore\",\n  \"locationType\": \"arena\",\n  \"addressLine\": \"Street 1\",\n  \"phone\": \"+923004445556\",\n  \"country\": \"Pakistan\",\n  \"stateProvince\": \"Punjab\",\n  \"area\": \"Gulberg\",\n  \"latitude\": 31.52,\n  \"longitude\": 74.35,\n  \"manager\": \"Manager Name\",\n  \"timezone\": \"Asia/Karachi\",\n  \"currency\": \"PKR\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_26",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "PATCH /businesses/locations/:locationId",
+      "method": "PATCH",
+      "url": "{{ base_url }}/businesses/locations/{{ locationId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Updated branch name\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_27",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "PATCH /businesses/:businessId",
+      "method": "PATCH",
+      "url": "{{ base_url }}/businesses/{{ businessId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"businessName\": \"Updated business name\",\n  \"status\": \"active\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_28",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "DELETE /businesses/locations/:locationId",
+      "method": "DELETE",
+      "url": "{{ base_url }}/businesses/locations/{{ locationId }}",
+      "headers": [],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_29",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "DELETE /businesses/:businessId",
+      "method": "DELETE",
+      "url": "{{ base_url }}/businesses/{{ businessId }}",
+      "headers": [],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "fld_venue_discovery_public_aliases__30",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Venue discovery (public aliases)",
+      "description": "Legacy / mobile paths; overlap with `GET /businesses/locations` and related public routes."
+    },
+    {
+      "_id": "req_31",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getVenues",
+      "method": "GET",
+      "url": "{{ base_url }}/getVenues",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_32",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getVenues/all",
+      "method": "GET",
+      "url": "{{ base_url }}/getVenues/all",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_33",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getVenues/gaming",
+      "method": "GET",
+      "url": "{{ base_url }}/getVenues/gaming",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_34",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getVenues/FutsalArenas",
+      "method": "GET",
+      "url": "{{ base_url }}/getVenues/FutsalArenas",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_35",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getVenue/futsal",
+      "method": "GET",
+      "url": "{{ base_url }}/getVenue/futsal",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_36",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getVenue/cricket",
+      "method": "GET",
+      "url": "{{ base_url }}/getVenue/cricket",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_37",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getVenue/padel",
+      "method": "GET",
+      "url": "{{ base_url }}/getVenue/padel",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_38",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getvenue/futsal (alias)",
+      "method": "GET",
+      "url": "{{ base_url }}/getvenue/futsal",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_39",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getvenue/cricket (alias)",
+      "method": "GET",
+      "url": "{{ base_url }}/getvenue/cricket",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_40",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getvenue/padel (alias)",
+      "method": "GET",
+      "url": "{{ base_url }}/getvenue/padel",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_41",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getVenueDetails/:locationId",
+      "method": "GET",
+      "url": "{{ base_url }}/getVenueDetails/{{ locationId }}",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_42",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getAllCities",
+      "method": "GET",
+      "url": "{{ base_url }}/getAllCities?q=&limit=",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_43",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__30",
+      "name": "GET /getAllLocationTypes",
+      "method": "GET",
+      "url": "{{ base_url }}/getAllLocationTypes",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "fld_bookings_44",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Bookings"
+    },
+    {
+      "_id": "req_45",
+      "_type": "request",
+      "parentId": "fld_bookings_44",
+      "name": "GET /bookings",
+      "method": "GET",
+      "url": "{{ base_url }}/bookings",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_46",
+      "_type": "request",
+      "parentId": "fld_bookings_44",
+      "name": "GET /bookings/availability",
+      "method": "GET",
+      "url": "{{ base_url }}/bookings/availability?date=2026-04-09&startTime=06%3A00&endTime=19%3A00&sportType=futsal",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_47",
+      "_type": "request",
+      "parentId": "fld_bookings_44",
+      "name": "GET /bookings/courts/:courtKind/:courtId/slots",
+      "method": "GET",
+      "url": "{{ base_url }}/bookings/courts/{{ courtKind }}/{{ courtId }}/slots?date=2026-04-09",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_48",
+      "_type": "request",
+      "parentId": "fld_bookings_44",
+      "name": "GET /bookings/courts/:courtKind/:courtId/slot-grid",
+      "method": "GET",
+      "url": "{{ base_url }}/bookings/courts/{{ courtKind }}/{{ courtId }}/slot-grid?date=2026-04-09&useWorkingHours=true&availableOnly=true&startTime=&endTime=",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_49",
+      "_type": "request",
+      "parentId": "fld_bookings_44",
+      "name": "PUT /bookings/courts/:courtKind/:courtId/slot-blocks",
+      "method": "PUT",
+      "url": "{{ base_url }}/bookings/courts/{{ courtKind }}/{{ courtId }}/slot-blocks",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"date\": \"2026-04-09\",\n  \"startTime\": \"18:00\",\n  \"blocked\": true\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_50",
+      "_type": "request",
+      "parentId": "fld_bookings_44",
+      "name": "GET /bookings/:bookingId",
+      "method": "GET",
+      "url": "{{ base_url }}/bookings/{{ bookingId }}",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_51",
+      "_type": "request",
+      "parentId": "fld_bookings_44",
+      "name": "POST /bookings",
+      "method": "POST",
+      "url": "{{ base_url }}/bookings",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"userId\": \"{{ userId }}\",\n  \"sportType\": \"futsal\",\n  \"bookingDate\": \"2026-04-09\",\n  \"items\": [\n    {\n      \"courtKind\": \"futsal_court\",\n      \"courtId\": \"{{ courtId }}\",\n      \"startTime\": \"18:00\",\n      \"endTime\": \"19:00\",\n      \"price\": 5000,\n      \"currency\": \"PKR\",\n      \"status\": \"reserved\"\n    }\n  ],\n  \"pricing\": { \"subTotal\": 5000, \"discount\": 0, \"tax\": 0, \"totalAmount\": 5000 },\n  \"payment\": { \"paymentStatus\": \"pending\", \"paymentMethod\": \"cash\" },\n  \"bookingStatus\": \"pending\",\n  \"notes\": \"\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_52",
+      "_type": "request",
+      "parentId": "fld_bookings_44",
+      "name": "PATCH /bookings/:bookingId",
+      "method": "PATCH",
+      "url": "{{ base_url }}/bookings/{{ bookingId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"bookingStatus\": \"confirmed\",\n  \"notes\": \"\",\n  \"payment\": { \"paymentStatus\": \"paid\", \"paymentMethod\": \"cash\" },\n  \"itemStatuses\": [{ \"itemId\": \"{{ bookingItemId }}\", \"status\": \"confirmed\" }]\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "fld_legacy_placefutsalbooking_53",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Legacy — placeFutsalBooking"
+    },
+    {
+      "_id": "req_54",
+      "_type": "request",
+      "parentId": "fld_legacy_placefutsalbooking_53",
+      "name": "POST /placeFutsalBooking",
+      "method": "POST",
+      "url": "{{ base_url }}/placeFutsalBooking",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"date\": \"2026-04-09\",\n  \"startTime\": \"18:00\",\n  \"endTime\": \"19:00\",\n  \"facilitySelected\": \"futsal_court\",\n  \"fieldSelected\": \"{{ courtId }}\",\n  \"venueId\": \"{{ locationId }}\",\n  \"userId\": \"{{ userId }}\"\n}"
+      },
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "fld_billing_55",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Billing"
+    },
+    {
+      "_id": "req_56",
+      "_type": "request",
+      "parentId": "fld_billing_55",
+      "name": "GET /billing/invoices",
+      "method": "GET",
+      "url": "{{ base_url }}/billing/invoices",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_57",
+      "_type": "request",
+      "parentId": "fld_billing_55",
+      "name": "POST /billing/invoices",
+      "method": "POST",
+      "url": "{{ base_url }}/billing/invoices",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"bookingId\": \"{{ bookingId }}\",\n  \"amount\": 1000\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "fld_arena_58",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Arena"
+    },
+    {
+      "_id": "req_59",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "GET /arena (meta)",
+      "method": "GET",
+      "url": "{{ base_url }}/arena",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_60",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "GET /arena/futsal-courts",
+      "method": "GET",
+      "url": "{{ base_url }}/arena/futsal-courts?businessLocationId=",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_61",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "GET /arena/futsal-courts/:id",
+      "method": "GET",
+      "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_62",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "POST /arena/futsal-courts",
+      "method": "POST",
+      "url": "{{ base_url }}/arena/futsal-courts",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"businessLocationId\": \"{{ locationId }}\",\n  \"name\": \"Futsal pitch 1\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_63",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "PATCH /arena/futsal-courts/:id",
+      "method": "PATCH",
+      "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Futsal pitch 1 (updated)\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_64",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "DELETE /arena/futsal-courts/:id",
+      "method": "DELETE",
+      "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_65",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "GET /arena/cricket-courts",
+      "method": "GET",
+      "url": "{{ base_url }}/arena/cricket-courts?businessLocationId=",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_66",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "GET /arena/cricket-courts/:id",
+      "method": "GET",
+      "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_67",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "POST /arena/cricket-courts",
+      "method": "POST",
+      "url": "{{ base_url }}/arena/cricket-courts",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"businessLocationId\": \"{{ locationId }}\",\n  \"name\": \"Cricket pitch 1\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_68",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "PATCH /arena/cricket-courts/:id",
+      "method": "PATCH",
+      "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Cricket pitch 1 (updated)\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_69",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "DELETE /arena/cricket-courts/:id",
+      "method": "DELETE",
+      "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_70",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "GET /arena/padel-court",
+      "method": "GET",
+      "url": "{{ base_url }}/arena/padel-court?businessLocationId=",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_71",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "GET /arena/padel-court/:id",
+      "method": "GET",
+      "url": "{{ base_url }}/arena/padel-court/{{ courtId }}",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_72",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "POST /arena/padel-court",
+      "method": "POST",
+      "url": "{{ base_url }}/arena/padel-court",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"businessLocationId\": \"{{ locationId }}\",\n  \"name\": \"Padel court 1\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_73",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "PATCH /arena/padel-court/:id",
+      "method": "PATCH",
+      "url": "{{ base_url }}/arena/padel-court/{{ courtId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Padel court 1 (updated)\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_74",
+      "_type": "request",
+      "parentId": "fld_arena_58",
+      "name": "DELETE /arena/padel-court/:id",
+      "method": "DELETE",
+      "url": "{{ base_url }}/arena/padel-court/{{ courtId }}",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "fld_product_catalog_75",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Product catalog"
+    },
+    {
+      "_id": "req_76",
+      "_type": "request",
+      "parentId": "fld_product_catalog_75",
+      "name": "GET /product-catalog",
+      "method": "GET",
+      "url": "{{ base_url }}/product-catalog",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "fld_facility_catalog_77",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Facility catalog"
+    },
+    {
+      "_id": "req_78",
+      "_type": "request",
+      "parentId": "fld_facility_catalog_77",
+      "name": "GET /facility-types",
+      "method": "GET",
+      "url": "{{ base_url }}/facility-types",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_79",
+      "_type": "request",
+      "parentId": "fld_facility_catalog_77",
+      "name": "POST /facility-types",
+      "method": "POST",
+      "url": "{{ base_url }}/facility-types",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"name\": \"Sports Arena\",\n  \"description\": \"\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_80",
+      "_type": "request",
+      "parentId": "fld_facility_catalog_77",
+      "name": "GET /sub-facility-types",
+      "method": "GET",
+      "url": "{{ base_url }}/sub-facility-types",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_81",
+      "_type": "request",
+      "parentId": "fld_facility_catalog_77",
+      "name": "POST /sub-facility-types",
+      "method": "POST",
+      "url": "{{ base_url }}/sub-facility-types",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"facilityTypeId\": \"{{ facilityTypeId }}\",\n  \"name\": \"5-a-side\",\n  \"description\": \"\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    }
+  ]
+}

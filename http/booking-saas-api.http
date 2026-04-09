@@ -1,0 +1,36 @@
+@baseUrl = http://localhost:3000
+@token = 
+@tenantId = 
+
+### Health
+GET {{baseUrl}}/health
+
+### Auth — login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{ "email": "owner@example.com", "password": "your-password" }
+
+### IAM — me
+GET {{baseUrl}}/iam/me
+Authorization: Bearer {{token}}
+
+### Businesses
+GET {{baseUrl}}/businesses
+Authorization: Bearer {{token}}
+
+### Businesses — dashboard
+GET {{baseUrl}}/businesses/dashboard
+Authorization: Bearer {{token}}
+
+### Bookings
+GET {{baseUrl}}/bookings
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+### Arena meta
+GET {{baseUrl}}/arena
+
+### Full list
+# Import booking-saas-all-endpoints.postman_collection.json (repo root) or
+# backend-saas/api/booking-saas.insomnia.json into Insomnia.

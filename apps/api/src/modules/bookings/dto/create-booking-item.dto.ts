@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsIn,
   IsNumber,
@@ -19,6 +19,19 @@ export class CreateBookingItemDto {
   @IsIn([...COURT_KINDS])
   courtKind!: CourtKind;
 
+  @Transform(({ value, obj }) => {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof obj?.facilityId === 'string' && obj.facilityId.trim()) {
+      return obj.facilityId.trim();
+    }
+    if (typeof obj?.selectedFacilityId === 'string' && obj.selectedFacilityId.trim()) {
+      return obj.selectedFacilityId.trim();
+    }
+    if (typeof obj?.fieldId === 'string' && obj.fieldId.trim()) {
+      return obj.fieldId.trim();
+    }
+    return value;
+  })
   @IsUUID('4')
   courtId!: string;
 

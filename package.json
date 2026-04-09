@@ -20,7 +20,8 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./apps/api/test/jest-e2e.json",
     "migration:run": "npm run build && node scripts/run-migrations.cjs",
-    "migration:show": "npm run build && npx typeorm migration:show -d dist/apps/api/database/typeorm.config.js"
+    "migration:show": "npm run build && npx typeorm migration:show -d dist/apps/api/database/typeorm.config.js",
+    "api:collections": "node scripts/generate-api-collections.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",

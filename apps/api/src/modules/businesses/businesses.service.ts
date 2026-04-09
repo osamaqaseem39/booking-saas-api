@@ -1588,6 +1588,12 @@ export class BusinessesService {
       },
       dailyOpenHours: row.workingHours ?? null,
       facilityAvailable: this.facilityCountsToAvailableList(row.facilityCounts),
+      facilityList: (row.facilityCourts ?? []).map((facility) => ({
+        id: facility.id,
+        name: facility.name,
+        facilityType: facility.facilityType,
+        locationId: row.id,
+      })),
       tenantId: business?.tenantId ?? null,
     };
   }
