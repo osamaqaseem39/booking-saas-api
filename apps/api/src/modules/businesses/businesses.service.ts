@@ -1119,7 +1119,7 @@ export class BusinessesService {
 
     const row = this.locationsRepository.create({
       businessId: dto.businessId,
-      locationType: dto.locationType ?? 'arena',
+      locationType: dto.locationType,
       facilityTypes: normalizeLocationFacilityTypesForPersist(
         dto.facilityTypes?.length ? dto.facilityTypes : [],
       ),
@@ -1264,7 +1264,9 @@ export class BusinessesService {
     if (dto.name !== undefined || dto.branchName !== undefined) {
       location.name = dto.branchName ?? dto.name ?? location.name;
     }
-    if (dto.locationType !== undefined) location.locationType = dto.locationType;
+    if (dto.locationType !== undefined && isPlatformOwner) {
+      location.locationType = dto.locationType;
+    }
     if (dto.facilityTypes !== undefined) {
       location.facilityTypes = normalizeLocationFacilityTypesForPersist(
         dto.facilityTypes,

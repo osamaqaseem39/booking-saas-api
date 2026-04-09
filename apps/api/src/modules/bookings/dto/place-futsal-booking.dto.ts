@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { Matches, IsUUID, IsString, IsDateString } from 'class-validator';
 
 export class PlaceFutsalBookingDto {
@@ -15,9 +16,33 @@ export class PlaceFutsalBookingDto {
   endTime!: string;
 
   /** e.g. `futsal_court` (legacy `futsal_field` / `turf_court` strings accepted). */
+  @Transform(({ value, obj }) => {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof obj?.facilityType === 'string' && obj.facilityType.trim()) {
+      return obj.facilityType.trim();
+    }
+    if (typeof obj?.courtKind === 'string' && obj.courtKind.trim()) {
+      return obj.courtKind.trim();
+    }
+    // This endpoint only creates futsal bookings.
+    return 'futsal_court';
+  })
   @IsString()
   facilitySelected!: string;
 
+  @Transform(({ value, obj }) => {
+    if (typeof value === 'string' && value.trim()) return value.trim();
+    if (typeof obj?.fieldId === 'string' && obj.fieldId.trim()) {
+      return obj.fieldId.trim();
+    }
+    if (typeof obj?.facilityId === 'string' && obj.facilityId.trim()) {
+      return obj.facilityId.trim();
+    }
+    if (typeof obj?.selectedFacilityId === 'string' && obj.selectedFacilityId.trim()) {
+      return obj.selectedFacilityId.trim();
+    }
+    return value;
+  })
   @IsUUID('4')
   fieldSelected!: string;
 

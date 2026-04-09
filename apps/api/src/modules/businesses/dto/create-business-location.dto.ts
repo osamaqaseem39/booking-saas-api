@@ -89,11 +89,11 @@ export class CreateBusinessLocationDto {
   @IsUUID('4')
   businessId!: string;
 
-  @IsOptional()
+  /** Drives facility vertical (arena vs gaming-zone, etc.); required on create. */
   @IsString()
   @MaxLength(80)
   @IsIn(BUSINESS_LOCATION_TYPE_CODES)
-  locationType?: string;
+  locationType!: string;
 
   @IsOptional()
   @IsArray()

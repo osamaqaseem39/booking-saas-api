@@ -19,6 +19,20 @@ export const BUSINESS_LOCATION_FACILITY_TYPE_CODES = [
 export type BusinessLocationFacilityTypeCode =
   (typeof BUSINESS_LOCATION_FACILITY_TYPE_CODES)[number];
 
+/** Gaming-zone station categories (dashboard setup + location tags). */
+export const GAMING_LOCATION_FACILITY_TYPE_CODES = [
+  'gaming-pc',
+  'gaming-ps5',
+  'gaming-ps4',
+  'gaming-xbox-one',
+  'gaming-xbox-360',
+  'gaming-vr',
+  'gaming-steering-sim',
+] as const;
+
+export type GamingLocationFacilityTypeCode =
+  (typeof GAMING_LOCATION_FACILITY_TYPE_CODES)[number];
+
 /** Accepted on create/update; normalized to canonical codes before persist. */
 export const BUSINESS_LOCATION_FACILITY_LEGACY_TYPE_CODES = [
   'turf-court',
@@ -32,6 +46,7 @@ export const BUSINESS_LOCATION_FACILITY_LEGACY_TYPE_CODES = [
 export const ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES = [
   ...BUSINESS_LOCATION_FACILITY_TYPE_CODES,
   ...BUSINESS_LOCATION_FACILITY_LEGACY_TYPE_CODES,
+  ...GAMING_LOCATION_FACILITY_TYPE_CODES,
 ] as const;
 
 /**
@@ -44,6 +59,10 @@ export function normalizeLocationFacilityTypesForApi(
   const out = new Set<string>();
   for (const t of raw) {
     if (
+      (GAMING_LOCATION_FACILITY_TYPE_CODES as readonly string[]).includes(t)
+    ) {
+      out.add(t);
+    } else if (
       t === 'futsal-field' ||
       t === 'turf-court-futsal' ||
       t === 'futsal'
