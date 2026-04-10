@@ -12,6 +12,7 @@ import { GetAllLocationTypesController } from './get-all-location-types.controll
 import { GetVenueDetailsController } from './get-venue-details.controller';
 import { GetVenueSportController } from './get-venue-sport.controller';
 import { GetVenuesController } from './get-venues.controller';
+import { PublicDiscoveryController } from './public-discovery.controller';
 import { BusinessLocation } from './entities/business-location.entity';
 import { BusinessMembership } from './entities/business-membership.entity';
 import { Business } from './entities/business.entity';
@@ -38,6 +39,7 @@ import { BusinessesService } from './businesses.service';
     GetVenuesController,
     GetVenueSportController,
     GetVenueDetailsController,
+    PublicDiscoveryController,
   ],
   providers: [BusinessesService],
   exports: [BusinessesService],

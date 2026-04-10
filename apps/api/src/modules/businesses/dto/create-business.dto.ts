@@ -1,5 +1,4 @@
 import {
-  IsArray,
   IsBoolean,
   IsEmail,
   IsIn,
@@ -76,17 +75,6 @@ export class CreateBusinessDto {
   @IsOptional()
   @IsString()
   legalName?: string;
-
-  @IsOptional()
-  @IsString()
-  @MaxLength(40)
-  businessType?: string;
-
-  @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  @MaxLength(50, { each: true })
-  sportsOffered?: string[];
 
   @IsOptional()
   @ValidateNested()

@@ -372,9 +372,6 @@ export class BusinessesService {
       tenantId: dto.tenantId ?? randomUUID(),
       businessName: dto.businessName,
       legalName: dto.legalName,
-      businessType: dto.businessType?.trim(),
-      sportsOffered:
-        dto.sportsOffered?.map((x) => x.trim()).filter(Boolean) ?? undefined,
       owner: ownerProfile,
       subscription: dto.subscription
         ? {
@@ -1206,12 +1203,6 @@ export class BusinessesService {
     if (dto.legalName !== undefined) {
       business.legalName = dto.legalName;
     }
-    if (dto.businessType !== undefined) {
-      business.businessType = dto.businessType;
-    }
-    if (dto.sportsOffered !== undefined) {
-      business.sportsOffered = dto.sportsOffered;
-    }
     if (dto.owner !== undefined) {
       business.owner = dto.owner;
     }
@@ -1576,7 +1567,9 @@ export class BusinessesService {
       clubDetails: {
         businessName: business?.businessName ?? null,
         description: row.details,
-        sportsOffered: business?.sportsOffered ?? [],
+        sportsOffered: this.facilityCountsToAvailableList(row.facilityCounts).map(
+          (sport) => sport.label.toLowerCase(),
+        ),
       },
       currency: row.currency,
       price: null as number | null,

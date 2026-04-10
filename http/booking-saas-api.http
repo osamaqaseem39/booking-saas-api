@@ -31,6 +31,6 @@ X-Tenant-Id: {{tenantId}}
 ### Arena meta
 GET {{baseUrl}}/arena
 
-### Full list
-# Import booking-saas-all-endpoints.postman_collection.json (repo root) or
-# backend-saas/api/booking-saas.insomnia.json into Insomnia.
+### Full API surface
+# Edit and import: booking-saas-all-endpoints.postman_collection.json (repo root)
+# or backend-saas/api/booking-saas.insomnia.json — both are maintained manually in-repo.

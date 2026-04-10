@@ -19,12 +19,6 @@ export class Business {
   @Column({ type: 'varchar', length: 220, nullable: true })
   legalName?: string;
 
-  @Column({ type: 'varchar', length: 40, nullable: true })
-  businessType?: string | null;
-
-  @Column({ type: 'text', array: true, nullable: true })
-  sportsOffered?: string[] | null;
-
   @Column({ type: 'jsonb', nullable: true })
   owner?: { name?: string; email?: string; phone?: string } | null;
 

@@ -1,14 +1,14 @@
 {
   "_type": "export",
   "__export_format": 4,
-  "__export_date": "2026-04-09T18:04:21.991Z",
-  "__export_source": "backend-saas/scripts/generate-api-collections.mjs",
+  "__export_date": "2026-04-09T18:49:14.870Z",
+  "__export_source": "Maintained in-repo (booking-saas/api/booking-saas.insomnia.json)",
   "resources": [
     {
       "_id": "wrk_booking_saas",
       "_type": "workspace",
-      "name": "Booking SaaS API",
-      "description": "Import this file into Insomnia."
+      "name": "Booking SaaS API — full reference",
+      "description": "Request titles describe each call; URLs unchanged. Import into Insomnia or edit in-repo."
     },
     {
       "_id": "env_booking_saas_base",
@@ -34,13 +34,13 @@
       "_id": "fld_health_1",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
-      "name": "Health"
+      "name": "Service health"
     },
     {
       "_id": "req_2",
       "_type": "request",
       "parentId": "fld_health_1",
-      "name": "GET /health",
+      "name": "Check API is reachable",
       "method": "GET",
       "url": "{{ base_url }}/health",
       "headers": [],
@@ -52,13 +52,13 @@
       "_id": "fld_auth_3",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
-      "name": "Auth"
+      "name": "Authentication"
     },
     {
       "_id": "req_4",
       "_type": "request",
       "parentId": "fld_auth_3",
-      "name": "POST /auth/login",
+      "name": "Sign in (email + password → tokens)",
       "method": "POST",
       "url": "{{ base_url }}/auth/login",
       "headers": [
@@ -79,7 +79,7 @@
       "_id": "req_5",
       "_type": "request",
       "parentId": "fld_auth_3",
-      "name": "POST /auth/refresh",
+      "name": "Refresh access token",
       "method": "POST",
       "url": "{{ base_url }}/auth/refresh",
       "headers": [
@@ -100,7 +100,7 @@
       "_id": "req_6",
       "_type": "request",
       "parentId": "fld_auth_3",
-      "name": "POST /auth/bootstrap-first-owner",
+      "name": "Create first platform owner (one-time bootstrap)",
       "method": "POST",
       "url": "{{ base_url }}/auth/bootstrap-first-owner",
       "headers": [
@@ -121,7 +121,7 @@
       "_id": "req_7",
       "_type": "request",
       "parentId": "fld_auth_3",
-      "name": "POST /auth/register-end-user",
+      "name": "Register customer app user",
       "method": "POST",
       "url": "{{ base_url }}/auth/register-end-user",
       "headers": [
@@ -142,13 +142,13 @@
       "_id": "fld_iam_8",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
-      "name": "IAM"
+      "name": "Users & roles"
     },
     {
       "_id": "req_9",
       "_type": "request",
       "parentId": "fld_iam_8",
-      "name": "GET /iam/me",
+      "name": "Who am I (session profile)",
       "method": "GET",
       "url": "{{ base_url }}/iam/me",
       "headers": [],
@@ -162,7 +162,7 @@
       "_id": "req_10",
       "_type": "request",
       "parentId": "fld_iam_8",
-      "name": "GET /iam/users",
+      "name": "List users in active tenant",
       "method": "GET",
       "url": "{{ base_url }}/iam/users?search=&sortBy=&sortOrder=",
       "headers": [],
@@ -176,7 +176,7 @@
       "_id": "req_11",
       "_type": "request",
       "parentId": "fld_iam_8",
-      "name": "GET /iam/end-users",
+      "name": "List customer end-users (platform owner)",
       "method": "GET",
       "url": "{{ base_url }}/iam/end-users",
       "headers": [],
@@ -190,7 +190,7 @@
       "_id": "req_12",
       "_type": "request",
       "parentId": "fld_iam_8",
-      "name": "POST /iam/users",
+      "name": "Create staff / user account",
       "method": "POST",
       "url": "{{ base_url }}/iam/users",
       "headers": [
@@ -213,7 +213,7 @@
       "_id": "req_13",
       "_type": "request",
       "parentId": "fld_iam_8",
-      "name": "PATCH /iam/users/:userId",
+      "name": "Update user profile or credentials",
       "method": "PATCH",
       "url": "{{ base_url }}/iam/users/{{ userId }}",
       "headers": [
@@ -236,7 +236,7 @@
       "_id": "req_14",
       "_type": "request",
       "parentId": "fld_iam_8",
-      "name": "DELETE /iam/users/:userId",
+      "name": "Remove user",
       "method": "DELETE",
       "url": "{{ base_url }}/iam/users/{{ userId }}",
       "headers": [],
@@ -250,7 +250,7 @@
       "_id": "req_15",
       "_type": "request",
       "parentId": "fld_iam_8",
-      "name": "POST /iam/roles/assign",
+      "name": "Grant role to user",
       "method": "POST",
       "url": "{{ base_url }}/iam/roles/assign",
       "headers": [
@@ -273,13 +273,14 @@
       "_id": "fld_businesses_16",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
-      "name": "Businesses"
+      "name": "Businesses & branches",
+      "description": "**Onboard** creates tenant + business + first admin (or owner). **Locations** need `businessId` from `GET /businesses` after login. Use **Arena** folder to add futsal/cricket/padel courts at a location."
     },
     {
       "_id": "req_17",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "GET /businesses",
+      "name": "List businesses you belong to",
       "method": "GET",
       "url": "{{ base_url }}/businesses",
       "headers": [],
@@ -293,7 +294,7 @@
       "_id": "req_18",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "GET /businesses/dashboard",
+      "name": "Owner dashboard (bookings, revenue, counts)",
       "method": "GET",
       "url": "{{ base_url }}/businesses/dashboard",
       "headers": [],
@@ -307,7 +308,7 @@
       "_id": "req_19",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "POST /businesses/onboard",
+      "name": "Onboard tenant + business + admin user",
       "method": "POST",
       "url": "{{ base_url }}/businesses/onboard",
       "headers": [
@@ -318,22 +319,29 @@
       ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"businessName\": \"Example Club\",\n  \"admin\": {\n    \"fullName\": \"Admin User\",\n    \"email\": \"admin@example.com\",\n    \"phone\": \"+923001010101\",\n    \"password\": \"Password@123\"\n  }\n}"
+        "text": "{\n  \"businessName\": \"Elite Sports Club\",\n  \"legalName\": \"Elite Sports Club (Private) Limited\",\n  \"sportsOffered\": [\"futsal\", \"cricket\", \"padel\"],\n  \"admin\": {\n    \"fullName\": \"Club Administrator\",\n    \"email\": \"admin@elitesports.example\",\n    \"phone\": \"+923001112233\",\n    \"password\": \"ChangeMe@123\"\n  },\n  \"subscription\": {\n    \"plan\": \"pro\",\n    \"status\": \"active\",\n    \"billingCycle\": \"monthly\"\n  },\n  \"settings\": {\n    \"timezone\": \"Asia/Karachi\",\n    \"currency\": \"PKR\",\n    \"allowOnlinePayments\": true\n  },\n  \"status\": \"active\"\n}"
       },
       "authentication": {
-        "type": "bearer",
-        "token": "{{ authToken }}",
-        "prefix": "Bearer"
+        "type": "none"
       }
     },
     {
       "_id": "req_20",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "GET /businesses/locations",
-      "method": "GET",
-      "url": "{{ base_url }}/businesses/locations",
-      "headers": [],
+      "name": "Onboard tenant + business + owner user",
+      "method": "POST",
+      "url": "{{ base_url }}/businesses/onboard",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"businessName\": \"Owner-Led Arena\",\n  \"legalName\": \"Owner-Led Arena Pvt Ltd\",\n  \"sportsOffered\": [\"futsal\", \"cricket\"],\n  \"owner\": {\n    \"name\": \"Business Owner\",\n    \"email\": \"owner@arena.example\",\n    \"phone\": \"+923004445566\",\n    \"password\": \"ChangeMe@123\"\n  },\n  \"subscription\": {\n    \"plan\": \"starter\",\n    \"status\": \"trial\",\n    \"billingCycle\": \"monthly\"\n  },\n  \"settings\": {\n    \"timezone\": \"Asia/Karachi\",\n    \"currency\": \"PKR\",\n    \"allowOnlinePayments\": false\n  },\n  \"status\": \"active\"\n}"
+      },
       "authentication": {
         "type": "none"
       }
@@ -342,9 +350,9 @@
       "_id": "req_21",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "GET /businesses/locations/cities",
+      "name": "List all branches / venues",
       "method": "GET",
-      "url": "{{ base_url }}/businesses/locations/cities?q=&limit=",
+      "url": "{{ base_url }}/businesses/locations",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -354,9 +362,9 @@
       "_id": "req_22",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "GET /businesses/locations/location-types",
+      "name": "Distinct cities (for filters)",
       "method": "GET",
-      "url": "{{ base_url }}/businesses/locations/location-types",
+      "url": "{{ base_url }}/businesses/locations/cities?q=&limit=",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -366,9 +374,9 @@
       "_id": "req_23",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "GET /businesses/locations/search",
+      "name": "Registered location types",
       "method": "GET",
-      "url": "{{ base_url }}/businesses/locations/search?cities=&locationType=&bookingStatus=unbooked&date=2026-04-09&startTime=18%3A00&endTime=20%3A00",
+      "url": "{{ base_url }}/businesses/locations/location-types",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -378,9 +386,9 @@
       "_id": "req_24",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "GET /businesses/locations/facility-counts",
+      "name": "Search branches (city, type, time window)",
       "method": "GET",
-      "url": "{{ base_url }}/businesses/locations/facility-counts",
+      "url": "{{ base_url }}/businesses/locations/search?cities=&locationType=&bookingStatus=unbooked&date=2026-04-09&startTime=18%3A00&endTime=20%3A00",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -390,7 +398,19 @@
       "_id": "req_25",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "POST /businesses/locations",
+      "name": "Facility counts per branch",
+      "method": "GET",
+      "url": "{{ base_url }}/businesses/locations/facility-counts",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_26",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "Create sports arena branch (example body)",
       "method": "POST",
       "url": "{{ base_url }}/businesses/locations",
       "headers": [
@@ -401,30 +421,7 @@
       ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"businessId\": \"{{ businessId }}\",\n  \"branchName\": \"Main\",\n  \"name\": \"Branch One\",\n  \"city\": \"Lahore\",\n  \"locationType\": \"arena\",\n  \"addressLine\": \"Street 1\",\n  \"phone\": \"+923004445556\",\n  \"country\": \"Pakistan\",\n  \"stateProvince\": \"Punjab\",\n  \"area\": \"Gulberg\",\n  \"latitude\": 31.52,\n  \"longitude\": 74.35,\n  \"manager\": \"Manager Name\",\n  \"timezone\": \"Asia/Karachi\",\n  \"currency\": \"PKR\"\n}"
-      },
-      "authentication": {
-        "type": "bearer",
-        "token": "{{ authToken }}",
-        "prefix": "Bearer"
-      }
-    },
-    {
-      "_id": "req_26",
-      "_type": "request",
-      "parentId": "fld_businesses_16",
-      "name": "PATCH /businesses/locations/:locationId",
-      "method": "PATCH",
-      "url": "{{ base_url }}/businesses/locations/{{ locationId }}",
-      "headers": [
-        {
-          "name": "Content-Type",
-          "value": "application/json"
-        }
-      ],
-      "body": {
-        "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Updated branch name\"\n}"
+        "text": "{\n  \"businessId\": \"{{ businessId }}\",\n  \"branchName\": \"Main branch\",\n  \"name\": \"Elite Sports Arena — Gulberg\",\n  \"locationType\": \"arena\",\n  \"facilityTypes\": [\"futsal\", \"cricket\", \"padel\"],\n  \"addressLine\": \"Plot 12, Main Boulevard, Gulberg III\",\n  \"details\": \"Parking: basement P1. Night entry via rear gate after 22:00.\",\n  \"city\": \"Lahore\",\n  \"area\": \"Gulberg\",\n  \"country\": \"Pakistan\",\n  \"latitude\": 31.5204,\n  \"longitude\": 74.3587,\n  \"phone\": \"+924211234567\",\n  \"manager\": \"Venue Manager\",\n  \"workingHours\": {\n    \"monday\": \"06:00 - 23:30\",\n    \"tuesday\": \"06:00 - 23:30\",\n    \"wednesday\": \"06:00 - 23:30\",\n    \"thursday\": \"06:00 - 23:30\",\n    \"friday\": \"06:00 - 24:00\",\n    \"saturday\": \"06:00 - 24:00\",\n    \"sunday\": \"08:00 - 22:00\"\n  },\n  \"timezone\": \"Asia/Karachi\",\n  \"currency\": \"PKR\",\n  \"logo\": \"https://cdn.example.com/venues/elite-logo.png\",\n  \"bannerImage\": \"https://cdn.example.com/venues/elite-banner.jpg\",\n  \"gallery\": [\n    \"https://cdn.example.com/venues/elite-1.jpg\",\n    \"https://cdn.example.com/venues/elite-2.jpg\"\n  ],\n  \"status\": \"active\",\n  \"location\": {\n    \"country\": \"Pakistan\",\n    \"city\": \"Lahore\",\n    \"area\": \"Gulberg III\",\n    \"addressLine\": \"Plot 12, Main Boulevard\",\n    \"coordinates\": { \"lat\": 31.5204, \"lng\": 74.3587 }\n  },\n  \"contact\": {\n    \"phone\": \"+924211234567\",\n    \"manager\": \"Operations lead\"\n  },\n  \"settings\": {\n    \"timezone\": \"Asia/Karachi\",\n    \"currency\": \"PKR\"\n  }\n}"
       },
       "authentication": {
         "type": "bearer",
@@ -436,9 +433,9 @@
       "_id": "req_27",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "PATCH /businesses/:businessId",
+      "name": "Update branch / venue details",
       "method": "PATCH",
-      "url": "{{ base_url }}/businesses/{{ businessId }}",
+      "url": "{{ base_url }}/businesses/locations/{{ locationId }}",
       "headers": [
         {
           "name": "Content-Type",
@@ -447,7 +444,7 @@
       ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"businessName\": \"Updated business name\",\n  \"status\": \"active\"\n}"
+        "text": "{\n  \"name\": \"Elite Sports Arena — Gulberg (updated)\",\n  \"branchName\": \"Main + pro shop\",\n  \"details\": \"Pro shop opens 10:00–22:00.\",\n  \"city\": \"Lahore\",\n  \"workingHours\": {\n    \"monday\": \"07:00 - 23:00\"\n  },\n  \"currency\": \"PKR\",\n  \"status\": \"active\"\n}"
       },
       "authentication": {
         "type": "bearer",
@@ -459,10 +456,19 @@
       "_id": "req_28",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "DELETE /businesses/locations/:locationId",
-      "method": "DELETE",
-      "url": "{{ base_url }}/businesses/locations/{{ locationId }}",
-      "headers": [],
+      "name": "Update business record",
+      "method": "PATCH",
+      "url": "{{ base_url }}/businesses/{{ businessId }}",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"businessName\": \"Elite Sports Club International\",\n  \"legalName\": \"Elite Sports Club International (Pvt) Ltd\",\n  \"sportsOffered\": [\"futsal\", \"cricket\", \"padel\", \"fitness\"],\n  \"settings\": {\n    \"timezone\": \"Asia/Karachi\",\n    \"currency\": \"PKR\",\n    \"allowOnlinePayments\": true\n  },\n  \"status\": \"active\"\n}"
+      },
       "authentication": {
         "type": "bearer",
         "token": "{{ authToken }}",
@@ -473,7 +479,21 @@
       "_id": "req_29",
       "_type": "request",
       "parentId": "fld_businesses_16",
-      "name": "DELETE /businesses/:businessId",
+      "name": "Delete branch",
+      "method": "DELETE",
+      "url": "{{ base_url }}/businesses/locations/{{ locationId }}",
+      "headers": [],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_30",
+      "_type": "request",
+      "parentId": "fld_businesses_16",
+      "name": "Delete business",
       "method": "DELETE",
       "url": "{{ base_url }}/businesses/{{ businessId }}",
       "headers": [],
@@ -484,31 +504,19 @@
       }
     },
     {
-      "_id": "fld_venue_discovery_public_aliases__30",
+      "_id": "fld_venue_discovery_public_aliases__31",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
-      "name": "Venue discovery (public aliases)",
+      "name": "Public maps & venue discovery",
       "description": "Public discovery for maps and venue screens; complements `GET /businesses/locations` (authenticated)."
-    },
-    {
-      "_id": "req_31",
-      "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getVenues",
-      "method": "GET",
-      "url": "{{ base_url }}/getVenues",
-      "headers": [],
-      "authentication": {
-        "type": "none"
-      }
     },
     {
       "_id": "req_32",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getVenues/all",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "All venues (full location rows, public)",
       "method": "GET",
-      "url": "{{ base_url }}/getVenues/all",
+      "url": "{{ base_url }}/public/venues",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -517,10 +525,10 @@
     {
       "_id": "req_33",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getVenues/gaming",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Map pins — every active venue",
       "method": "GET",
-      "url": "{{ base_url }}/getVenues/gaming",
+      "url": "{{ base_url }}/public/venues/markers",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -529,10 +537,10 @@
     {
       "_id": "req_34",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getVenues/FutsalArenas",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Map pins — gaming zones only",
       "method": "GET",
-      "url": "{{ base_url }}/getVenues/FutsalArenas",
+      "url": "{{ base_url }}/public/venues/markers/gaming",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -541,10 +549,10 @@
     {
       "_id": "req_35",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getVenue/futsal",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Map pins — futsal arenas only",
       "method": "GET",
-      "url": "{{ base_url }}/getVenue/futsal",
+      "url": "{{ base_url }}/public/venues/markers/futsal",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -553,10 +561,10 @@
     {
       "_id": "req_36",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getVenue/cricket",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Map pins — venues with futsal",
       "method": "GET",
-      "url": "{{ base_url }}/getVenue/cricket",
+      "url": "{{ base_url }}/public/venues/markers/futsal",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -565,10 +573,10 @@
     {
       "_id": "req_37",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getVenue/padel",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Map pins — venues with cricket",
       "method": "GET",
-      "url": "{{ base_url }}/getVenue/padel",
+      "url": "{{ base_url }}/public/venues/markers/cricket",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -577,10 +585,10 @@
     {
       "_id": "req_38",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getvenue/futsal (alias)",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Map pins — venues with padel",
       "method": "GET",
-      "url": "{{ base_url }}/getvenue/futsal",
+      "url": "{{ base_url }}/public/venues/markers/padel",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -589,10 +597,10 @@
     {
       "_id": "req_39",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getvenue/cricket (alias)",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Map pins — futsal (lowercase path alias)",
       "method": "GET",
-      "url": "{{ base_url }}/getvenue/cricket",
+      "url": "{{ base_url }}/getvenue/futsal",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -601,10 +609,10 @@
     {
       "_id": "req_40",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getvenue/padel (alias)",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Map pins — cricket (lowercase path alias)",
       "method": "GET",
-      "url": "{{ base_url }}/getvenue/padel",
+      "url": "{{ base_url }}/getvenue/cricket",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -613,10 +621,10 @@
     {
       "_id": "req_41",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getVenueDetails/:locationId",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Map pins — padel (lowercase path alias)",
       "method": "GET",
-      "url": "{{ base_url }}/getVenueDetails/{{ locationId }}",
+      "url": "{{ base_url }}/getvenue/padel",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -625,10 +633,10 @@
     {
       "_id": "req_42",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getAllCities",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Venue screen (gallery, hours, facility list)",
       "method": "GET",
-      "url": "{{ base_url }}/getAllCities?q=&limit=",
+      "url": "{{ base_url }}/public/venues/{{ locationId }}",
       "headers": [],
       "authentication": {
         "type": "none"
@@ -637,26 +645,38 @@
     {
       "_id": "req_43",
       "_type": "request",
-      "parentId": "fld_venue_discovery_public_aliases__30",
-      "name": "GET /getAllLocationTypes",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Public city list (autocomplete)",
       "method": "GET",
-      "url": "{{ base_url }}/getAllLocationTypes",
+      "url": "{{ base_url }}/public/cities?q=&limit=",
       "headers": [],
       "authentication": {
         "type": "none"
       }
     },
     {
-      "_id": "fld_bookings_44",
-      "_type": "request_group",
-      "parentId": "wrk_booking_saas",
-      "name": "Bookings"
+      "_id": "req_44",
+      "_type": "request",
+      "parentId": "fld_venue_discovery_public_aliases__31",
+      "name": "Public location-type vocabulary",
+      "method": "GET",
+      "url": "{{ base_url }}/public/location-types",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
     },
     {
-      "_id": "req_45",
+      "_id": "fld_bookings_45",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Reservations & court calendar"
+    },
+    {
+      "_id": "req_46",
       "_type": "request",
-      "parentId": "fld_bookings_44",
-      "name": "GET /bookings",
+      "parentId": "fld_bookings_45",
+      "name": "List bookings for tenant",
       "method": "GET",
       "url": "{{ base_url }}/bookings",
       "headers": [
@@ -672,10 +692,10 @@
       }
     },
     {
-      "_id": "req_46",
+      "_id": "req_47",
       "_type": "request",
-      "parentId": "fld_bookings_44",
-      "name": "GET /bookings/availability",
+      "parentId": "fld_bookings_45",
+      "name": "Courts free in a time window",
       "method": "GET",
       "url": "{{ base_url }}/bookings/availability?date=2026-04-09&startTime=06%3A00&endTime=19%3A00&sportType=futsal",
       "headers": [
@@ -691,10 +711,10 @@
       }
     },
     {
-      "_id": "req_47",
+      "_id": "req_48",
       "_type": "request",
-      "parentId": "fld_bookings_44",
-      "name": "GET /bookings/courts/:courtKind/:courtId/slots",
+      "parentId": "fld_bookings_45",
+      "name": "Booked intervals for one court on a date",
       "method": "GET",
       "url": "{{ base_url }}/bookings/courts/{{ courtKind }}/{{ courtId }}/slots?date=2026-04-09",
       "headers": [
@@ -710,10 +730,10 @@
       }
     },
     {
-      "_id": "req_48",
+      "_id": "req_49",
       "_type": "request",
-      "parentId": "fld_bookings_44",
-      "name": "GET /bookings/courts/:courtKind/:courtId/slot-grid",
+      "parentId": "fld_bookings_45",
+      "name": "30-min slot grid (free / booked / blocked)",
       "method": "GET",
       "url": "{{ base_url }}/bookings/courts/{{ courtKind }}/{{ courtId }}/slot-grid?date=2026-04-09&useWorkingHours=true&availableOnly=true&startTime=&endTime=",
       "headers": [
@@ -729,10 +749,10 @@
       }
     },
     {
-      "_id": "req_49",
+      "_id": "req_50",
       "_type": "request",
-      "parentId": "fld_bookings_44",
-      "name": "PUT /bookings/courts/:courtKind/:courtId/slot-blocks",
+      "parentId": "fld_bookings_45",
+      "name": "Block or unblock a time slot (owner)",
       "method": "PUT",
       "url": "{{ base_url }}/bookings/courts/{{ courtKind }}/{{ courtId }}/slot-blocks",
       "headers": [
@@ -756,10 +776,10 @@
       }
     },
     {
-      "_id": "req_50",
+      "_id": "req_51",
       "_type": "request",
-      "parentId": "fld_bookings_44",
-      "name": "GET /bookings/:bookingId",
+      "parentId": "fld_bookings_45",
+      "name": "Booking detail by id",
       "method": "GET",
       "url": "{{ base_url }}/bookings/{{ bookingId }}",
       "headers": [
@@ -775,10 +795,10 @@
       }
     },
     {
-      "_id": "req_51",
+      "_id": "req_52",
       "_type": "request",
-      "parentId": "fld_bookings_44",
-      "name": "POST /bookings",
+      "parentId": "fld_bookings_45",
+      "name": "Create booking (tenant + X-Tenant-Id)",
       "method": "POST",
       "url": "{{ base_url }}/bookings",
       "headers": [
@@ -802,10 +822,10 @@
       }
     },
     {
-      "_id": "req_52",
+      "_id": "req_53",
       "_type": "request",
-      "parentId": "fld_bookings_44",
-      "name": "PATCH /bookings/:bookingId",
+      "parentId": "fld_bookings_45",
+      "name": "Update booking status or payment",
       "method": "PATCH",
       "url": "{{ base_url }}/bookings/{{ bookingId }}",
       "headers": [
@@ -829,12 +849,12 @@
       }
     },
     {
-      "_id": "req_53",
+      "_id": "req_54",
       "_type": "request",
-      "parentId": "fld_bookings_44",
-      "name": "POST /placeFutsalBooking (futsal; tenant resolved from venueId)",
+      "parentId": "fld_bookings_45",
+      "name": "App shortcut: book futsal (tenant from venue, no header)",
       "method": "POST",
-      "url": "{{ base_url }}/placeFutsalBooking",
+      "url": "{{ base_url }}/public/bookings/futsal",
       "headers": [
         {
           "name": "Content-Type",
@@ -850,16 +870,16 @@
       }
     },
     {
-      "_id": "fld_billing_54",
+      "_id": "fld_billing_55",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
-      "name": "Billing"
+      "name": "Invoices"
     },
     {
-      "_id": "req_55",
+      "_id": "req_56",
       "_type": "request",
-      "parentId": "fld_billing_54",
-      "name": "GET /billing/invoices",
+      "parentId": "fld_billing_55",
+      "name": "List invoices",
       "method": "GET",
       "url": "{{ base_url }}/billing/invoices",
       "headers": [
@@ -875,10 +895,10 @@
       }
     },
     {
-      "_id": "req_56",
+      "_id": "req_57",
       "_type": "request",
-      "parentId": "fld_billing_54",
-      "name": "POST /billing/invoices",
+      "parentId": "fld_billing_55",
+      "name": "Issue invoice for a booking",
       "method": "POST",
       "url": "{{ base_url }}/billing/invoices",
       "headers": [
@@ -902,16 +922,17 @@
       }
     },
     {
-      "_id": "fld_arena_57",
+      "_id": "fld_arena_58",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
-      "name": "Arena"
+      "name": "Court inventory (futsal, cricket, padel)",
+      "description": "Bookable **facilities** (courts) at a `businessLocationId`. Requires **Bearer** token + **X-Tenant-Id**. Create location under **Businesses** first."
     },
     {
-      "_id": "req_58",
+      "_id": "req_59",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "GET /arena (meta)",
+      "parentId": "fld_arena_58",
+      "name": "Arena API shape & resource list",
       "method": "GET",
       "url": "{{ base_url }}/arena",
       "headers": [],
@@ -920,10 +941,10 @@
       }
     },
     {
-      "_id": "req_59",
+      "_id": "req_60",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "GET /arena/futsal-courts",
+      "parentId": "fld_arena_58",
+      "name": "List futsal pitches (optional ?businessLocationId)",
       "method": "GET",
       "url": "{{ base_url }}/arena/futsal-courts?businessLocationId=",
       "headers": [
@@ -939,10 +960,10 @@
       }
     },
     {
-      "_id": "req_60",
+      "_id": "req_61",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "GET /arena/futsal-courts/:id",
+      "parentId": "fld_arena_58",
+      "name": "Get one futsal pitch",
       "method": "GET",
       "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
       "headers": [
@@ -958,10 +979,10 @@
       }
     },
     {
-      "_id": "req_61",
+      "_id": "req_62",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "POST /arena/futsal-courts",
+      "parentId": "fld_arena_58",
+      "name": "Add futsal pitch (example body)",
       "method": "POST",
       "url": "{{ base_url }}/arena/futsal-courts",
       "headers": [
@@ -976,7 +997,7 @@
       ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"businessLocationId\": \"{{ locationId }}\",\n  \"name\": \"Futsal pitch 1\"\n}"
+        "text": "{\n  \"businessLocationId\": \"{{ locationId }}\",\n  \"name\": \"Futsal Pitch A — 5v5\",\n  \"arenaLabel\": \"Indoor hall 1\",\n  \"courtStatus\": \"active\",\n  \"imageUrls\": [\"https://cdn.example.com/courts/futsal-a.jpg\"],\n  \"ceilingHeightValue\": 12,\n  \"ceilingHeightUnit\": \"m\",\n  \"coveredType\": \"fully_indoor\",\n  \"sideNetting\": true,\n  \"netHeight\": \"1.2m\",\n  \"boundaryType\": \"net\",\n  \"ventilation\": [\"fans\", \"ac\"],\n  \"lighting\": \"led_floodlights\",\n  \"lengthM\": 40,\n  \"widthM\": 20,\n  \"surfaceType\": \"artificial_turf\",\n  \"turfQuality\": \"FIFA Quality Pro\",\n  \"shockAbsorptionLayer\": true,\n  \"futsalFormat\": \"5v5\",\n  \"futsalGoalPostsAvailable\": true,\n  \"futsalGoalPostSize\": \"3m x 2m\",\n  \"futsalLineMarkings\": \"permanent\",\n  \"pricePerSlot\": 5000,\n  \"peakPricing\": { \"weekdayEvening\": 6000, \"weekend\": 7000 },\n  \"discountMembership\": { \"label\": \"Monthly pass\", \"percentOff\": 10 },\n  \"slotDurationMinutes\": 60,\n  \"bufferBetweenSlotsMinutes\": 0,\n  \"allowParallelBooking\": false,\n  \"amenities\": {\n    \"changingRoom\": true,\n    \"washroom\": true,\n    \"parking\": true,\n    \"drinkingWater\": true,\n    \"seatingArea\": true\n  },\n  \"rules\": {\n    \"maxPlayers\": 12,\n    \"safetyInstructions\": \"Shin guards recommended.\",\n    \"cancellationPolicy\": \"Free cancel up to 3h before slot.\"\n  }\n}"
       },
       "authentication": {
         "type": "bearer",
@@ -985,10 +1006,10 @@
       }
     },
     {
-      "_id": "req_62",
+      "_id": "req_63",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "PATCH /arena/futsal-courts/:id",
+      "parentId": "fld_arena_58",
+      "name": "Edit futsal pitch",
       "method": "PATCH",
       "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
       "headers": [
@@ -1012,10 +1033,10 @@
       }
     },
     {
-      "_id": "req_63",
+      "_id": "req_64",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "DELETE /arena/futsal-courts/:id",
+      "parentId": "fld_arena_58",
+      "name": "Remove futsal pitch",
       "method": "DELETE",
       "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
       "headers": [
@@ -1031,10 +1052,10 @@
       }
     },
     {
-      "_id": "req_64",
+      "_id": "req_65",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "GET /arena/cricket-courts",
+      "parentId": "fld_arena_58",
+      "name": "List cricket pitches (optional ?businessLocationId)",
       "method": "GET",
       "url": "{{ base_url }}/arena/cricket-courts?businessLocationId=",
       "headers": [
@@ -1050,10 +1071,10 @@
       }
     },
     {
-      "_id": "req_65",
+      "_id": "req_66",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "GET /arena/cricket-courts/:id",
+      "parentId": "fld_arena_58",
+      "name": "Get one cricket pitch",
       "method": "GET",
       "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
       "headers": [
@@ -1069,10 +1090,10 @@
       }
     },
     {
-      "_id": "req_66",
+      "_id": "req_67",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "POST /arena/cricket-courts",
+      "parentId": "fld_arena_58",
+      "name": "Add cricket pitch (example body)",
       "method": "POST",
       "url": "{{ base_url }}/arena/cricket-courts",
       "headers": [
@@ -1087,7 +1108,7 @@
       ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"businessLocationId\": \"{{ locationId }}\",\n  \"name\": \"Cricket pitch 1\"\n}"
+        "text": "{\n  \"businessLocationId\": \"{{ locationId }}\",\n  \"name\": \"Cricket Turf — Tape ball\",\n  \"arenaLabel\": \"Outdoor A\",\n  \"courtStatus\": \"active\",\n  \"imageUrls\": [\"https://cdn.example.com/courts/cricket-a.jpg\"],\n  \"ceilingHeightValue\": 25,\n  \"ceilingHeightUnit\": \"m\",\n  \"coveredType\": \"open\",\n  \"sideNetting\": true,\n  \"boundaryType\": \"net\",\n  \"ventilation\": [\"natural\"],\n  \"lighting\": \"led_floodlights\",\n  \"lengthM\": 55,\n  \"widthM\": 35,\n  \"surfaceType\": \"artificial_turf\",\n  \"turfQuality\": \"Sand-dressed\",\n  \"shockAbsorptionLayer\": false,\n  \"cricketFormat\": \"tape_ball\",\n  \"cricketStumpsAvailable\": true,\n  \"cricketBowlingMachine\": false,\n  \"cricketPracticeMode\": \"full_ground\",\n  \"pricePerSlot\": 8000,\n  \"peakPricing\": { \"weekdayEvening\": 9000, \"weekend\": 10000 },\n  \"discountMembership\": { \"label\": \"Team bundle\", \"amount\": 500 },\n  \"slotDurationMinutes\": 120,\n  \"bufferBetweenSlotsMinutes\": 15,\n  \"allowParallelBooking\": false,\n  \"amenities\": {\n    \"changingRoom\": true,\n    \"washroom\": true,\n    \"parking\": true,\n    \"drinkingWater\": true,\n    \"seatingArea\": true\n  },\n  \"rules\": {\n    \"maxPlayers\": 22,\n    \"safetyInstructions\": \"Helmets mandatory for hard ball.\",\n    \"cancellationPolicy\": \"24h notice for refund.\"\n  }\n}"
       },
       "authentication": {
         "type": "bearer",
@@ -1096,10 +1117,10 @@
       }
     },
     {
-      "_id": "req_67",
+      "_id": "req_68",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "PATCH /arena/cricket-courts/:id",
+      "parentId": "fld_arena_58",
+      "name": "Edit cricket pitch",
       "method": "PATCH",
       "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
       "headers": [
@@ -1123,10 +1144,10 @@
       }
     },
     {
-      "_id": "req_68",
+      "_id": "req_69",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "DELETE /arena/cricket-courts/:id",
+      "parentId": "fld_arena_58",
+      "name": "Remove cricket pitch",
       "method": "DELETE",
       "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
       "headers": [
@@ -1142,10 +1163,10 @@
       }
     },
     {
-      "_id": "req_69",
+      "_id": "req_70",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "GET /arena/padel-court",
+      "parentId": "fld_arena_58",
+      "name": "List padel courts (optional ?businessLocationId)",
       "method": "GET",
       "url": "{{ base_url }}/arena/padel-court?businessLocationId=",
       "headers": [
@@ -1161,10 +1182,10 @@
       }
     },
     {
-      "_id": "req_70",
+      "_id": "req_71",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "GET /arena/padel-court/:id",
+      "parentId": "fld_arena_58",
+      "name": "Get one padel court",
       "method": "GET",
       "url": "{{ base_url }}/arena/padel-court/{{ courtId }}",
       "headers": [
@@ -1180,10 +1201,10 @@
       }
     },
     {
-      "_id": "req_71",
+      "_id": "req_72",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "POST /arena/padel-court",
+      "parentId": "fld_arena_58",
+      "name": "Add padel court (example body)",
       "method": "POST",
       "url": "{{ base_url }}/arena/padel-court",
       "headers": [
@@ -1198,7 +1219,7 @@
       ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"businessLocationId\": \"{{ locationId }}\",\n  \"name\": \"Padel court 1\"\n}"
+        "text": "{\n  \"businessLocationId\": \"{{ locationId }}\",\n  \"name\": \"Padel Court 1\",\n  \"arenaLabel\": \"Roof top\",\n  \"courtStatus\": \"active\",\n  \"description\": \"Panoramic glass court, doubles.\",\n  \"imageUrls\": [\"https://cdn.example.com/courts/padel-1.jpg\"],\n  \"ceilingHeightValue\": 8,\n  \"ceilingHeightUnit\": \"m\",\n  \"coveredType\": \"semi_covered\",\n  \"glassWalls\": true,\n  \"wallType\": \"full_glass\",\n  \"lighting\": \"LED\",\n  \"ventilation\": \"Natural + fans\",\n  \"lengthM\": 20,\n  \"widthM\": 10,\n  \"surfaceType\": \"synthetic_turf\",\n  \"matchType\": \"doubles\",\n  \"maxPlayers\": 4,\n  \"pricePerSlot\": 4500,\n  \"peakPricing\": { \"weekdayEvening\": 5000, \"weekend\": 5500 },\n  \"membershipPrice\": 12000,\n  \"slotDurationMinutes\": 90,\n  \"bufferBetweenSlotsMinutes\": 10,\n  \"extras\": {\n    \"racketRental\": true,\n    \"ballRental\": true,\n    \"coachingAvailable\": false\n  },\n  \"amenities\": {\n    \"seating\": true,\n    \"changingRoom\": true,\n    \"parking\": true\n  },\n  \"rules\": {\n    \"maxPlayers\": 4,\n    \"gameRules\": \"World Padel Tour style scoring.\",\n    \"cancellationPolicy\": \"Cancel 2h before for credit.\"\n  },\n  \"isActive\": true\n}"
       },
       "authentication": {
         "type": "bearer",
@@ -1207,10 +1228,10 @@
       }
     },
     {
-      "_id": "req_72",
+      "_id": "req_73",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "PATCH /arena/padel-court/:id",
+      "parentId": "fld_arena_58",
+      "name": "Edit padel court",
       "method": "PATCH",
       "url": "{{ base_url }}/arena/padel-court/{{ courtId }}",
       "headers": [
@@ -1234,10 +1255,10 @@
       }
     },
     {
-      "_id": "req_73",
+      "_id": "req_74",
       "_type": "request",
-      "parentId": "fld_arena_57",
-      "name": "DELETE /arena/padel-court/:id",
+      "parentId": "fld_arena_58",
+      "name": "Remove padel court",
       "method": "DELETE",
       "url": "{{ base_url }}/arena/padel-court/{{ courtId }}",
       "headers": [
@@ -1253,16 +1274,16 @@
       }
     },
     {
-      "_id": "fld_product_catalog_74",
+      "_id": "fld_product_catalog_75",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
-      "name": "Product catalog"
+      "name": "Product & vertical reference"
     },
     {
-      "_id": "req_75",
+      "_id": "req_76",
       "_type": "request",
-      "parentId": "fld_product_catalog_74",
-      "name": "GET /product-catalog",
+      "parentId": "fld_product_catalog_75",
+      "name": "Static catalog (arena, gaming, offerings)",
       "method": "GET",
       "url": "{{ base_url }}/product-catalog",
       "headers": [],
@@ -1271,50 +1292,88 @@
       }
     },
     {
-      "_id": "fld_facility_catalog_76",
+      "_id": "fld_gaming_zone_77",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",
-      "name": "Facility catalog"
-    },
-    {
-      "_id": "req_77",
-      "_type": "request",
-      "parentId": "fld_facility_catalog_76",
-      "name": "GET /facility-types",
-      "method": "GET",
-      "url": "{{ base_url }}/facility-types",
-      "headers": [
-        {
-          "name": "X-Tenant-Id",
-          "value": "{{ tenantId }}"
-        }
-      ],
-      "authentication": {
-        "type": "bearer",
-        "token": "{{ authToken }}",
-        "prefix": "Bearer"
-      }
+      "name": "Gaming venues (discovery + setup)",
+      "description": "Gaming venues use `locationType: \"gaming-zone\"`. Tag stations with `facilityTypes` such as `gaming-pc`, `gaming-ps5` (see `GET /product-catalog` → `offerings[\"gaming-zone\"]` uses short codes; persisted location tags use the `gaming-*` codes on `POST /businesses/locations`). Public map: `GET /public/venues/markers/gaming` (legacy `GET /getVenues/gaming`). Venue profile: `GET /public/venues/:locationId` (legacy `GET /getVenueDetails/:locationId`) (same payload as sports venues; `facilityList` only lists bookable arena courts—there is no gaming-station inventory REST API in this service yet)."
     },
     {
       "_id": "req_78",
       "_type": "request",
-      "parentId": "fld_facility_catalog_76",
-      "name": "POST /facility-types",
+      "parentId": "fld_gaming_zone_77",
+      "name": "Map pins — gaming zones only",
+      "method": "GET",
+      "url": "{{ base_url }}/public/venues/markers/gaming",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_79",
+      "_type": "request",
+      "parentId": "fld_gaming_zone_77",
+      "name": "Venue screen (gallery, hours, facility list)",
+      "method": "GET",
+      "url": "{{ base_url }}/public/venues/{{ locationId }}",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_80",
+      "_type": "request",
+      "parentId": "fld_gaming_zone_77",
+      "name": "Static catalog (arena, gaming, offerings)",
+      "method": "GET",
+      "url": "{{ base_url }}/product-catalog",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_81",
+      "_type": "request",
+      "parentId": "fld_gaming_zone_77",
+      "name": "Public location-type vocabulary",
+      "method": "GET",
+      "url": "{{ base_url }}/public/location-types",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_82",
+      "_type": "request",
+      "parentId": "fld_gaming_zone_77",
+      "name": "Search branches filtered to gaming-zone",
+      "method": "GET",
+      "url": "{{ base_url }}/businesses/locations/search?cities=&locationType=gaming-zone&bookingStatus=&date=&startTime=&endTime=",
+      "headers": [],
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_83",
+      "_type": "request",
+      "parentId": "fld_gaming_zone_77",
+      "name": "Create gaming branch (example body)",
       "method": "POST",
-      "url": "{{ base_url }}/facility-types",
+      "url": "{{ base_url }}/businesses/locations",
       "headers": [
         {
           "name": "Content-Type",
           "value": "application/json"
-        },
-        {
-          "name": "X-Tenant-Id",
-          "value": "{{ tenantId }}"
         }
       ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"name\": \"Sports Arena\",\n  \"description\": \"\"\n}"
+        "text": "{\n  \"businessId\": \"{{ businessId }}\",\n  \"branchName\": \"Flagship lounge\",\n  \"name\": \"Downtown Gaming Zone\",\n  \"locationType\": \"gaming-zone\",\n  \"facilityTypes\": [\"gaming-pc\", \"gaming-ps5\", \"gaming-vr\"],\n  \"addressLine\": \"Level 3, Tech Mall, 88 Main Boulevard\",\n  \"details\": \"High-end rigs and PS5 pods. ID check at entrance.\",\n  \"city\": \"Lahore\",\n  \"area\": \"Gulberg\",\n  \"country\": \"Pakistan\",\n  \"latitude\": 31.5189,\n  \"longitude\": 74.35,\n  \"phone\": \"+923008887766\",\n  \"manager\": \"Floor supervisor\",\n  \"workingHours\": {\n    \"monday\": \"12:00 - 02:00\",\n    \"tuesday\": \"12:00 - 02:00\",\n    \"wednesday\": \"12:00 - 02:00\",\n    \"thursday\": \"12:00 - 02:00\",\n    \"friday\": \"12:00 - 03:00\",\n    \"saturday\": \"10:00 - 03:00\",\n    \"sunday\": \"10:00 - 24:00\"\n  },\n  \"timezone\": \"Asia/Karachi\",\n  \"currency\": \"PKR\",\n  \"logo\": \"https://cdn.example.com/gaming/logo.png\",\n  \"bannerImage\": \"https://cdn.example.com/gaming/banner.jpg\",\n  \"gallery\": [\"https://cdn.example.com/gaming/floor1.jpg\"],\n  \"status\": \"active\",\n  \"location\": {\n    \"country\": \"Pakistan\",\n    \"city\": \"Lahore\",\n    \"area\": \"Gulberg\",\n    \"addressLine\": \"Level 3, Tech Mall\",\n    \"coordinates\": { \"lat\": 31.5189, \"lng\": 74.35 }\n  },\n  \"contact\": {\n    \"phone\": \"+923008887766\",\n    \"manager\": \"Bookings desk\"\n  },\n  \"settings\": {\n    \"timezone\": \"Asia/Karachi\",\n    \"currency\": \"PKR\"\n  }\n}"
       },
       "authentication": {
         "type": "bearer",
@@ -1323,10 +1382,63 @@
       }
     },
     {
-      "_id": "req_79",
+      "_id": "fld_facility_catalog_84",
+      "_type": "request_group",
+      "parentId": "wrk_booking_saas",
+      "name": "Tenant custom facility taxonomy",
+      "description": "Tenant-scoped **catalog** types (separate from arena courts). `code` must be unique per tenant."
+    },
+    {
+      "_id": "req_85",
       "_type": "request",
-      "parentId": "fld_facility_catalog_76",
-      "name": "GET /sub-facility-types",
+      "parentId": "fld_facility_catalog_84",
+      "name": "List tenant facility types",
+      "method": "GET",
+      "url": "{{ base_url }}/facility-types",
+      "headers": [
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_86",
+      "_type": "request",
+      "parentId": "fld_facility_catalog_84",
+      "name": "Define facility type (example body)",
+      "method": "POST",
+      "url": "{{ base_url }}/facility-types",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        },
+        {
+          "name": "X-Tenant-Id",
+          "value": "{{ tenantId }}"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"code\": \"custom-arena\",\n  \"name\": \"Custom multi-sport hall\",\n  \"description\": \"Tenant-defined facility type for reporting.\"\n}"
+      },
+      "authentication": {
+        "type": "bearer",
+        "token": "{{ authToken }}",
+        "prefix": "Bearer"
+      }
+    },
+    {
+      "_id": "req_87",
+      "_type": "request",
+      "parentId": "fld_facility_catalog_84",
+      "name": "List sub-facility types",
       "method": "GET",
       "url": "{{ base_url }}/sub-facility-types",
       "headers": [
@@ -1342,10 +1454,10 @@
       }
     },
     {
-      "_id": "req_80",
+      "_id": "req_88",
       "_type": "request",
-      "parentId": "fld_facility_catalog_76",
-      "name": "POST /sub-facility-types",
+      "parentId": "fld_facility_catalog_84",
+      "name": "Define sub-facility type (example body)",
       "method": "POST",
       "url": "{{ base_url }}/sub-facility-types",
       "headers": [
@@ -1360,7 +1472,7 @@
       ],
       "body": {
         "mimeType": "application/json",
-        "text": "{\n  \"facilityTypeId\": \"{{ facilityTypeId }}\",\n  \"name\": \"5-a-side\",\n  \"description\": \"\"\n}"
+        "text": "{\n  \"facilityTypeId\": \"{{ facilityTypeId }}\",\n  \"code\": \"5v5-indoor\",\n  \"name\": \"5v5 indoor box\",\n  \"description\": \"Small-sided indoor football.\"\n}"
       },
       "authentication": {
         "type": "bearer",
