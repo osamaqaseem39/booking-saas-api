@@ -17,6 +17,7 @@ import { IamService } from '../iam/iam.service';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
+import { GetVenuesAllQueryDto } from './dto/get-venues-all-query.dto';
 import { SearchLocationsQueryDto } from './dto/search-locations-query.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateBusinessLocationDto } from './dto/update-business-location.dto';
@@ -1439,6 +1440,133 @@ export class BusinessesService {
     };
   }
 
+  /** Internal marker category after normalizing legacy path + query values. */
+  private normalizeVenueMarkerCategory(
+    raw: string | undefined,
+  ):
+    | 'all'
+    | 'gaming'
+    | 'FutsalArenas'
+    | 'futsal'
+    | 'cricket'
+    | 'padel' {
+    const c = (raw ?? 'all').trim().toLowerCase();
+    if (!c || c === 'all') {
+      return 'all';
+    }
+    if (c === 'gaming' || c === 'gaming-zone' || c === 'gaming_zone') {
+      return 'gaming';
+    }
+    if (c === 'futsal' || c === 'futsalarenas') {
+      return 'futsal';
+    }
+    if (c === 'cricket') {
+      return 'cricket';
+    }
+    if (c === 'padel') {
+      return 'padel';
+    }
+    throw new BadRequestException(
+      `Unknown category "${raw}". Use all, gaming, futsal, FutsalArenas, cricket, or padel.`,
+    );
+  }
+
+  private filterActiveRowsByMarkerCategory(
+    active: Awaited<ReturnType<BusinessesService['listAllLocationsPublic']>>,
+    category:
+      | 'all'
+      | 'gaming'
+      | 'FutsalArenas'
+      | 'futsal'
+      | 'cricket'
+      | 'padel',
+  ): typeof active {
+    if (category === 'all') {
+      return active;
+    }
+    if (category === 'gaming') {
+      return active.filter((r) => {
+        const t = (r.locationType ?? '').trim().toLowerCase();
+        return (
+          t === 'gaming' ||
+          t === 'gaming-zone' ||
+          t.includes('gaming')
+        );
+      });
+    }
+    if (category === 'FutsalArenas' || category === 'futsal') {
+      return active.filter((r) => (r.facilityCounts.futsal ?? 0) > 0);
+    }
+    if (category === 'cricket') {
+      return active.filter((r) => (r.facilityCounts.cricket ?? 0) > 0);
+    }
+    return active.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
+  }
+
+  /**
+   * GET /getVenues/all — map markers with optional `category` and optional
+   * `date` + `startTime` + `endTime` (venues with at least one free arena court in that window).
+   */
+  async listVenueMarkersPublicWithFilters(dto: GetVenuesAllQueryDto): Promise<
+    Array<{
+      venueId: string;
+      name: string;
+      address: string;
+      latitude: number | null;
+      longitude: number | null;
+      logo: string | null;
+      bannerImage: string | null;
+    }>
+  > {
+    const category = this.normalizeVenueMarkerCategory(dto.category);
+    const rows = await this.listAllLocationsPublic();
+    let filtered = this.filterActiveRowsByMarkerCategory(
+      rows.filter((r) => r.isActive),
+      category,
+    );
+
+    const citySet = this.parseCitiesFilter(dto.city);
+    if (citySet) {
+      filtered = filtered.filter((r) => {
+        const c = r.city?.trim().toLowerCase();
+        return Boolean(c && citySet.has(c));
+      });
+    }
+
+    const hasDate = Boolean(dto.date?.trim());
+    const hasStart = Boolean(dto.startTime?.trim());
+    const hasEnd = Boolean(dto.endTime?.trim());
+    const n = [hasDate, hasStart, hasEnd].filter(Boolean).length;
+    if (n === 1 || n === 2) {
+      throw new BadRequestException(
+        'For availability filtering, provide all of: date, startTime, endTime (HH:mm).',
+      );
+    }
+    if (n === 3) {
+      const date = dto.date as string;
+      const reqStart = this.hhMmToMinutes(dto.startTime as string);
+      const reqEnd = this.hhMmToMinutes(dto.endTime as string);
+      if (reqEnd === reqStart) {
+        throw new BadRequestException('endTime must be different from startTime');
+      }
+      const busyKeys = await this.loadBusyCourtKeysForWindow(date, reqStart, reqEnd);
+      const locationIds = filtered.map((r) => r.id);
+      if (locationIds.length === 0) {
+        return [];
+      }
+      const courtsByLocation = await this.loadCourtKeysByLocationId(locationIds);
+      filtered = filtered.filter((loc) => {
+        const courts = courtsByLocation.get(loc.id) ?? [];
+        if (courts.length === 0) {
+          return false;
+        }
+        return courts.some((key) => !busyKeys.has(key));
+      });
+    }
+
+    return filtered.map((r) => this.toVenueMapMarker(r));
+  }
+
   /**
    * Markers for one category: `all`, `gaming`, arena sport (`futsal` | `cricket` | `padel`),
    * or legacy `FutsalArenas` (same as `futsal`).
@@ -1464,33 +1592,7 @@ export class BusinessesService {
   > {
     const rows = await this.listAllLocationsPublic();
     const active = rows.filter((r) => r.isActive);
-    if (category === 'all') {
-      return active.map((r) => this.toVenueMapMarker(r));
-    }
-    if (category === 'gaming') {
-      const picked = active.filter((r) => {
-        const t = (r.locationType ?? '').trim().toLowerCase();
-        return (
-          t === 'gaming' ||
-          t === 'gaming-zone' ||
-          t.includes('gaming')
-        );
-      });
-      return picked.map((r) => this.toVenueMapMarker(r));
-    }
-    if (category === 'FutsalArenas' || category === 'futsal') {
-      const picked = active.filter(
-        (r) => (r.facilityCounts.futsal ?? 0) > 0,
-      );
-      return picked.map((r) => this.toVenueMapMarker(r));
-    }
-    if (category === 'cricket') {
-      const picked = active.filter(
-        (r) => (r.facilityCounts.cricket ?? 0) > 0,
-      );
-      return picked.map((r) => this.toVenueMapMarker(r));
-    }
-    const picked = active.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
+    const picked = this.filterActiveRowsByMarkerCategory(active, category);
     return picked.map((r) => this.toVenueMapMarker(r));
   }
 

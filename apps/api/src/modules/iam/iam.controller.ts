@@ -115,6 +115,12 @@ export class IamController {
     });
   }
 
+  @Post('users/:userId/activate')
+  @Roles('platform-owner')
+  async activateUser(@Param('userId') userId: string) {
+    return this.iamService.activateUser(userId);
+  }
+
   @Post('roles/assign')
   @Roles('platform-owner')
   async assignRole(@Body() dto: AssignRoleDto) {

@@ -82,6 +82,8 @@ export class RolesGuard implements CanActivate {
     // Attach for downstream controllers.
     (request as Request & { userId?: string }).userId = userId;
 
+    await this.iamService.assertRequesterActive(userId);
+
     const allowed = await this.iamService.hasAnyRole(userId, rolesToCheck);
     if (!allowed) {
       throw new ForbiddenException(

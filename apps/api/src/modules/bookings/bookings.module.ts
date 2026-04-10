@@ -11,8 +11,12 @@ import { BookingItem } from './entities/booking-item.entity';
 import { Booking } from './entities/booking.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { Business } from '../businesses/entities/business.entity';
+import { PlaceCricketBookingController } from './place-cricket-booking.controller';
 import { PlaceFutsalBookingController } from './place-futsal-booking.controller';
+import { PlacePadelBookingController } from './place-padel-booking.controller';
+import { PublicCricketBookingController } from './public-cricket-booking.controller';
 import { PublicFutsalBookingController } from './public-futsal-booking.controller';
+import { PublicPadelBookingController } from './public-padel-booking.controller';
 
 @Module({
   imports: [
@@ -30,8 +34,12 @@ import { PublicFutsalBookingController } from './public-futsal-booking.controlle
   ],
   controllers: [
     BookingsController,
+    PlaceCricketBookingController,
     PlaceFutsalBookingController,
+    PlacePadelBookingController,
+    PublicCricketBookingController,
     PublicFutsalBookingController,
+    PublicPadelBookingController,
   ],
   providers: [BookingsService],
 })

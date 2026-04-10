@@ -22,6 +22,12 @@ export class User {
   @Column({ type: 'varchar', length: 255, nullable: true })
   passwordHash?: string | null;
 
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  passwordResetTokenHash?: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  passwordResetExpiresAt?: Date | null;
+
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
 

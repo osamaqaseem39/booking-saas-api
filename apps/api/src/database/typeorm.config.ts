@@ -2,6 +2,7 @@ import { DataSource, DataSourceOptions } from 'typeorm';
 import { join } from 'path';
 import { CricketCourt } from '../modules/arena/cricket-court/entities/cricket-court.entity';
 import { FutsalCourt } from '../modules/arena/futsal-court/entities/futsal-court.entity';
+import { GamingStation } from '../modules/arena/gaming-station/entities/gaming-station.entity';
 import { PadelCourt } from '../modules/arena/padel-court/entities/padel-court.entity';
 import { BookingItem } from '../modules/bookings/entities/booking-item.entity';
 import { Booking } from '../modules/bookings/entities/booking.entity';
@@ -78,6 +79,7 @@ export const typeOrmOptions: DataSourceOptions = {
     BusinessMembership,
     CricketCourt,
     FutsalCourt,
+    GamingStation,
     PadelCourt,
     Booking,
     BookingItem,

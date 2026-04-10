@@ -8,11 +8,14 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { createHash, randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
 import { BootstrapFirstOwnerDto } from './dto/bootstrap-first-owner.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterEndUserDto } from './dto/register-end-user.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { IamService } from '../iam/iam.service';
 import { Role } from '../iam/entities/role.entity';
 import { User } from '../iam/entities/user.entity';
@@ -229,6 +232,78 @@ export class AuthService {
       userId: savedUser.id,
       email,
     };
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{
+    ok: true;
+    message: string;
+    resetToken?: string;
+  }> {
+    const email = dto.email.toLowerCase().trim();
+    const generic = {
+      ok: true as const,
+      message:
+        'If an account exists for this email, you will receive password reset instructions.',
+    };
+
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user?.isActive || !user.passwordHash) {
+      return generic;
+    }
+
+    const token = randomBytes(32).toString('hex');
+    user.passwordResetTokenHash = this.hashResetToken(token);
+    user.passwordResetExpiresAt = new Date(
+      Date.now() + this.passwordResetExpiresMs(),
+    );
+    await this.usersRepository.save(user);
+
+    if (process.env.AUTH_PASSWORD_RESET_RETURN_TOKEN?.trim() === 'true') {
+      this.logger.warn(
+        `Password reset token returned in response (AUTH_PASSWORD_RESET_RETURN_TOKEN) for ${this.maskEmail(email)}`,
+      );
+      return { ...generic, resetToken: token };
+    }
+
+    this.logger.log(
+      `Password reset requested (${this.maskEmail(email)}). Deliver token via email in production.`,
+    );
+    return generic;
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ ok: true }> {
+    const passwordResetTokenHash = this.hashResetToken(dto.token.trim());
+    const user = await this.usersRepository.findOne({
+      where: { passwordResetTokenHash },
+    });
+    const now = new Date();
+    if (
+      !user ||
+      !user.passwordResetExpiresAt ||
+      user.passwordResetExpiresAt <= now
+    ) {
+      throw new BadRequestException('Invalid or expired reset token');
+    }
+
+    user.passwordHash = await bcrypt.hash(dto.newPassword, 10);
+    user.passwordResetTokenHash = null;
+    user.passwordResetExpiresAt = null;
+    await this.usersRepository.save(user);
+    this.logger.log(
+      `Password reset completed (${this.maskEmail(user.email)}, id=${user.id})`,
+    );
+    return { ok: true };
+  }
+
+  private hashResetToken(token: string): string {
+    return createHash('sha256').update(token, 'utf8').digest('hex');
+  }
+
+  private passwordResetExpiresMs(): number {
+    const mins = Number(process.env.PASSWORD_RESET_EXPIRES_MINUTES ?? '60');
+    const safe =
+      Number.isFinite(mins) && mins > 0 && mins <= 24 * 60 ? mins : 60;
+    return safe * 60 * 1000;
   }
 
   private maskEmail(email: string): string {

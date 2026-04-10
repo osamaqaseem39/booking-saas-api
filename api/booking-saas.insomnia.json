@@ -870,6 +870,48 @@
       }
     },
     {
+      "_id": "req_54_cricket",
+      "_type": "request",
+      "parentId": "fld_bookings_45",
+      "name": "App shortcut: book cricket (tenant from venue, no header)",
+      "method": "POST",
+      "url": "{{ base_url }}/public/bookings/cricket",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"date\": \"2026-04-09\",\n  \"startTime\": \"18:00\",\n  \"endTime\": \"19:00\",\n  \"facilitySelected\": \"cricket_court\",\n  \"fieldSelected\": \"{{ courtId }}\",\n  \"venueId\": \"{{ locationId }}\",\n  \"userId\": \"{{ userId }}\"\n}"
+      },
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
+      "_id": "req_54_padel",
+      "_type": "request",
+      "parentId": "fld_bookings_45",
+      "name": "App shortcut: book padel (tenant from venue, no header)",
+      "method": "POST",
+      "url": "{{ base_url }}/public/bookings/padel",
+      "headers": [
+        {
+          "name": "Content-Type",
+          "value": "application/json"
+        }
+      ],
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\n  \"date\": \"2026-04-09\",\n  \"startTime\": \"18:00\",\n  \"endTime\": \"19:00\",\n  \"facilitySelected\": \"padel_court\",\n  \"fieldSelected\": \"{{ courtId }}\",\n  \"venueId\": \"{{ locationId }}\",\n  \"userId\": \"{{ userId }}\"\n}"
+      },
+      "authentication": {
+        "type": "none"
+      }
+    },
+    {
       "_id": "fld_billing_55",
       "_type": "request_group",
       "parentId": "wrk_booking_saas",

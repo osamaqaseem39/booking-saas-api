@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
   OnModuleInit,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
@@ -262,7 +263,7 @@ export class IamService implements OnModuleInit {
   async deleteUser(
     userId: string,
     opts: { requesterId: string; isPlatformOwner: boolean },
-  ): Promise<{ deleted: true; userId: string }> {
+  ): Promise<{ deactivated: true; userId: string }> {
     await this.assertCanManageUser(
       opts.requesterId,
       userId,
@@ -273,8 +274,33 @@ export class IamService implements OnModuleInit {
     if (!user) {
       throw new NotFoundException(`User ${userId} not found`);
     }
-    await this.usersRepository.delete({ id: userId });
-    return { deleted: true, userId };
+    if (!user.isActive) {
+      return { deactivated: true, userId };
+    }
+    user.isActive = false;
+    await this.usersRepository.save(user);
+    return { deactivated: true, userId };
+  }
+
+  /** Platform-owner only (enforced in controller). */
+  async activateUser(userId: string) {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+    user.isActive = true;
+    await this.usersRepository.save(user);
+    return this.getMe(userId);
+  }
+
+  async assertRequesterActive(userId: string): Promise<void> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new UnauthorizedException('Invalid authentication');
+    }
+    if (!user.isActive) {
+      throw new ForbiddenException('Account is deactivated');
+    }
   }
 
   async ensureUser(input: CreateUserDto): Promise<User> {
