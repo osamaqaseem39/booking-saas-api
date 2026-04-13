@@ -20,6 +20,8 @@ import { TenantContext } from '../../tenancy/tenant-context.interface';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
+import { GenerateFacilitySlotsDto } from './dto/generate-facility-slots.dto';
+import { PatchFacilitySlotDto } from './dto/patch-facility-slot.dto';
 import { SetCourtSlotBlockDto } from './dto/set-court-slot-block.dto';
 
 @Controller('bookings')
@@ -150,6 +152,52 @@ export class BookingsController {
       startTime: dto.startTime,
       blocked: dto.blocked,
     });
+  }
+
+  @Post('courts/:courtKind/:courtId/facility-slots/generate')
+  generateFacilityDaySlots(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('courtKind') courtKind: string,
+    @Param('courtId', ParseUUIDPipe) courtId: string,
+    @Body() dto: GenerateFacilitySlotsDto,
+  ) {
+    if (!COURT_KINDS.includes(courtKind as CourtKind)) {
+      throw new BadRequestException(
+        `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
+      );
+    }
+    return this.bookingsService.generateDayFacilitySlots(
+      this.requireTenantUuid(tenant),
+      {
+        kind: courtKind as CourtKind,
+        courtId,
+        date: dto.date,
+      },
+    );
+  }
+
+  @Patch('courts/:courtKind/:courtId/facility-slots')
+  patchFacilitySlot(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('courtKind') courtKind: string,
+    @Param('courtId', ParseUUIDPipe) courtId: string,
+    @Body() dto: PatchFacilitySlotDto,
+  ) {
+    if (!COURT_KINDS.includes(courtKind as CourtKind)) {
+      throw new BadRequestException(
+        `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
+      );
+    }
+    return this.bookingsService.patchFacilitySlot(
+      this.requireTenantUuid(tenant),
+      {
+        kind: courtKind as CourtKind,
+        courtId,
+        date: dto.date,
+        startTime: dto.startTime,
+        status: dto.status,
+      },
+    );
   }
 
   @Get(':bookingId')

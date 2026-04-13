@@ -5,8 +5,8 @@ import { BusinessesService } from './businesses.service';
 /**
  * End-user venue discovery.
  * - GET /getVenues — full rows (same as GET /businesses/locations).
- * - GET /getVenues/all — compact map-marker payloads; optional query:
- *   `category`, `city`, `date`, `startTime`, `endTime` (see GetVenuesAllQueryDto).
+ * - GET /getVenues/all — full venue rows (same shape as GET /getVenues), active only;
+ *   optional query: `category`, `city`, `date`, `startTime`, `endTime` (see GetVenuesAllQueryDto).
  * - GET /getVenues/gaming|FutsalArenas — compact map-marker payloads.
  * - GET /getVenue/futsal|cricket|padel — same marker shape, filtered by sport facility counts.
  */

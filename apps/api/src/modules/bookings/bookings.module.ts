@@ -6,6 +6,7 @@ import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity'
 import { User } from '../iam/entities/user.entity';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
+import { CourtFacilitySlot } from './entities/court-facility-slot.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { BookingItem } from './entities/booking-item.entity';
 import { Booking } from './entities/booking.entity';
@@ -30,6 +31,7 @@ import { PublicPadelBookingController } from './public-padel-booking.controller'
       BusinessLocation,
       Business,
       CourtSlotBookingBlock,
+      CourtFacilitySlot,
     ]),
   ],
   controllers: [

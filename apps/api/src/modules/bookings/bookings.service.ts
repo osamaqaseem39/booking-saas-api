@@ -25,6 +25,7 @@ import { Business } from '../businesses/entities/business.entity';
 import type { PlaceCricketBookingDto } from './dto/place-cricket-booking.dto';
 import type { PlaceFutsalBookingDto } from './dto/place-futsal-booking.dto';
 import type { PlacePadelBookingDto } from './dto/place-padel-booking.dto';
+import { CourtFacilitySlot } from './entities/court-facility-slot.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { Booking } from './entities/booking.entity';
 import { getWorkingDayWindow } from './working-hours.util';
@@ -152,13 +153,26 @@ export type CourtSlotsApiRow = {
   date: string;
   kind: CourtKind;
   courtId: string;
-  slots: Array<{
-    startTime: string;
-    endTime: string;
-    bookingId: string;
-    itemId: string;
-    status: BookingItemStatus;
-  }>;
+  slots: Array<
+    | {
+        startTime: string;
+        endTime: string;
+        availability: 'available';
+      }
+    | {
+        startTime: string;
+        endTime: string;
+        availability: 'blocked';
+      }
+    | {
+        startTime: string;
+        endTime: string;
+        availability: 'booked';
+        bookingId: string;
+        itemId: string;
+        status: BookingItemStatus;
+      }
+  >;
 };
 
 export type CourtSlotGridSegment =
@@ -232,6 +246,8 @@ export class BookingsService {
     private readonly businessRepo: Repository<Business>,
     @InjectRepository(CourtSlotBookingBlock)
     private readonly slotBlockRepo: Repository<CourtSlotBookingBlock>,
+    @InjectRepository(CourtFacilitySlot)
+    private readonly facilitySlotRepo: Repository<CourtFacilitySlot>,
   ) {}
 
   /** Map key `${courtKind}:${courtId}` → business location id (first item of each booking). */
@@ -532,22 +548,164 @@ export class BookingsService {
     const gridKeySet = new Set(
       gridKeys.map((k) => `${k.kind}:${k.courtId}`),
     );
-    const slots = rows
+    const bookings = rows
       .filter((it) => gridKeySet.has(`${it.courtKind}:${it.courtId}`))
-      .map((it) => ({
-        startTime: it.startTime,
-        endTime: it.endTime,
-        bookingId: it.bookingId,
-        itemId: it.id,
-        status: it.itemStatus,
-      }))
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+    const blockedStarts = await this.loadBlockedStartsSetMerged(
+      tenantId,
+      params.kind,
+      params.courtId,
+      dateOnly,
+    );
+
+    const slots: CourtSlotsApiRow['slots'] = [];
+    for (let segStart = 0; segStart < 24 * 60; segStart += 30) {
+      const segEnd = segStart + 30;
+      const segStartLabel = minutesToTimeString(segStart);
+      const segEndLabel = minutesToTimeString(segEnd);
+      const overlap = bookings.find((b) =>
+        this.segmentOverlapsMinutes(
+          segStart,
+          segEnd,
+          b.startTime,
+          b.endTime,
+        ),
+      );
+      if (overlap) {
+        slots.push({
+          startTime: segStartLabel,
+          endTime: segEndLabel,
+          availability: 'booked',
+          bookingId: overlap.bookingId,
+          itemId: overlap.id,
+          status: overlap.itemStatus,
+        });
+      } else if (blockedStarts.has(segStartLabel)) {
+        slots.push({
+          startTime: segStartLabel,
+          endTime: segEndLabel,
+          availability: 'blocked',
+        });
+      } else {
+        slots.push({
+          startTime: segStartLabel,
+          endTime: segEndLabel,
+          availability: 'available',
+        });
+      }
+    }
     return {
       date: dateOnly,
       kind: params.kind,
       courtId: params.courtId,
       slots,
     };
+  }
+
+  /**
+   * Creates default 30-minute slot rows for the calendar date (idempotent).
+   * Applies to this court and any linked futsal/cricket twin.
+   */
+  async generateDayFacilitySlots(
+    tenantId: string,
+    params: { kind: CourtKind; courtId: string; date: string },
+  ): Promise<{ ok: true; upserted: number }> {
+    const dateOnly = formatDateOnly(params.date);
+    await this.assertCourtExistsForTenant(tenantId, params.kind, params.courtId);
+    const keys = await this.resolveBookingLinkedCourtKeys(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+    const rows: Partial<CourtFacilitySlot>[] = [];
+    for (const k of keys) {
+      for (let segStart = 0; segStart < 24 * 60; segStart += 30) {
+        const segEnd = segStart + 30;
+        rows.push({
+          tenantId,
+          courtKind: k.kind,
+          courtId: k.courtId,
+          slotDate: dateOnly,
+          startTime: minutesToTimeString(segStart),
+          endTime: minutesToTimeString(segEnd),
+          status: 'available',
+        });
+      }
+    }
+    if (rows.length === 0) {
+      return { ok: true, upserted: 0 };
+    }
+    await this.facilitySlotRepo
+      .createQueryBuilder()
+      .insert()
+      .into(CourtFacilitySlot)
+      .values(rows as CourtFacilitySlot[])
+      .orIgnore()
+      .execute();
+    return { ok: true, upserted: rows.length };
+  }
+
+  async patchFacilitySlot(
+    tenantId: string,
+    params: {
+      kind: CourtKind;
+      courtId: string;
+      date: string;
+      startTime: string;
+      status: 'available' | 'blocked';
+    },
+  ): Promise<{ ok: true }> {
+    const dateOnly = formatDateOnly(params.date);
+    this.assertSlotBlockStartTime(params.startTime);
+    await this.assertCourtExistsForTenant(tenantId, params.kind, params.courtId);
+
+    const gridKeys = await this.resolveBookingLinkedCourtKeys(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+    const gridKeySet = new Set(
+      gridKeys.map((k) => `${k.kind}:${k.courtId}`),
+    );
+    const bookings = await this.listBookedItemsForDate(tenantId, dateOnly);
+    const segStart = toMinutes(params.startTime);
+    const segEnd = segStart + 30;
+    const overlap = bookings.find(
+      (b) =>
+        gridKeySet.has(`${b.courtKind}:${b.courtId}`) &&
+        this.segmentOverlapsMinutes(segStart, segEnd, b.startTime, b.endTime),
+    );
+    if (overlap) {
+      throw new BadRequestException(
+        'This segment has an active booking; change the booking instead of the slot row.',
+      );
+    }
+
+    const endLabel = minutesToTimeString(segEnd);
+    for (const k of gridKeys) {
+      await this.facilitySlotRepo.upsert(
+        {
+          tenantId,
+          courtKind: k.kind,
+          courtId: k.courtId,
+          slotDate: dateOnly,
+          startTime: params.startTime,
+          endTime: endLabel,
+          status: params.status,
+        },
+        {
+          conflictPaths: [
+            'tenantId',
+            'courtKind',
+            'courtId',
+            'slotDate',
+            'startTime',
+          ],
+        },
+      );
+    }
+    return { ok: true };
   }
 
   /**
@@ -868,6 +1026,25 @@ export class BookingsService {
     return new Set(rows.map((r) => r.startTime));
   }
 
+  private async loadFacilitySlotBlockedStartsSet(
+    tenantId: string,
+    kind: CourtKind,
+    courtId: string,
+    dateOnly: string,
+  ): Promise<Set<string>> {
+    const rows = await this.facilitySlotRepo.find({
+      where: {
+        tenantId,
+        courtKind: kind,
+        courtId,
+        slotDate: dateOnly,
+        status: 'blocked',
+      },
+      select: ['startTime'],
+    });
+    return new Set(rows.map((r) => r.startTime));
+  }
+
   /** Slot blocks for this court and any linked futsal/cricket twin. */
   private async loadBlockedStartsSetMerged(
     tenantId: string,
@@ -889,6 +1066,13 @@ export class BookingsService {
         dateOnly,
       );
       for (const t of part) merged.add(t);
+      const facilityBlocked = await this.loadFacilitySlotBlockedStartsSet(
+        tenantId,
+        k.kind,
+        k.courtId,
+        dateOnly,
+      );
+      for (const t of facilityBlocked) merged.add(t);
     }
     return merged;
   }

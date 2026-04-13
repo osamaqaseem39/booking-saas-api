@@ -6,6 +6,7 @@ import { GamingStation } from '../modules/arena/gaming-station/entities/gaming-s
 import { PadelCourt } from '../modules/arena/padel-court/entities/padel-court.entity';
 import { BookingItem } from '../modules/bookings/entities/booking-item.entity';
 import { Booking } from '../modules/bookings/entities/booking.entity';
+import { CourtFacilitySlot } from '../modules/bookings/entities/court-facility-slot.entity';
 import { BusinessLocation } from '../modules/businesses/entities/business-location.entity';
 import { BusinessMembership } from '../modules/businesses/entities/business-membership.entity';
 import { Business } from '../modules/businesses/entities/business.entity';
@@ -83,6 +84,7 @@ export const typeOrmOptions: DataSourceOptions = {
     PadelCourt,
     Booking,
     BookingItem,
+    CourtFacilitySlot,
   ],
   // Resolved from this file's directory (same for Nest and `migration:run -d dist/.../typeorm.config.js`).
   // Do not add a second glob to `dist/.../migrations` from `process.cwd()` — it matches the same files and
