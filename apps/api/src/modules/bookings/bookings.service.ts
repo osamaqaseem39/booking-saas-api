@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { CricketCourt } from '../arena/cricket-court/entities/cricket-court.entity';
 import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity';
@@ -234,10 +234,66 @@ export class BookingsService {
     private readonly slotBlockRepo: Repository<CourtSlotBookingBlock>,
   ) {}
 
-  private toApi(booking: Booking): BookingApiRow {
+  /** Map key `${courtKind}:${courtId}` → business location id (first item of each booking). */
+  private async resolveCourtToBusinessLocationMap(
+    tenantId: string,
+    bookings: Booking[],
+  ): Promise<Map<string, string>> {
+    const key = (kind: CourtKind, courtId: string) => `${kind}:${courtId}`;
+    const out = new Map<string, string>();
+    const futsalIds = new Set<string>();
+    const cricketIds = new Set<string>();
+    const padelIds = new Set<string>();
+    for (const b of bookings) {
+      const it = b.items?.[0];
+      if (!it?.courtId || !it.courtKind) continue;
+      if (it.courtKind === 'futsal_court') futsalIds.add(it.courtId);
+      else if (it.courtKind === 'cricket_court') cricketIds.add(it.courtId);
+      else if (it.courtKind === 'padel_court') padelIds.add(it.courtId);
+    }
+    if (futsalIds.size > 0) {
+      const rows = await this.futsalCourtRepo.find({
+        where: { tenantId, id: In([...futsalIds]) },
+        select: ['id', 'businessLocationId'],
+      });
+      for (const r of rows) {
+        const bl = r.businessLocationId?.trim();
+        if (bl) out.set(key('futsal_court', r.id), bl);
+      }
+    }
+    if (cricketIds.size > 0) {
+      const rows = await this.cricketCourtRepo.find({
+        where: { tenantId, id: In([...cricketIds]) },
+        select: ['id', 'businessLocationId'],
+      });
+      for (const r of rows) {
+        const bl = r.businessLocationId?.trim();
+        if (bl) out.set(key('cricket_court', r.id), bl);
+      }
+    }
+    if (padelIds.size > 0) {
+      const rows = await this.padelRepo.find({
+        where: { tenantId, id: In([...padelIds]) },
+        select: ['id', 'businessLocationId'],
+      });
+      for (const r of rows) {
+        const bl = r.businessLocationId?.trim();
+        if (bl) out.set(key('padel_court', r.id), bl);
+      }
+    }
+    return out;
+  }
+
+  private toApi(booking: Booking, courtToLocation?: Map<string, string>): BookingApiRow {
+    const first = booking.items?.[0];
+    let arenaId = booking.tenantId;
+    if (first && courtToLocation) {
+      const locId = courtToLocation.get(`${first.courtKind}:${first.courtId}`);
+      if (locId) arenaId = locId;
+    }
     return {
       bookingId: booking.id,
-      arenaId: booking.tenantId,
+      arenaId,
       userId: booking.userId,
       sportType: booking.sportType,
       bookingDate: formatDateOnly(booking.bookingDate),
@@ -278,7 +334,8 @@ export class BookingsService {
       relations: ['items'],
       order: { createdAt: 'DESC' },
     });
-    return rows.map((b) => this.toApi(b));
+    const courtToLocation = await this.resolveCourtToBusinessLocationMap(tenantId, rows);
+    return rows.map((b) => this.toApi(b, courtToLocation));
   }
 
   async getOne(tenantId: string, bookingId: string): Promise<BookingApiRow> {
@@ -289,7 +346,8 @@ export class BookingsService {
     if (!booking) {
       throw new NotFoundException(`Booking ${bookingId} not found`);
     }
-    return this.toApi(booking);
+    const courtToLocation = await this.resolveCourtToBusinessLocationMap(tenantId, [booking]);
+    return this.toApi(booking, courtToLocation);
   }
 
   async create(
@@ -344,7 +402,8 @@ export class BookingsService {
       where: { id: saved.id },
       relations: ['items'],
     });
-    return this.toApi(full);
+    const courtToLocation = await this.resolveCourtToBusinessLocationMap(tenantId, [full]);
+    return this.toApi(full, courtToLocation);
   }
 
   async update(

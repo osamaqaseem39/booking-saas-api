@@ -206,4 +206,14 @@ export class CricketCourtService {
     await this.turfTwinLink.clearPartnerForDeletedCricket(tenantId, row);
     await this.repo.remove(row);
   }
+
+  async unlinkTwin(tenantId: string, id: string): Promise<CricketCourt> {
+    const row = await this.findOne(tenantId, id);
+    const previousTwinId = row.linkedTwinCourtId ?? null;
+    row.linkedTwinCourtKind = undefined;
+    row.linkedTwinCourtId = undefined;
+    const saved = await this.repo.save(row);
+    await this.turfTwinLink.applyAfterCricketSaved(tenantId, saved, previousTwinId);
+    return saved;
+  }
 }

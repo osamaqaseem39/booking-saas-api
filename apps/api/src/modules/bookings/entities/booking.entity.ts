@@ -22,7 +22,7 @@ export class Booking {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
-  /** Tenant scope; exposed as `arenaId` in API responses */
+  /** Tenant scope. API `arenaId` is the business location from the booking's first court when available. */
   @Column({ type: 'uuid' })
   tenantId!: string;
 

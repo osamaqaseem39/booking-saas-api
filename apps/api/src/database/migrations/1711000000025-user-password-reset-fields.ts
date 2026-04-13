@@ -1,5 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
+/** Adds nullable password-reset token columns on `users` (see `User` entity). Run on deploy (`migrationsRun` / `npm run migration:run`). */
 export class UserPasswordResetFields1711000000025 implements MigrationInterface {
   name = 'UserPasswordResetFields1711000000025';
 
