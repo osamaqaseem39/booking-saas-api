@@ -131,7 +131,10 @@ export class FutsalCourtService {
    * only **active** courts are returned.
    */
   async findOnePublicById(id: string): Promise<FutsalCourt> {
-    const row = await this.repo.findOne({ where: { id } });
+    const row = await this.repo.findOne({
+      where: { id },
+      relations: ['businessLocation'],
+    });
     if (!row || row.courtStatus !== 'active') {
       throw new NotFoundException(`Futsal court ${id} not found`);
     }

@@ -484,6 +484,32 @@ export class BusinessesService {
     return this.buildLocationListRowsWithFacilityInfo(scoped, businessById);
   }
 
+  /** Whether this user should get tenant/membership-scoped rows from `GET /businesses/locations` when authenticated. */
+  async hasConsoleLocationListScope(userId: string): Promise<boolean> {
+    return this.iamService.hasAnyRole(userId, [
+      'platform-owner',
+      'business-admin',
+      'business-staff',
+    ]);
+  }
+
+  /**
+   * Console: locations the user may manage, plus facility summaries.
+   * When `tenantIdFilter` is set, rows are limited to that business tenant id
+   * (active `X-Tenant-Id` from the dashboard). When omitted, platform owners see
+   * all sites; business-admins see every location for businesses they belong to.
+   */
+  async listLocationsForConsole(
+    requesterUserId: string,
+    tenantIdFilter?: string | null,
+  ): Promise<Awaited<ReturnType<BusinessesService['listLocationsForRequester']>>> {
+    await this.iamService.assertRequesterActive(requesterUserId);
+    const rows = await this.listLocationsForRequester(requesterUserId);
+    const tid = tenantIdFilter?.trim() || null;
+    if (!tid) return rows;
+    return rows.filter((r) => (r.business?.tenantId ?? '').trim() === tid);
+  }
+
   /**
    * Public / unauthenticated listing: all locations (e.g. end-user discovery).
    * Each row includes active facility court summaries and derived counts.

@@ -134,7 +134,10 @@ export class PadelCourtService {
    * only **active** courts (`isActive` + `courtStatus`) are returned.
    */
   async findOnePublicById(id: string): Promise<PadelCourt> {
-    const row = await this.repo.findOne({ where: { id } });
+    const row = await this.repo.findOne({
+      where: { id },
+      relations: ['businessLocation'],
+    });
     if (!row || !row.isActive || row.courtStatus !== 'active') {
       throw new NotFoundException(`Padel court ${id} not found`);
     }

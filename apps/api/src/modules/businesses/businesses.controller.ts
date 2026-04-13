@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
@@ -25,7 +26,10 @@ import { BusinessesService } from './businesses.service';
 @Controller('businesses')
 @UseGuards(RolesGuard)
 export class BusinessesController {
-  constructor(private readonly businessesService: BusinessesService) {}
+  constructor(
+    private readonly businessesService: BusinessesService,
+    private readonly jwtService: JwtService,
+  ) {}
 
   @Get()
   @Roles('platform-owner', 'business-admin')
@@ -54,7 +58,18 @@ export class BusinessesController {
   }
 
   @Get('locations')
-  async listLocations() {
+  async listLocations(@Req() req: Request) {
+    const userId = await this.tryAccessTokenUserId(req);
+    if (
+      userId &&
+      (await this.businessesService.hasConsoleLocationListScope(userId))
+    ) {
+      const tenantHeader = req.header('x-tenant-id')?.trim() || null;
+      return this.businessesService.listLocationsForConsole(
+        userId,
+        tenantHeader,
+      );
+    }
     return this.businessesService.listAllLocationsPublic();
   }
 
@@ -74,7 +89,19 @@ export class BusinessesController {
   }
 
   @Get('locations/facility-counts')
-  async listLocationsWithFacilityCounts() {
+  async listLocationsWithFacilityCounts(@Req() req: Request) {
+    const userId = await this.tryAccessTokenUserId(req);
+    if (
+      userId &&
+      (await this.businessesService.hasConsoleLocationListScope(userId))
+    ) {
+      const tenantHeader = req.header('x-tenant-id')?.trim() || null;
+      const locations = await this.businessesService.listLocationsForConsole(
+        userId,
+        tenantHeader,
+      );
+      return { locations };
+    }
     return this.businessesService.listLocationsWithFacilityCountsPublic();
   }
 
@@ -143,5 +170,23 @@ export class BusinessesController {
       throw new UnauthorizedException('Missing user');
     }
     return this.businessesService.deleteBusiness(userId, businessId);
+  }
+
+  /** Optional bearer (same rules as {@link RolesGuard}); invalid / missing token → null. */
+  private async tryAccessTokenUserId(req: Request): Promise<string | null> {
+    const authHeader = req.header('Authorization')?.trim();
+    if (!authHeader?.startsWith('Bearer ')) return null;
+    try {
+      const payload = await this.jwtService.verifyAsync<{
+        sub?: string;
+        userId?: string;
+        typ?: string;
+      }>(authHeader.slice('Bearer '.length).trim());
+      if (payload.typ === 'refresh') return null;
+      const id = (payload.sub ?? payload.userId ?? '').trim();
+      return id || null;
+    } catch {
+      return null;
+    }
   }
 }

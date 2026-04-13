@@ -8,8 +8,11 @@ import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
  * getVenues, getVenue, getVenueDetails, getAllCities, getAllLocationTypes.
  *
  * `GET /public/venues` is the short map-marker list (same as
- * `GET /public/venues/markers` and legacy `GET /getVenues`). Full location rows
- * for dashboards that need them: `GET /businesses/locations` (no role gate on that handler).
+ * `GET /public/venues/markers` and legacy `GET /getVenues`). Full location rows:
+ * `GET /businesses/locations` is unauthenticated discovery; with a **business-admin** or
+ * **platform-owner** / **business-admin** / **business-staff** bearer token it returns
+ * membership- / tenant-scoped rows (see
+ * `BusinessesController.listLocations`).
  */
 @Controller('public')
 export class PublicDiscoveryController {
