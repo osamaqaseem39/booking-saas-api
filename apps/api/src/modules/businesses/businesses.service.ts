@@ -800,8 +800,11 @@ export class BusinessesService {
   /**
    * Filter public locations by optional cities / locationType, and optionally
    * `bookingStatus=unbooked` with `date` + `startTime`/`endTime` (HH:mm, supports crossing midnight).
+   * Each hit is a short map marker — same fields as {@link listVenueMarkersPublic} / legacy GET /getVenues.
    */
-  async searchLocationsPublic(dto: SearchLocationsQueryDto) {
+  async searchLocationsPublic(
+    dto: SearchLocationsQueryDto,
+  ): Promise<Awaited<ReturnType<BusinessesService['listVenueMarkersPublic']>>> {
     const rows = await this.listAllLocationsPublic();
     let filtered = rows.filter((r) => r.isActive);
 
@@ -821,7 +824,7 @@ export class BusinessesService {
     }
 
     if (dto.bookingStatus !== 'unbooked') {
-      return filtered;
+      return filtered.map((r) => this.toVenueMapMarker(r));
     }
 
     const date = dto.date as string;
@@ -839,13 +842,14 @@ export class BusinessesService {
 
     const courtsByLocation = await this.loadCourtKeysByLocationId(locationIds);
 
-    return filtered.filter((loc) => {
+    const matched = filtered.filter((loc) => {
       const courts = courtsByLocation.get(loc.id) ?? [];
       if (courts.length === 0) {
         return false;
       }
       return courts.some((key) => !busyKeys.has(key));
     });
+    return matched.map((r) => this.toVenueMapMarker(r));
   }
 
   private parseCitiesFilter(cities?: string): Set<string> | null {
@@ -1608,7 +1612,64 @@ export class BusinessesService {
     return out;
   }
 
-  /** Public venue screen: gallery, club info, facilities, hours, booking hints. */
+  /** One public “venue detail” object — same shape for profile and search hits. */
+  private buildVenueDetailsPublicPayload(
+    row: Awaited<ReturnType<BusinessesService['listAllLocationsPublic']>>[number],
+    business: Business | null | undefined,
+  ) {
+    const b = business ?? null;
+    const facilityAvailable = this.facilityCountsToAvailableList(
+      row.facilityCounts,
+    );
+    const tenantId = b?.tenantId ?? row.business?.tenantId ?? null;
+    const businessPublic = b
+      ? {
+          id: b.id,
+          tenantId: b.tenantId,
+          businessName: b.businessName,
+          legalName: b.legalName ?? null,
+          status: b.status,
+          createdAt: b.createdAt,
+          settings: b.settings ?? null,
+        }
+      : row.business;
+
+    return {
+      ...row,
+      business: businessPublic,
+      venueId: row.id,
+      address: row.addressLine ?? '',
+      clubDetails: {
+        businessName: b?.businessName ?? row.business?.businessName ?? null,
+        description: row.details,
+        sportsOffered: facilityAvailable.map((sport) =>
+          sport.label.toLowerCase(),
+        ),
+      },
+      currency: row.currency,
+      price: null as number | null,
+      packages: [] as unknown[],
+      availability: {
+        tenantId,
+        note:
+          'Use GET /bookings/courts/{courtKind}/{courtId}/slot-grid with X-Tenant-Id for live slots.',
+      },
+      dailyOpenHours: row.workingHours ?? null,
+      facilityAvailable,
+      facilityList: (row.facilityCourts ?? []).map((facility) => ({
+        id: facility.id,
+        name: facility.name,
+        facilityType: facility.facilityType,
+        locationId: row.id,
+      })),
+      tenantId,
+    };
+  }
+
+  /**
+   * Public venue screen: full location + facility rows (same shape as list endpoints),
+   * plus legacy presentation fields (`venueId`, `address`, `clubDetails`, …).
+   */
   async getVenueDetailsPublic(locationId: string) {
     let loc: BusinessLocation | null;
     try {
@@ -1649,41 +1710,6 @@ export class BusinessesService {
       [loc],
       businessById,
     );
-    const row = rows[0];
-
-    return {
-      venueId: row.id,
-      name: row.name,
-      address: row.addressLine ?? '',
-      latitude: row.latitude,
-      longitude: row.longitude,
-      logo: row.logo,
-      bannerImage: row.bannerImage,
-      gallery: row.gallery ?? [],
-      clubDetails: {
-        businessName: business?.businessName ?? null,
-        description: row.details,
-        sportsOffered: this.facilityCountsToAvailableList(row.facilityCounts).map(
-          (sport) => sport.label.toLowerCase(),
-        ),
-      },
-      currency: row.currency,
-      price: null as number | null,
-      packages: [] as unknown[],
-      availability: {
-        tenantId: business?.tenantId ?? null,
-        note:
-          'Use GET /bookings/courts/{courtKind}/{courtId}/slot-grid with X-Tenant-Id for live slots.',
-      },
-      dailyOpenHours: row.workingHours ?? null,
-      facilityAvailable: this.facilityCountsToAvailableList(row.facilityCounts),
-      facilityList: (row.facilityCourts ?? []).map((facility) => ({
-        id: facility.id,
-        name: facility.name,
-        facilityType: facility.facilityType,
-        locationId: row.id,
-      })),
-      tenantId: business?.tenantId ?? null,
-    };
+    return this.buildVenueDetailsPublicPayload(rows[0], business);
   }
 }
