@@ -2,6 +2,7 @@ import {
   CanActivate,
   ExecutionContext,
   ForbiddenException,
+  InternalServerErrorException,
   Injectable,
   Optional,
   UnauthorizedException,
@@ -17,7 +18,8 @@ import { ROLES_KEY } from './roles.decorator';
 export class RolesGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
-    private readonly iamService: IamService,
+    // Keep bootstrap resilient if a feature module forgets to import IamModule.
+    @Optional() private readonly iamService?: IamService,
     // Some modules may not import/export JwtModule, so keep boot resilient.
     // If Authorization bearer token is used but JwtService isn't available,
     // we will fail the request with a 401 instead of crashing the whole app.
@@ -81,6 +83,12 @@ export class RolesGuard implements CanActivate {
 
     // Attach for downstream controllers.
     (request as Request & { userId?: string }).userId = userId;
+
+    if (!this.iamService) {
+      throw new InternalServerErrorException(
+        'Authorization service is not configured on server',
+      );
+    }
 
     await this.iamService.assertRequesterActive(userId);
 
