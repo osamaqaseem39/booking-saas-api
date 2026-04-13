@@ -1504,14 +1504,14 @@ export class BusinessesService {
   }
 
   /**
-   * GET /getVenues/all — same full location rows as {@link listAllLocationsPublic}
-   * (facilityCounts, facilityCourts, business, etc.), filtered by optional `category`,
-   * `city`, and optional `date` + `startTime` + `endTime` (venues with at least one
+   * GET /getVenues/all — short map-marker objects (same shape as {@link listVenueMarkersPublic}:
+   * venueId, name, address, latitude, longitude, logo, bannerImage), filtered by optional
+   * `category`, `city`, and optional `date` + `startTime` + `endTime` (venues with at least one
    * free arena court in that window). Only active venues are included.
    */
   async listVenueMarkersPublicWithFilters(
     dto: GetVenuesAllQueryDto,
-  ): Promise<Awaited<ReturnType<BusinessesService['listAllLocationsPublic']>>> {
+  ): Promise<Awaited<ReturnType<BusinessesService['listVenueMarkersPublic']>>> {
     const category = this.normalizeVenueMarkerCategory(dto.category);
     const rows = await this.listAllLocationsPublic();
     let filtered = this.filterActiveRowsByMarkerCategory(
@@ -1558,7 +1558,7 @@ export class BusinessesService {
       });
     }
 
-    return filtered;
+    return filtered.map((r) => this.toVenueMapMarker(r));
   }
 
   /**

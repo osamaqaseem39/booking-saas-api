@@ -5,6 +5,10 @@ import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
 /**
  * Canonical public discovery URLs. Legacy aliases remain on
  * getVenues, getVenue, getVenueDetails, getAllCities, getAllLocationTypes.
+ *
+ * `GET /public/venues` is the short map-marker list (same as
+ * `GET /public/venues/markers` and legacy `GET /getVenues`). Full location rows
+ * for dashboards that need them: `GET /businesses/locations` (no role gate on that handler).
  */
 @Controller('public')
 export class PublicDiscoveryController {
@@ -52,6 +56,6 @@ export class PublicDiscoveryController {
 
   @Get('venues')
   listVenues() {
-    return this.businessesService.listAllLocationsPublic();
+    return this.businessesService.listVenueMarkersPublic('all');
   }
 }

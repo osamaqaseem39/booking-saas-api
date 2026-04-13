@@ -1,6 +1,6 @@
 import { IsDateString, IsOptional, IsString, Matches } from 'class-validator';
 
-/** Query params for GET /getVenues/all (optional filters; response matches GET /getVenues rows). */
+/** Query params for GET /getVenues/all (optional filters; response is short map markers: venueId, name, address, lat/lng, logo, bannerImage). */
 export class GetVenuesAllQueryDto {
   /**
    * Venue bucket: all | gaming | gaming-zone | futsal | FutsalArenas | cricket | padel (case-insensitive).
