@@ -1,4 +1,5 @@
 import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
+import { GetVenuesAllQueryDto } from './dto/get-venues-all-query.dto';
 import { BusinessesService } from './businesses.service';
 import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
 
@@ -47,6 +48,15 @@ export class PublicDiscoveryController {
   @Get('venues/markers')
   markersAll() {
     return this.businessesService.listVenueMarkersPublic('all');
+  }
+
+  /**
+   * Filtered venue discovery (canonical public path). Same response shape as
+   * `GET /getVenues/all`: short map markers. Query: `category`, `city`, `q`, `date`, `startTime`, `endTime`.
+   */
+  @Get('venues/search')
+  searchVenues(@Query() query: GetVenuesAllQueryDto) {
+    return this.businessesService.listVenueMarkersPublicWithFilters(query);
   }
 
   @Get('venues/:venueId')

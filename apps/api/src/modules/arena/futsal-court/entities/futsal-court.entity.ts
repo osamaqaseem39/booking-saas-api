@@ -129,6 +129,10 @@ export class FutsalCourt {
   @Column({ type: 'uuid', nullable: true })
   linkedTwinCourtId?: string;
 
+  /** Optional named list of 30-minute slot starts for booking UI (see tenant time slot templates). */
+  @Column({ type: 'uuid', nullable: true })
+  timeSlotTemplateId!: string | null;
+
   @Column({ type: 'jsonb', nullable: true })
   amenities?: ArenaAmenities;
 

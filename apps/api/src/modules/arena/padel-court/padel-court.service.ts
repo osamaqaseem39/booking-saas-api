@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
 import { Repository } from 'typeorm';
+import { TimeSlotTemplatesService } from '../../bookings/time-slot-templates.service';
 import { BusinessesService } from '../../businesses/businesses.service';
 import { assertFacilityTypeAllowedForLocation } from '../location-facility.util';
 import { CreatePadelCourtDto } from './dto/create-padel-court.dto';
@@ -25,6 +26,7 @@ export class PadelCourtService {
     @InjectRepository(PadelCourt)
     private readonly repo: Repository<PadelCourt>,
     private readonly businessesService: BusinessesService,
+    private readonly timeSlotTemplates: TimeSlotTemplatesService,
   ) {}
 
   private requireTenant(tenantId: string): void {
@@ -70,6 +72,16 @@ export class PadelCourtService {
       location,
       PADEL_LOCATION_FACILITY_CODE,
     );
+
+    let timeSlotTemplateId: string | null = null;
+    if (dto.timeSlotTemplateId) {
+      await this.timeSlotTemplates.assertBelongsToTenant(
+        tenantId,
+        dto.timeSlotTemplateId,
+      );
+      timeSlotTemplateId = dto.timeSlotTemplateId;
+    }
+
     const courtStatus = dto.courtStatus ?? 'active';
     const isActive =
       dto.isActive !== undefined ? dto.isActive : courtStatus === 'active';
@@ -103,6 +115,7 @@ export class PadelCourtService {
       amenities: dto.amenities,
       rules: dto.rules,
       isActive,
+      timeSlotTemplateId,
     });
     return this.repo.save(row);
   }
@@ -111,6 +124,18 @@ export class PadelCourtService {
     this.requireTenant(tenantId);
     const row = await this.repo.findOne({ where: { id, tenantId } });
     if (!row) {
+      throw new NotFoundException(`Padel court ${id} not found`);
+    }
+    return row;
+  }
+
+  /**
+   * Public read by court UUID only (no `X-Tenant-Id`). Same row shape as {@link findOne};
+   * only **active** courts (`isActive` + `courtStatus`) are returned.
+   */
+  async findOnePublicById(id: string): Promise<PadelCourt> {
+    const row = await this.repo.findOne({ where: { id } });
+    if (!row || !row.isActive || row.courtStatus !== 'active') {
       throw new NotFoundException(`Padel court ${id} not found`);
     }
     return row;
@@ -153,6 +178,17 @@ export class PadelCourtService {
     if (dto.extras !== undefined) row.extras = dto.extras;
     if (dto.amenities !== undefined) row.amenities = dto.amenities;
     if (dto.rules !== undefined) row.rules = dto.rules;
+    if (dto.timeSlotTemplateId !== undefined) {
+      if (dto.timeSlotTemplateId) {
+        await this.timeSlotTemplates.assertBelongsToTenant(
+          tenantId,
+          dto.timeSlotTemplateId,
+        );
+        row.timeSlotTemplateId = dto.timeSlotTemplateId;
+      } else {
+        row.timeSlotTemplateId = null;
+      }
+    }
 
     if (dto.courtStatus !== undefined) {
       row.courtStatus = dto.courtStatus;

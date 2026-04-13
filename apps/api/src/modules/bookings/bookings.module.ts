@@ -6,6 +6,8 @@ import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity'
 import { User } from '../iam/entities/user.entity';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
+import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
+import { TimeSlotTemplatesService } from './time-slot-templates.service';
 import { CourtFacilitySlot } from './entities/court-facility-slot.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { BookingItem } from './entities/booking-item.entity';
@@ -18,9 +20,12 @@ import { PlacePadelBookingController } from './place-padel-booking.controller';
 import { PublicCricketBookingController } from './public-cricket-booking.controller';
 import { PublicFutsalBookingController } from './public-futsal-booking.controller';
 import { PublicPadelBookingController } from './public-padel-booking.controller';
+import { PreviousBookingsController } from './previous-bookings.controller';
+import { IamModule } from '../iam/iam.module';
 
 @Module({
   imports: [
+    IamModule,
     TypeOrmModule.forFeature([
       Booking,
       BookingItem,
@@ -32,6 +37,7 @@ import { PublicPadelBookingController } from './public-padel-booking.controller'
       Business,
       CourtSlotBookingBlock,
       CourtFacilitySlot,
+      TenantTimeSlotTemplate,
     ]),
   ],
   controllers: [
@@ -42,7 +48,9 @@ import { PublicPadelBookingController } from './public-padel-booking.controller'
     PublicCricketBookingController,
     PublicFutsalBookingController,
     PublicPadelBookingController,
+    PreviousBookingsController,
   ],
-  providers: [BookingsService],
+  providers: [BookingsService, TimeSlotTemplatesService],
+  exports: [TimeSlotTemplatesService],
 })
 export class BookingsModule {}

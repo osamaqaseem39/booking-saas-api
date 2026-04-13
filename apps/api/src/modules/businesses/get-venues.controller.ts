@@ -6,7 +6,8 @@ import { BusinessesService } from './businesses.service';
  * End-user venue discovery.
  * - GET /getVenues — short map-marker list (same as `listVenueMarkersPublic('all')`).
  * - GET /getVenues/all — short map-marker list with optional filters, active only;
- *   optional query: `category`, `city`, `date`, `startTime`, `endTime` (see GetVenuesAllQueryDto).
+ *   optional query: `category`, `city`, `q`, `date`, `startTime`, `endTime` (see GetVenuesAllQueryDto).
+ *   Canonical alias: **GET /public/venues/search** (same query + response).
  * - GET /getVenues/gaming|FutsalArenas — compact map-marker payloads.
  * - GET /getVenue/futsal|cricket|padel — same marker shape, filtered by sport facility counts.
  */

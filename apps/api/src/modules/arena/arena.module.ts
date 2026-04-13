@@ -6,6 +6,7 @@ import { FutsalCourtModule } from './futsal-court/futsal-court.module';
 import { GamingStationModule } from './gaming-station/gaming-station.module';
 import { IamModule } from '../iam/iam.module';
 import { PadelCourtModule } from './padel-court/padel-court.module';
+import { PublicArenaFacilityController } from './public-arena-facility.controller';
 
 @Module({
   imports: [
@@ -15,6 +16,10 @@ import { PadelCourtModule } from './padel-court/padel-court.module';
     PadelCourtModule,
     GamingStationModule,
   ],
-  controllers: [ArenaMetaController, ArenaTurfTwinLinkController],
+  controllers: [
+    ArenaMetaController,
+    ArenaTurfTwinLinkController,
+    PublicArenaFacilityController,
+  ],
 })
 export class ArenaModule {}

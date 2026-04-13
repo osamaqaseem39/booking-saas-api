@@ -1510,8 +1510,8 @@ export class BusinessesService {
   /**
    * GET /getVenues/all — short map-marker objects (same shape as {@link listVenueMarkersPublic}:
    * venueId, name, address, latitude, longitude, logo, bannerImage), filtered by optional
-   * `category`, `city`, and optional `date` + `startTime` + `endTime` (venues with at least one
-   * free arena court in that window). Only active venues are included.
+   * `category`, `city`, optional `q` (text search), and optional `date` + `startTime` + `endTime`
+   * (venues with at least one free arena court in that window). Only active venues are included.
    */
   async listVenueMarkersPublicWithFilters(
     dto: GetVenuesAllQueryDto,
@@ -1528,6 +1528,25 @@ export class BusinessesService {
       filtered = filtered.filter((r) => {
         const c = r.city?.trim().toLowerCase();
         return Boolean(c && citySet.has(c));
+      });
+    }
+
+    const q = dto.q?.trim().toLowerCase();
+    if (q) {
+      filtered = filtered.filter((r) => {
+        const parts = [
+          r.name,
+          r.addressLine,
+          r.details,
+          r.city,
+          r.area,
+          r.country,
+          r.business?.businessName,
+        ]
+          .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+          .join(' ')
+          .toLowerCase();
+        return parts.includes(q);
       });
     }
 

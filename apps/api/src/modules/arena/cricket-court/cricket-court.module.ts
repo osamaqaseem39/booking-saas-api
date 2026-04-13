@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BookingsModule } from '../../bookings/bookings.module';
 import { BusinessesModule } from '../../businesses/businesses.module';
 import { IamModule } from '../../iam/iam.module';
 import { ArenaTurfTwinLinkModule } from '../arena-turf-twin-link.module';
@@ -13,6 +14,7 @@ import { CricketCourtService } from './cricket-court.service';
     IamModule,
     BusinessesModule,
     ArenaTurfTwinLinkModule,
+    BookingsModule,
   ],
   controllers: [CricketCourtController],
   providers: [CricketCourtService],

@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
 import { Repository } from 'typeorm';
+import { TimeSlotTemplatesService } from '../../bookings/time-slot-templates.service';
 import { BusinessesService } from '../../businesses/businesses.service';
 import { ArenaTurfTwinLinkService } from '../arena-turf-twin-link.service';
 import { assertFacilityTypeAllowedForLocation } from '../location-facility.util';
@@ -25,6 +26,7 @@ export class CricketCourtService {
     private readonly repo: Repository<CricketCourt>,
     private readonly businessesService: BusinessesService,
     private readonly turfTwinLink: ArenaTurfTwinLinkService,
+    private readonly timeSlotTemplates: TimeSlotTemplatesService,
   ) {}
 
   private requireTenant(tenantId: string): void {
@@ -68,6 +70,15 @@ export class CricketCourtService {
     );
     assertFacilityTypeAllowedForLocation(location, 'cricket');
 
+    let timeSlotTemplateId: string | null = null;
+    if (dto.timeSlotTemplateId) {
+      await this.timeSlotTemplates.assertBelongsToTenant(
+        tenantId,
+        dto.timeSlotTemplateId,
+      );
+      timeSlotTemplateId = dto.timeSlotTemplateId;
+    }
+
     const row = this.repo.create({
       tenantId,
       businessLocationId: dto.businessLocationId,
@@ -102,6 +113,7 @@ export class CricketCourtService {
       rules: dto.rules,
       linkedTwinCourtKind: dto.linkedTwinCourtKind,
       linkedTwinCourtId: dto.linkedTwinCourtId,
+      timeSlotTemplateId,
     });
     const saved = await this.repo.save(row);
     await this.turfTwinLink.applyAfterCricketSaved(tenantId, saved, null);
@@ -112,6 +124,18 @@ export class CricketCourtService {
     this.requireTenant(tenantId);
     const row = await this.repo.findOne({ where: { id, tenantId } });
     if (!row) {
+      throw new NotFoundException(`Cricket court ${id} not found`);
+    }
+    return row;
+  }
+
+  /**
+   * Public read by court UUID only (no `X-Tenant-Id`). Same row shape as {@link findOne};
+   * only **active** courts are returned.
+   */
+  async findOnePublicById(id: string): Promise<CricketCourt> {
+    const row = await this.repo.findOne({ where: { id } });
+    if (!row || row.courtStatus !== 'active') {
       throw new NotFoundException(`Cricket court ${id} not found`);
     }
     return row;
@@ -190,6 +214,17 @@ export class CricketCourtService {
       assign('linkedTwinCourtKind', dto.linkedTwinCourtKind);
     if (dto.linkedTwinCourtId !== undefined)
       assign('linkedTwinCourtId', dto.linkedTwinCourtId);
+    if (dto.timeSlotTemplateId !== undefined) {
+      if (dto.timeSlotTemplateId) {
+        await this.timeSlotTemplates.assertBelongsToTenant(
+          tenantId,
+          dto.timeSlotTemplateId,
+        );
+        assign('timeSlotTemplateId', dto.timeSlotTemplateId);
+      } else {
+        row.timeSlotTemplateId = null;
+      }
+    }
 
     Object.assign(row, patch);
     const saved = await this.repo.save(row);

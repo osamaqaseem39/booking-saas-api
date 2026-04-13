@@ -1,11 +1,16 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import type { Request } from 'express';
 import { BootstrapFirstOwnerDto } from './dto/bootstrap-first-owner.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterEndUserDto } from './dto/register-end-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { AuthService } from './auth.service';
+import { RolesGuard } from '../iam/authz/roles.guard';
+import { Roles } from '../iam/authz/roles.decorator';
+import { SYSTEM_ROLES } from '../iam/iam.constants';
 
 @Controller('auth')
 export class AuthController {
@@ -58,5 +63,19 @@ export class AuthController {
   @Post('reset-password')
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ ok: true }> {
     return this.authService.resetPassword(dto);
+  }
+
+  @Post('change-password')
+  @UseGuards(RolesGuard)
+  @Roles(...SYSTEM_ROLES)
+  async changePassword(
+    @Req() req: Request,
+    @Body() dto: ChangePasswordDto,
+  ): Promise<{ ok: true }> {
+    const userId = (req as Request & { userId?: string }).userId?.trim();
+    if (!userId) {
+      throw new UnauthorizedException('Missing authentication');
+    }
+    return this.authService.changePassword(userId, dto);
   }
 }

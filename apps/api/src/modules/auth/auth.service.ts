@@ -16,6 +16,7 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterEndUserDto } from './dto/register-end-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
 import { IamService } from '../iam/iam.service';
 import { Role } from '../iam/entities/role.entity';
 import { User } from '../iam/entities/user.entity';
@@ -269,6 +270,29 @@ export class AuthService {
       `Password reset requested (${this.maskEmail(email)}). Deliver token via email in production.`,
     );
     return generic;
+  }
+
+  async changePassword(
+    userId: string,
+    dto: ChangePasswordDto,
+  ): Promise<{ ok: true }> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user?.isActive) {
+      throw new UnauthorizedException('Invalid session');
+    }
+    if (!user.passwordHash) {
+      throw new BadRequestException('Password login is not set for this account');
+    }
+    const ok = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!ok) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+    user.passwordHash = await bcrypt.hash(dto.newPassword, 10);
+    user.passwordResetTokenHash = null;
+    user.passwordResetExpiresAt = null;
+    await this.usersRepository.save(user);
+    this.logger.log(`Password changed (${this.maskEmail(user.email)}, id=${user.id})`);
+    return { ok: true };
   }
 
   async resetPassword(dto: ResetPasswordDto): Promise<{ ok: true }> {

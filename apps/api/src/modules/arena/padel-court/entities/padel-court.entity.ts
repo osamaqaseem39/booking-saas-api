@@ -112,6 +112,9 @@ export class PadelCourt {
   @Column({ type: 'jsonb', nullable: true })
   rules?: PadelRules;
 
+  @Column({ type: 'uuid', nullable: true })
+  timeSlotTemplateId!: string | null;
+
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
 

@@ -1,4 +1,4 @@
-import { IsDateString, IsOptional, IsString, Matches } from 'class-validator';
+import { IsDateString, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
 
 /** Query params for GET /getVenues/all (optional filters; response is short map markers: venueId, name, address, lat/lng, logo, bannerImage). */
 export class GetVenuesAllQueryDto {
@@ -16,6 +16,15 @@ export class GetVenuesAllQueryDto {
   @IsOptional()
   @IsString()
   city?: string;
+
+  /**
+   * Case-insensitive substring match against venue name, address, city, area,
+   * details, country, and business name.
+   */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  q?: string;
 
   /** ISO date (YYYY-MM-DD). If set, startTime and endTime must also be set. */
   @IsOptional()

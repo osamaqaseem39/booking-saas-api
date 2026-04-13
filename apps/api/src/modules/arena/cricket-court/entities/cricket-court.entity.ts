@@ -129,6 +129,9 @@ export class CricketCourt {
   @Column({ type: 'uuid', nullable: true })
   linkedTwinCourtId?: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  timeSlotTemplateId!: string | null;
+
   @Column({ type: 'jsonb', nullable: true })
   amenities?: ArenaAmenities;
 

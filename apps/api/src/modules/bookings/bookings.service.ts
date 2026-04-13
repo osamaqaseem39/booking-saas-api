@@ -354,6 +354,30 @@ export class BookingsService {
     return rows.map((b) => this.toApi(b, courtToLocation));
   }
 
+  /** All bookings for a user across tenants (e.g. GET /PreviousBookings/:userId). */
+  async listByUserForProfile(userId: string): Promise<BookingApiRow[]> {
+    const rows = await this.bookingRepo.find({
+      where: { userId },
+      relations: ['items'],
+      order: { createdAt: 'DESC' },
+    });
+    const byTenant = new Map<string, Booking[]>();
+    for (const b of rows) {
+      const list = byTenant.get(b.tenantId) ?? [];
+      list.push(b);
+      byTenant.set(b.tenantId, list);
+    }
+    const out: BookingApiRow[] = [];
+    for (const [tenantId, list] of byTenant) {
+      const courtToLocation = await this.resolveCourtToBusinessLocationMap(tenantId, list);
+      for (const b of list) {
+        out.push(this.toApi(b, courtToLocation));
+      }
+    }
+    out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return out;
+  }
+
   async getOne(tenantId: string, bookingId: string): Promise<BookingApiRow> {
     const booking = await this.bookingRepo.findOne({
       where: { id: bookingId, tenantId },
@@ -536,9 +560,18 @@ export class BookingsService {
 
   async getCourtSlots(
     tenantId: string,
-    params: { kind: CourtKind; courtId: string; date: string },
+    params: {
+      kind: CourtKind;
+      courtId: string;
+      date: string;
+      startTime?: string;
+      endTime?: string;
+    },
   ): Promise<CourtSlotsApiRow> {
     const dateOnly = formatDateOnly(params.date);
+    const startT = params.startTime ?? '00:00';
+    const endT = params.endTime ?? '24:00';
+    const { startMin, endMin } = this.parseSlotGridWindow(startT, endT);
     const rows = await this.listBookedItemsForDate(tenantId, dateOnly);
     const gridKeys = await this.resolveBookingLinkedCourtKeys(
       tenantId,
@@ -560,7 +593,7 @@ export class BookingsService {
     );
 
     const slots: CourtSlotsApiRow['slots'] = [];
-    for (let segStart = 0; segStart < 24 * 60; segStart += 30) {
+    for (let segStart = startMin; segStart < endMin; segStart += 30) {
       const segEnd = segStart + 30;
       const segStartLabel = minutesToTimeString(segStart);
       const segEndLabel = minutesToTimeString(segEnd);

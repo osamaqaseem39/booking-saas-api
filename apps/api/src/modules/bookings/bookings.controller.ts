@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -9,6 +10,7 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { COURT_KINDS, type CourtKind } from './booking.types';
@@ -23,10 +25,18 @@ import { UpdateBookingDto } from './dto/update-booking.dto';
 import { GenerateFacilitySlotsDto } from './dto/generate-facility-slots.dto';
 import { PatchFacilitySlotDto } from './dto/patch-facility-slot.dto';
 import { SetCourtSlotBlockDto } from './dto/set-court-slot-block.dto';
+import { CreateTimeSlotTemplateDto } from './dto/create-time-slot-template.dto';
+import { UpdateTimeSlotTemplateDto } from './dto/update-time-slot-template.dto';
+import { Roles } from '../iam/authz/roles.decorator';
+import { RolesGuard } from '../iam/authz/roles.guard';
+import { TimeSlotTemplatesService } from './time-slot-templates.service';
 
 @Controller('bookings')
 export class BookingsController {
-  constructor(private readonly bookingsService: BookingsService) {}
+  constructor(
+    private readonly bookingsService: BookingsService,
+    private readonly timeSlotTemplatesService: TimeSlotTemplatesService,
+  ) {}
 
   private getTenantUuidOrNull(tenant: TenantContext): string | null {
     const tenantId = tenant?.tenantId?.trim() ?? '';
@@ -70,6 +80,54 @@ export class BookingsController {
     );
   }
 
+  @Get('time-slot-templates')
+  listTimeSlotTemplates(@CurrentTenant() tenant: TenantContext) {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) return [];
+    return this.timeSlotTemplatesService.list(tenantId);
+  }
+
+  @Post('time-slot-templates')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin')
+  createTimeSlotTemplate(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() dto: CreateTimeSlotTemplateDto,
+  ) {
+    return this.timeSlotTemplatesService.create(
+      this.requireTenantUuid(tenant),
+      dto,
+    );
+  }
+
+  @Patch('time-slot-templates/:templateId')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin')
+  updateTimeSlotTemplate(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('templateId', ParseUUIDPipe) templateId: string,
+    @Body() dto: UpdateTimeSlotTemplateDto,
+  ) {
+    return this.timeSlotTemplatesService.update(
+      this.requireTenantUuid(tenant),
+      templateId,
+      dto,
+    );
+  }
+
+  @Delete('time-slot-templates/:templateId')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin')
+  deleteTimeSlotTemplate(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('templateId', ParseUUIDPipe) templateId: string,
+  ) {
+    return this.timeSlotTemplatesService.remove(
+      this.requireTenantUuid(tenant),
+      templateId,
+    );
+  }
+
   @Get('courts/:courtKind/:courtId/slots')
   courtSlots(
     @CurrentTenant() tenant: TenantContext,
@@ -95,6 +153,8 @@ export class BookingsController {
       kind: courtKind as CourtKind,
       courtId,
       date: query.date,
+      startTime: query.startTime,
+      endTime: query.endTime,
     });
   }
 

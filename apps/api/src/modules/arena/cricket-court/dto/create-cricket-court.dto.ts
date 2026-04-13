@@ -11,6 +11,7 @@ import {
   IsString,
   IsUUID,
   MaxLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import {
@@ -175,4 +176,9 @@ export class CreateCricketCourtDto {
   @IsOptional()
   @IsUUID('4')
   linkedTwinCourtId?: string;
+
+  @IsOptional()
+  @ValidateIf((_, v) => v != null && v !== '')
+  @IsUUID('4')
+  timeSlotTemplateId?: string | null;
 }
