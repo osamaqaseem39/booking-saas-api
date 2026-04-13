@@ -3,38 +3,9 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from '../apps/api/src/app.module';
 import { shouldRunStartupMigrations } from '../apps/api/src/database/migration-startup.util';
-import dataSource from '../apps/api/src/database/typeorm.config';
 
 let cachedApp: NestExpressApplication | undefined;
 let bootstrapPromise: Promise<NestExpressApplication> | undefined;
-
-/** Runs before Nest boot. Idempotent. */
-let ensureLocationDetailsColumnPromise: Promise<void> | undefined;
-
-async function ensureBusinessLocationDetailsColumn(): Promise<void> {
-  if (!ensureLocationDetailsColumnPromise) {
-    ensureLocationDetailsColumnPromise = (async () => {
-      try {
-        await dataSource.initialize();
-        await dataSource.query(`
-          ALTER TABLE "business_locations"
-          ADD COLUMN IF NOT EXISTS "details" text
-        `);
-      } catch (err) {
-        console.error(
-          '[DB] ensure business_locations.details column failed:',
-          err,
-        );
-        throw err;
-      } finally {
-        if (dataSource.isInitialized) {
-          await dataSource.destroy();
-        }
-      }
-    })();
-  }
-  await ensureLocationDetailsColumnPromise;
-}
 
 async function getOrCreateApp(): Promise<NestExpressApplication> {
   if (cachedApp) {
@@ -58,8 +29,6 @@ async function getOrCreateApp(): Promise<NestExpressApplication> {
           );
         }
       }
-
-      await ensureBusinessLocationDetailsColumn();
 
       cachedApp = await NestFactory.create<NestExpressApplication>(AppModule);
 
