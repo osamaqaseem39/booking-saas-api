@@ -86,6 +86,6 @@ export function getWorkingDayWindow(
     rec.closed === true || rec.isClosed === true || rec.open === false;
   const open = normalizeTime(rec.open, defaults.open);
   const close = normalizeTime(rec.close, defaults.close);
-  if (open >= close) return { closed: true, open, close };
+  // Keep overnight ranges (e.g. 16:00 -> 04:00) as informational instead of forcing closed.
   return { closed, open, close };
 }

@@ -19,8 +19,9 @@ export class CourtSlotGridQueryDto {
   endTime?: string;
 
   /**
-   * When `true`, grid bounds follow the court's location `workingHours` for `date`
-   * (ignored if `startTime`/`endTime` are set).
+   * Optional informational overlay: when `true`, grid bounds follow the court's location
+   * `workingHours` for `date` (ignored if `startTime`/`endTime` are set).
+   * Booking enforcement still depends on bookings + slot blocks.
    */
   @IsOptional()
   @IsIn(['true', 'false'])

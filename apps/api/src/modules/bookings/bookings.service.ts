@@ -194,9 +194,9 @@ export type CourtSlotGridApiRow = {
   /** Effective grid window (aligned to 30-minute boundaries). */
   gridStartTime: string;
   gridEndTime: string;
-  /** Set when `useWorkingHours=true` and location hours were applied. */
+  /** Set when optional `useWorkingHours=true` overlay was applied. */
   workingHoursApplied?: boolean;
-  /** Set when the venue is closed for `date` per working hours. */
+  /** Set when the optional overlay marks venue closed for `date`. */
   locationClosed?: boolean;
   /** When true, `segments` only lists free slots (booked intervals omitted). */
   availableOnly?: boolean;
@@ -552,8 +552,9 @@ export class BookingsService {
 
   /**
    * Full-day (or window) timeline in fixed 30-minute segments for one facility/court.
-   * Use `useWorkingHours` to align the grid to the location's hours; use `availableOnly`
-   * to return only bookable (free) segments for pickers.
+   * `useWorkingHours` is an optional display overlay for grid bounds; booking enforcement
+   * is still driven by existing bookings + slot blocks. Use `availableOnly` to return only
+   * bookable (free) segments for pickers.
    */
   async getCourtSlotGrid(
     tenantId: string,
