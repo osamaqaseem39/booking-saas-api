@@ -79,6 +79,32 @@ export class BusinessesController {
     return this.businessesService.listAllLocationsPublic(name);
   }
 
+  /**
+   * Minimal location list for app boot / typeahead: only `id` and `name`.
+   * Same auth and `X-Tenant-Id` rules as `GET /businesses/locations`.
+   * Optional query `name` — case-insensitive substring filter.
+   */
+  @Get('locations/name-ids')
+  async listLocationNameIds(
+    @Req() req: Request,
+    @Query() query: ListBusinessLocationsQueryDto,
+  ) {
+    const name = query.name?.trim() || undefined;
+    const userId = await this.tryAccessTokenUserId(req);
+    if (
+      userId &&
+      (await this.businessesService.hasConsoleLocationListScope(userId))
+    ) {
+      const tenantHeader = req.header('x-tenant-id')?.trim() || null;
+      return this.businessesService.listLocationNameIdsForConsole(
+        userId,
+        tenantHeader,
+        name,
+      );
+    }
+    return this.businessesService.listLocationNameIdsPublic(name);
+  }
+
   @Get('locations/cities')
   async listLocationCities(@Query() dto: ListLocationCitiesDto) {
     return this.businessesService.listLocationCitiesPublic(dto);

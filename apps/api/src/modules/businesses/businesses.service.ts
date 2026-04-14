@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, QueryFailedError, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository, type SelectQueryBuilder } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { CricketCourt } from '../arena/cricket-court/entities/cricket-court.entity';
 import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity';
@@ -506,6 +506,98 @@ export class BusinessesService {
       'business-admin',
       'business-staff',
     ]);
+  }
+
+  /**
+   * Lightweight list for pickers / search: `{ id, name }` only. Same access rules as
+   * {@link listLocationsForConsole} / public `GET /businesses/locations` (optional bearer,
+   * optional `X-Tenant-Id`). Optional `name` is a case-insensitive substring on `name`.
+   */
+  async listLocationNameIdsPublic(
+    nameFilter?: string | null,
+  ): Promise<{ locations: Array<{ id: string; name: string }> }> {
+    const qb = this.locationsRepository
+      .createQueryBuilder('l')
+      .select(['l.id', 'l.name'])
+      .orderBy('l.name', 'ASC');
+    this.applyNameIlikeFilter(qb, nameFilter);
+    try {
+      const rows = await qb.getMany();
+      return {
+        locations: rows.map((r) => ({ id: r.id, name: r.name })),
+      };
+    } catch (error: unknown) {
+      if (this.isSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Business locations schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  async listLocationNameIdsForConsole(
+    requesterUserId: string,
+    tenantIdFilter?: string | null,
+    nameFilter?: string | null,
+  ): Promise<{ locations: Array<{ id: string; name: string }> }> {
+    await this.iamService.assertRequesterActive(requesterUserId);
+    const qb = this.locationsRepository
+      .createQueryBuilder('l')
+      .select(['l.id', 'l.name']);
+
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
+      'platform-owner',
+    ]);
+    if (!isPlatformOwner) {
+      const allowedBusinessIds = (await this.listForRequester(requesterUserId)).map(
+        (b) => b.id,
+      );
+      if (allowedBusinessIds.length === 0) {
+        return { locations: [] };
+      }
+      qb.andWhere('l.businessId IN (:...bids)', { bids: allowedBusinessIds });
+    }
+
+    const tid = tenantIdFilter?.trim() || null;
+    if (tid) {
+      qb.innerJoin('l.business', 'b').andWhere('b.tenantId = :tid', { tid });
+    }
+
+    qb.orderBy('l.name', 'ASC');
+    this.applyNameIlikeFilter(qb, nameFilter);
+
+    try {
+      const rows = await qb.getMany();
+      return {
+        locations: rows.map((r) => ({ id: r.id, name: r.name })),
+      };
+    } catch (error: unknown) {
+      if (this.isSchemaMismatchError(error)) {
+        throw new ServiceUnavailableException(
+          'Business locations schema is out of date. Run latest database migrations and retry.',
+        );
+      }
+      throw error;
+    }
+  }
+
+  private escapeIlikeUserFragment(fragment: string): string {
+    return fragment
+      .replace(/\\/g, '\\\\')
+      .replace(/%/g, '\\%')
+      .replace(/_/g, '\\_');
+  }
+
+  private applyNameIlikeFilter(
+    qb: SelectQueryBuilder<BusinessLocation>,
+    nameFilter?: string | null,
+  ): void {
+    const raw = nameFilter?.trim();
+    if (!raw) return;
+    qb.andWhere("l.name ILIKE :namePat ESCAPE '\\'", {
+      namePat: `%${this.escapeIlikeUserFragment(raw)}%`,
+    });
   }
 
   /**
