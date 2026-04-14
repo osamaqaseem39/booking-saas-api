@@ -122,6 +122,15 @@ export class TimeSlotTemplatesService {
           sortOrder: idx + 1,
         };
       });
+      const seenStarts = new Set<string>();
+      for (const row of rows) {
+        if (seenStarts.has(row.startTime)) {
+          throw new BadRequestException(
+            `Duplicate slot line startTime is not allowed: ${row.startTime}`,
+          );
+        }
+        seenStarts.add(row.startTime);
+      }
       if (!rows.length) {
         throw new BadRequestException('At least one valid slot line is required');
       }
@@ -215,33 +224,39 @@ export class TimeSlotTemplatesService {
     id: string,
     dto: UpdateTimeSlotTemplateDto,
   ): Promise<TimeSlotTemplateApiRow> {
-    const row = await this.templateRepo.findOne({
+    const existing = await this.templateRepo.findOne({
       where: { id, tenantId },
-      relations: { slotLines: true },
+      select: { id: true },
     });
-    if (!row) {
+    if (!existing) {
       throw new NotFoundException(`Time slot template ${id} not found`);
     }
-    if (dto.name !== undefined) row.name = dto.name.trim();
-    if (dto.slotLines !== undefined || dto.slotStarts !== undefined) {
-      const lines = this.normalizeSlotLines(dto);
-      await this.lineRepo.delete({ templateId: row.id, tenantId });
-      await this.lineRepo.save(
-        lines.map((line) =>
-          this.lineRepo.create({
-            templateId: row.id,
+    await this.templateRepo.manager.transaction(async (tx) => {
+      if (dto.name !== undefined) {
+        await tx.getRepository(TenantTimeSlotTemplate).update(
+          { id, tenantId },
+          { name: dto.name.trim() },
+        );
+      }
+      if (dto.slotLines !== undefined || dto.slotStarts !== undefined) {
+        const lines = this.normalizeSlotLines(dto);
+        await tx
+          .getRepository(TenantTimeSlotTemplateLine)
+          .delete({ templateId: id, tenantId });
+        await tx.getRepository(TenantTimeSlotTemplateLine).insert(
+          lines.map((line) => ({
+            templateId: id,
             tenantId,
             startTime: line.startTime,
             endTime: line.endTime,
             status: line.status,
             sortOrder: line.sortOrder,
-          }),
-        ),
-      );
-    }
-    await this.templateRepo.save(row);
+          })),
+        );
+      }
+    });
     const saved = await this.templateRepo.findOne({
-      where: { id: row.id, tenantId },
+      where: { id, tenantId },
       relations: { slotLines: true },
     });
     if (!saved) throw new NotFoundException(`Time slot template ${id} not found`);

@@ -51,6 +51,13 @@ function formatDateOnly(d: Date | string): string {
   return String(d).slice(0, 10);
 }
 
+function formatLocalDateOnly(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function isPastDate(dateOnly: string): boolean {
   const today = new Date().toISOString().slice(0, 10);
   return dateOnly < today;
@@ -522,7 +529,10 @@ export class BookingsService {
     const dateOnly = formatDateOnly(params.date);
     const courts = await this.listCourtsBySport(tenantId, params.sportType);
     const courtByKey = new Set(courts.map((c) => `${c.kind}:${c.id}`));
-    const items = await this.listBookedItemsForDate(tenantId, dateOnly);
+    const items = this.filterLiveBookedItemsForDate(
+      dateOnly,
+      await this.listBookedItemsForDate(tenantId, dateOnly),
+    );
     const allOverlap = items.filter((it) =>
       this.timesOverlap(
         params.startTime,
@@ -579,7 +589,10 @@ export class BookingsService {
     const startT = params.startTime ?? '00:00';
     const endT = params.endTime ?? '24:00';
     const { startMin, endMin } = this.parseSlotGridWindow(startT, endT);
-    const rows = await this.listBookedItemsForDate(tenantId, dateOnly);
+    const rows = this.filterLiveBookedItemsForDate(
+      dateOnly,
+      await this.listBookedItemsForDate(tenantId, dateOnly),
+    );
     const gridKeys = await this.resolveBookingLinkedCourtKeys(
       tenantId,
       params.kind,
@@ -895,7 +908,10 @@ export class BookingsService {
 
     const { startMin, endMin } = this.parseSlotGridWindow(startT, endT);
 
-    const rows = await this.listBookedItemsForDate(tenantId, dateOnly);
+    const rows = this.filterLiveBookedItemsForDate(
+      dateOnly,
+      await this.listBookedItemsForDate(tenantId, dateOnly),
+    );
     const gridKeys = await this.resolveBookingLinkedCourtKeys(
       tenantId,
       params.kind,
@@ -1159,6 +1175,20 @@ export class BookingsService {
         `startTime must be an hourly slot start between 00:00 and 23:00 (${step}-minute grid)`,
       );
     }
+  }
+
+  /**
+   * Slot timelines should be live for today's date: once a booking segment has ended,
+   * it should no longer occupy the slot as "booked" in availability/slot APIs.
+   */
+  private filterLiveBookedItemsForDate<T extends { endTime: string }>(
+    dateOnly: string,
+    items: T[],
+  ): T[] {
+    const now = new Date();
+    if (dateOnly !== formatLocalDateOnly(now)) return items;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    return items.filter((it) => toMinutes(it.endTime) > nowMinutes);
   }
 
   private async loadBlockedStartsSet(
