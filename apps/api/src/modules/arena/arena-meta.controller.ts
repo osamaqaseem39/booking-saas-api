@@ -17,10 +17,6 @@ export class ArenaMetaController {
           path: '/arena/cricket-courts',
           label: 'Cricket pitch',
         },
-        'turf-twin-links': {
-          path: '/arena/turf-twin-links/link',
-          label: 'Link futsal + cricket as one shared turf calendar',
-        },
         'padel-court': { path: '/arena/padel-court', label: 'Padel' },
       },
     };

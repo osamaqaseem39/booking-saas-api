@@ -1086,7 +1086,7 @@ export class BookingsService {
     return new Set(rows.map((r) => r.startTime));
   }
 
-  /** Slot blocks for this court and any linked futsal/cricket twin. */
+  /** Slot blocks for this court only. */
   private async loadBlockedStartsSetMerged(
     tenantId: string,
     kind: CourtKind,
@@ -1123,37 +1123,8 @@ export class BookingsService {
     kind: CourtKind,
     courtId: string,
   ): Promise<Array<{ kind: CourtKind; courtId: string }>> {
-    const self = { kind, courtId };
-    if (kind === 'padel_court') {
-      return [self];
-    }
-    if (kind === 'futsal_court') {
-      const row = await this.futsalCourtRepo.findOne({
-        where: { id: courtId, tenantId },
-        select: ['linkedTwinCourtKind', 'linkedTwinCourtId'],
-      });
-      if (
-        row?.linkedTwinCourtId &&
-        row.linkedTwinCourtKind === 'cricket_court'
-      ) {
-        return [self, { kind: 'cricket_court', courtId: row.linkedTwinCourtId }];
-      }
-      return [self];
-    }
-    if (kind === 'cricket_court') {
-      const row = await this.cricketCourtRepo.findOne({
-        where: { id: courtId, tenantId },
-        select: ['linkedTwinCourtKind', 'linkedTwinCourtId'],
-      });
-      if (
-        row?.linkedTwinCourtId &&
-        row.linkedTwinCourtKind === 'futsal_court'
-      ) {
-        return [self, { kind: 'futsal_court', courtId: row.linkedTwinCourtId }];
-      }
-      return [self];
-    }
-    return [self];
+    void tenantId;
+    return [{ kind, courtId }];
   }
 
   private async assertNoBookingOverlapForItem(
@@ -1180,7 +1151,7 @@ export class BookingsService {
         )
       ) {
         throw new BadRequestException(
-          'That time range is already booked for this pitch (including any linked futsal/cricket twin)',
+          'That time range is already booked for this pitch',
         );
       }
     }

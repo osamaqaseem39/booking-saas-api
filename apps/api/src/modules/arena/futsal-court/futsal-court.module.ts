@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BookingsModule } from '../../bookings/bookings.module';
 import { BusinessesModule } from '../../businesses/businesses.module';
 import { IamModule } from '../../iam/iam.module';
-import { ArenaTurfTwinLinkModule } from '../arena-turf-twin-link.module';
 import { FutsalCourt } from './entities/futsal-court.entity';
 import { FutsalCourtController } from './futsal-court.controller';
 import { FutsalCourtService } from './futsal-court.service';
@@ -13,7 +12,6 @@ import { FutsalCourtService } from './futsal-court.service';
     TypeOrmModule.forFeature([FutsalCourt]),
     IamModule,
     BusinessesModule,
-    ArenaTurfTwinLinkModule,
     BookingsModule,
   ],
   controllers: [FutsalCourtController],

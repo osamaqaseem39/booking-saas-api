@@ -3,7 +3,6 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { BookingsModule } from '../../bookings/bookings.module';
 import { BusinessesModule } from '../../businesses/businesses.module';
 import { IamModule } from '../../iam/iam.module';
-import { ArenaTurfTwinLinkModule } from '../arena-turf-twin-link.module';
 import { CricketCourt } from './entities/cricket-court.entity';
 import { CricketCourtController } from './cricket-court.controller';
 import { CricketCourtService } from './cricket-court.service';
@@ -13,7 +12,6 @@ import { CricketCourtService } from './cricket-court.service';
     TypeOrmModule.forFeature([CricketCourt]),
     IamModule,
     BusinessesModule,
-    ArenaTurfTwinLinkModule,
     BookingsModule,
   ],
   controllers: [CricketCourtController],
