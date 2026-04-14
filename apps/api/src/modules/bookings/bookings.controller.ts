@@ -29,6 +29,7 @@ import { UpdateBookingDto } from './dto/update-booking.dto';
 import { GenerateFacilitySlotsDto } from './dto/generate-facility-slots.dto';
 import { PatchFacilitySlotDto } from './dto/patch-facility-slot.dto';
 import { SetCourtSlotBlockDto } from './dto/set-court-slot-block.dto';
+import { EditBookingFacilitySlotsDto } from './dto/edit-booking-facility-slots.dto';
 import { CreateTimeSlotTemplateDto } from './dto/create-time-slot-template.dto';
 import { UpdateTimeSlotTemplateDto } from './dto/update-time-slot-template.dto';
 import { Roles } from '../iam/authz/roles.decorator';
@@ -293,6 +294,19 @@ export class BookingsController {
       this.requireTenantUuid(tenant),
       bookingId,
       dto,
+    );
+  }
+
+  @Patch(':bookingId/facility-slots')
+  editBookingFacilitySlots(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Body() dto: EditBookingFacilitySlotsDto,
+  ) {
+    return this.bookingsService.editBookingFacilitySlots(
+      this.requireTenantUuid(tenant),
+      bookingId,
+      dto.blocked,
     );
   }
 }
