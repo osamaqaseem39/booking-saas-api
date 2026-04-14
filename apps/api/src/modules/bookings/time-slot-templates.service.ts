@@ -87,7 +87,12 @@ export class TimeSlotTemplatesService {
       throw new BadRequestException('Either slotLines or slotStarts is required');
     }
     if (hasLines) {
-      const rows = (dto.slotLines ?? []).map((line, idx) => {
+      const rows: Array<{
+        startTime: string;
+        endTime: string;
+        status: 'available' | 'blocked';
+        sortOrder: number;
+      }> = (dto.slotLines ?? []).map((line, idx) => {
         const startTime = String(line.startTime ?? '').trim();
         const endTime = String(line.endTime ?? '').trim();
         if (!startTime || !endTime) {
@@ -108,10 +113,12 @@ export class TimeSlotTemplatesService {
         if (endMin <= startMin) {
           throw new BadRequestException(`slot line endTime must be after startTime: ${startTime}`);
         }
+        const status: 'available' | 'blocked' =
+          line.status === 'blocked' ? 'blocked' : 'available';
         return {
           startTime: minutesToLabel(startMin),
           endTime: minutesToLabel(endMin),
-          status: line.status === 'blocked' ? 'blocked' : 'available',
+          status,
           sortOrder: idx + 1,
         };
       });
@@ -121,12 +128,31 @@ export class TimeSlotTemplatesService {
       return rows;
     }
     const starts = this.normalizeSlotStarts(dto.slotStarts ?? []);
-    return starts.map((startTime, idx) => ({
-      startTime,
-      endTime: minutesToLabel(toMinutes(startTime) + COURT_SLOT_GRID_STEP_MINUTES),
-      status: 'available',
-      sortOrder: idx + 1,
-    }));
+    const startMinutes = starts.map((s) => toMinutes(s));
+    const diffs = startMinutes
+      .slice(1)
+      .map((m, idx) => m - startMinutes[idx])
+      .filter((d) => d > 0);
+    const inferredDuration =
+      diffs.length > 0
+        ? Math.min(...diffs)
+        : COURT_SLOT_GRID_STEP_MINUTES;
+    return starts.map((startTime, idx) => {
+      const start = toMinutes(startTime);
+      const nextStart = startMinutes[idx + 1];
+      const end = nextStart ?? start + inferredDuration;
+      if (end <= start || end > 24 * 60) {
+        throw new BadRequestException(
+          `Could not infer valid endTime for slot start ${startTime}`,
+        );
+      }
+      return {
+        startTime,
+        endTime: minutesToLabel(end),
+        status: 'available' as const,
+        sortOrder: idx + 1,
+      };
+    });
   }
 
   async assertBelongsToTenant(
@@ -232,7 +258,7 @@ export class TimeSlotTemplatesService {
   }
 
   private toApiRow(r: TenantTimeSlotTemplate): TimeSlotTemplateApiRow {
-    const slotLines = (Array.isArray(r.slotLines) ? r.slotLines : [])
+    const slotLines: TimeSlotTemplateApiRow['slotLines'] = (Array.isArray(r.slotLines) ? r.slotLines : [])
       .slice()
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((line) => ({
