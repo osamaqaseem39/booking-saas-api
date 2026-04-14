@@ -15,13 +15,13 @@ import { UserRole } from '../modules/iam/entities/user-role.entity';
 import { User } from '../modules/iam/entities/user.entity';
 
 function createTypeOrmOptions(): DataSourceOptions {
-  const poolMax = toPositiveInt(process.env.DB_POOL_MAX, 1);
+  const poolMax = resolvePoolMax();
   const poolIdleTimeoutMs = toPositiveInt(process.env.DB_POOL_IDLE_MS, 10000);
   const poolConnectTimeoutMs = toPositiveInt(
     process.env.DB_POOL_CONNECT_MS,
     10000,
   );
-  const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
+  const url = pickDatabaseUrl();
   if (url) {
     const parsed = new URL(url);
     const sslMode = parsed.searchParams.get('sslmode');
@@ -67,6 +67,20 @@ function toPositiveInt(raw: string | undefined, fallback: number): number {
     return fallback;
   }
   return Math.floor(parsed);
+}
+
+function pickDatabaseUrl(): string | undefined {
+  // Runtime should prefer pooled URL in serverless environments.
+  return process.env.POSTGRES_URL ?? process.env.POSTGRES_URL_NON_POOLING;
+}
+
+function resolvePoolMax(): number {
+  const configured = toPositiveInt(process.env.DB_POOL_MAX, 1);
+  const isServerless =
+    process.env.VERCEL === '1' ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+  const hardCap = isServerless ? 1 : 5;
+  return Math.max(1, Math.min(configured, hardCap));
 }
 
 export const typeOrmOptions: DataSourceOptions = {

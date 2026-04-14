@@ -17,13 +17,13 @@ import { TenancyModule } from './tenancy/tenancy.module';
 
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
-  const poolMax = toPositiveInt(process.env.DB_POOL_MAX, 1);
+  const poolMax = resolvePoolMax();
   const poolIdleTimeoutMs = toPositiveInt(process.env.DB_POOL_IDLE_MS, 10000);
   const poolConnectTimeoutMs = toPositiveInt(
     process.env.DB_POOL_CONNECT_MS,
     10000,
   );
-  const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
+  const url = pickDatabaseUrl();
   if (url) {
     const parsed = new URL(url);
     const sslMode = parsed.searchParams.get('sslmode');
@@ -113,10 +113,23 @@ function toPositiveInt(raw: string | undefined, fallback: number): number {
   return Math.floor(parsed);
 }
 
+function pickDatabaseUrl(): string | undefined {
+  // Runtime should prefer pooled URL in serverless environments.
+  return process.env.POSTGRES_URL ?? process.env.POSTGRES_URL_NON_POOLING;
+}
+
+function resolvePoolMax(): number {
+  const configured = toPositiveInt(process.env.DB_POOL_MAX, 1);
+  const isServerless = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+  // Keep each warm instance tiny; concurrency scales by instances, not per-instance pool.
+  const hardCap = isServerless ? 1 : 5;
+  return Math.max(1, Math.min(configured, hardCap));
+}
+
 function sslModeFromEnv() {
   // In Supabase, SSL is typically required when using pooler URLs.
   // If DB_SSL is not set, default to enabling SSL when the pooler URL is used.
-  const url = process.env.POSTGRES_URL_NON_POOLING ?? process.env.POSTGRES_URL;
+  const url = pickDatabaseUrl();
   if (!url) return false;
   const parsed = new URL(url);
   const sslMode = parsed.searchParams.get('sslmode');
