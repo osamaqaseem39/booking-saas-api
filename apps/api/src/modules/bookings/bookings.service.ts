@@ -9,13 +9,14 @@ import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { CricketCourt } from '../arena/cricket-court/entities/cricket-court.entity';
 import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity';
 import { User } from '../iam/entities/user.entity';
-import type {
-  BookingItemStatus,
-  BookingSportType,
-  BookingStatus,
-  CourtKind,
-  PaymentMethod,
-  PaymentStatus,
+import {
+  COURT_SLOT_GRID_STEP_MINUTES,
+  type BookingItemStatus,
+  type BookingSportType,
+  type BookingStatus,
+  type CourtKind,
+  type PaymentMethod,
+  type PaymentStatus,
 } from './booking.types';
 import type { CreateBookingDto } from './dto/create-booking.dto';
 import type { CreateBookingItemDto } from './dto/create-booking-item.dto';
@@ -68,21 +69,23 @@ function minutesToTimeString(m: number): string {
   return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
-/** First 30-minute slot start at or after this time (working-hours open → grid start). */
+/** First slot start (on {@link COURT_SLOT_GRID_STEP_MINUTES} grid) at or after this time. */
 function snapUpToSlotBoundary(time: string): string {
+  const step = COURT_SLOT_GRID_STEP_MINUTES;
   const m = toMinutes(time);
-  const up = Math.ceil(m / 30) * 30;
+  const up = Math.ceil(m / step) * step;
   if (up >= 24 * 60) return '24:00';
   return minutesToTimeString(up);
 }
 
 /**
- * Exclusive grid end: largest time on a 30-minute boundary ≤ `close` (last segment ends here or earlier).
+ * Exclusive grid end: latest time on a slot boundary ≤ `close` (aligned to {@link COURT_SLOT_GRID_STEP_MINUTES}).
  */
 function snapDownExclusiveEnd(close: string): string {
   if (close === '24:00') return '24:00';
+  const step = COURT_SLOT_GRID_STEP_MINUTES;
   const m = toMinutes(close);
-  const down = Math.floor(m / 30) * 30;
+  const down = Math.floor(m / step) * step;
   return minutesToTimeString(down);
 }
 
@@ -204,8 +207,8 @@ export type CourtSlotGridApiRow = {
   date: string;
   kind: CourtKind;
   courtId: string;
-  segmentMinutes: 30;
-  /** Effective grid window (aligned to 30-minute boundaries). */
+  segmentMinutes: typeof COURT_SLOT_GRID_STEP_MINUTES;
+  /** Effective grid window (aligned to hourly slot boundaries). */
   gridStartTime: string;
   gridEndTime: string;
   /** Set when optional `useWorkingHours=true` overlay was applied. */
@@ -400,7 +403,7 @@ export class BookingsService {
     }
 
     for (const item of dto.items) {
-      this.assertFutureHalfHourBooking(dto.bookingDate, item);
+      this.assertFutureSlotBooking(dto.bookingDate, item);
       await this.assertCourtValidForSport(tenantId, dto.sportType, item);
       await this.assertItemSegmentsNotBlocked(tenantId, dto.bookingDate, item);
       await this.assertNoBookingOverlapForItem(tenantId, dto.bookingDate, item);
@@ -593,8 +596,9 @@ export class BookingsService {
     );
 
     const slots: CourtSlotsApiRow['slots'] = [];
-    for (let segStart = startMin; segStart < endMin; segStart += 30) {
-      const segEnd = segStart + 30;
+    const step = COURT_SLOT_GRID_STEP_MINUTES;
+    for (let segStart = startMin; segStart < endMin; segStart += step) {
+      const segEnd = segStart + step;
       const segStartLabel = minutesToTimeString(segStart);
       const segEndLabel = minutesToTimeString(segEnd);
       const overlap = bookings.find((b) =>
@@ -637,7 +641,7 @@ export class BookingsService {
   }
 
   /**
-   * Creates default 30-minute slot rows for the calendar date (idempotent).
+   * Creates default hourly slot rows for the calendar date (idempotent).
    * Applies to this court and any linked futsal/cricket twin.
    */
   async generateDayFacilitySlots(
@@ -652,9 +656,10 @@ export class BookingsService {
       params.courtId,
     );
     const rows: Partial<CourtFacilitySlot>[] = [];
+    const step = COURT_SLOT_GRID_STEP_MINUTES;
     for (const k of keys) {
-      for (let segStart = 0; segStart < 24 * 60; segStart += 30) {
-        const segEnd = segStart + 30;
+      for (let segStart = 0; segStart < 24 * 60; segStart += step) {
+        const segEnd = segStart + step;
         rows.push({
           tenantId,
           courtKind: k.kind,
@@ -703,7 +708,7 @@ export class BookingsService {
     );
     const bookings = await this.listBookedItemsForDate(tenantId, dateOnly);
     const segStart = toMinutes(params.startTime);
-    const segEnd = segStart + 30;
+    const segEnd = segStart + COURT_SLOT_GRID_STEP_MINUTES;
     const overlap = bookings.find(
       (b) =>
         gridKeySet.has(`${b.courtKind}:${b.courtId}`) &&
@@ -742,7 +747,7 @@ export class BookingsService {
   }
 
   /**
-   * Full-day (or window) timeline in fixed 30-minute segments for one facility/court.
+   * Full-day (or window) timeline in fixed hourly segments for one facility/court.
    * `useWorkingHours` is an optional display overlay for grid bounds; booking enforcement
    * is still driven by existing bookings + slot blocks. Use `availableOnly` to return only
    * bookable (free) segments for pickers.
@@ -800,7 +805,7 @@ export class BookingsService {
                 date: dateOnly,
                 kind: params.kind,
                 courtId: params.courtId,
-                segmentMinutes: 30,
+                segmentMinutes: COURT_SLOT_GRID_STEP_MINUTES,
                 gridStartTime: win.open,
                 gridEndTime: win.close,
                 workingHoursApplied,
@@ -820,7 +825,7 @@ export class BookingsService {
                 date: dateOnly,
                 kind: params.kind,
                 courtId: params.courtId,
-                segmentMinutes: 30,
+                segmentMinutes: COURT_SLOT_GRID_STEP_MINUTES,
                 gridStartTime: startT,
                 gridEndTime: endT,
                 workingHoursApplied,
@@ -856,8 +861,9 @@ export class BookingsService {
     );
 
     const segments: CourtSlotGridSegment[] = [];
-    for (let segStart = startMin; segStart < endMin; segStart += 30) {
-      const segEnd = segStart + 30;
+    const step = COURT_SLOT_GRID_STEP_MINUTES;
+    for (let segStart = startMin; segStart < endMin; segStart += step) {
+      const segEnd = segStart + step;
       const segStartLabel = minutesToTimeString(segStart);
       if (dayClosedByWorkingHours) {
         segments.push({
@@ -908,7 +914,7 @@ export class BookingsService {
       date: dateOnly,
       kind: params.kind,
       courtId: params.courtId,
-      segmentMinutes: 30,
+      segmentMinutes: COURT_SLOT_GRID_STEP_MINUTES,
       gridStartTime: minutesToTimeString(startMin),
       gridEndTime: minutesToTimeString(endMin),
       workingHoursApplied: workingHoursApplied || undefined,
@@ -1008,19 +1014,20 @@ export class BookingsService {
     startTime: string,
     endTime: string,
   ): { startMin: number; endMin: number } {
+    const step = COURT_SLOT_GRID_STEP_MINUTES;
     const startMin = toMinutes(startTime);
     const endMin = endTime === '24:00' ? 24 * 60 : toMinutes(endTime);
     if (endMin <= startMin) {
       throw new BadRequestException('endTime must be after startTime');
     }
-    if (startMin % 30 !== 0 || endMin % 30 !== 0) {
+    if (startMin % step !== 0 || endMin % step !== 0) {
       throw new BadRequestException(
-        'startTime and endTime must be on 30-minute boundaries',
+        `startTime and endTime must be on ${step}-minute (hourly) boundaries`,
       );
     }
-    if ((endMin - startMin) % 30 !== 0) {
+    if ((endMin - startMin) % step !== 0) {
       throw new BadRequestException(
-        'Grid window length must be a multiple of 30 minutes',
+        `Grid window length must be a multiple of ${step} minutes`,
       );
     }
     return { startMin, endMin };
@@ -1038,10 +1045,11 @@ export class BookingsService {
   }
 
   private assertSlotBlockStartTime(time: string): void {
+    const step = COURT_SLOT_GRID_STEP_MINUTES;
     const m = toMinutes(time);
-    if (m < 0 || m > 23 * 60 + 30 || m % 30 !== 0) {
+    if (m < 0 || m >= 24 * 60 || m % step !== 0) {
       throw new BadRequestException(
-        'startTime must be a 30-minute slot start between 00:00 and 23:30',
+        `startTime must be an hourly slot start between 00:00 and 23:00 (${step}-minute grid)`,
       );
     }
   }
@@ -1192,7 +1200,8 @@ export class BookingsService {
     );
     const startM = toMinutes(item.startTime);
     const endM = toMinutes(item.endTime);
-    for (let m = startM; m < endM; m += 30) {
+    const step = COURT_SLOT_GRID_STEP_MINUTES;
+    for (let m = startM; m < endM; m += step) {
       const key = minutesToTimeString(m);
       if (blocked.has(key)) {
         throw new BadRequestException(
@@ -1431,10 +1440,11 @@ export class BookingsService {
     return startAMins < endBMins && startBMins < endAMins;
   }
 
-  private assertFutureHalfHourBooking(
+  private assertFutureSlotBooking(
     bookingDate: string,
     item: CreateBookingItemDto,
   ): void {
+    const step = COURT_SLOT_GRID_STEP_MINUTES;
     const startMins = toMinutes(item.startTime);
     const endMins = toMinutes(item.endTime);
     if (endMins <= startMins) {
@@ -1442,12 +1452,14 @@ export class BookingsService {
     }
 
     const duration = endMins - startMins;
-    if (duration < 30) {
-      throw new BadRequestException('Booking duration must be at least 30 minutes');
-    }
-    if (startMins % 30 !== 0 || endMins % 30 !== 0 || duration % 30 !== 0) {
+    if (duration < step) {
       throw new BadRequestException(
-        'startTime/endTime must be on 30-minute intervals',
+        `Booking duration must be at least ${step} minutes`,
+      );
+    }
+    if (startMins % step !== 0 || endMins % step !== 0 || duration % step !== 0) {
+      throw new BadRequestException(
+        `startTime/endTime must be on ${step}-minute (hourly) intervals`,
       );
     }
 
@@ -1455,10 +1467,10 @@ export class BookingsService {
     if (Number.isNaN(startAt.getTime())) {
       throw new BadRequestException('Invalid bookingDate/startTime');
     }
-    const minStart = new Date(Date.now() + 30 * 60 * 1000);
+    const minStart = new Date(Date.now() + step * 60 * 1000);
     if (startAt.getTime() < minStart.getTime()) {
       throw new BadRequestException(
-        'Bookings must be scheduled at least 30 minutes in the future',
+        `Bookings must be scheduled at least ${step} minutes in the future`,
       );
     }
   }

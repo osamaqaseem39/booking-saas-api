@@ -13,7 +13,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { isUUID } from 'class-validator';
-import { COURT_KINDS, type CourtKind } from './booking.types';
+import {
+  COURT_KINDS,
+  COURT_SLOT_GRID_STEP_MINUTES,
+  type CourtKind,
+} from './booking.types';
 import { BookingAvailabilityQueryDto } from './dto/booking-availability-query.dto';
 import { CourtSlotGridQueryDto } from './dto/court-slot-grid-query.dto';
 import { CourtSlotsQueryDto } from './dto/court-slots-query.dto';
@@ -176,7 +180,7 @@ export class BookingsController {
         date: query.date,
         kind: courtKind as CourtKind,
         courtId,
-        segmentMinutes: 30 as const,
+        segmentMinutes: COURT_SLOT_GRID_STEP_MINUTES,
         gridStartTime: query.startTime ?? '00:00',
         gridEndTime: query.endTime ?? '24:00',
         segments: [],

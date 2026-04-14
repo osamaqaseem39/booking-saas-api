@@ -8,6 +8,7 @@ import { Repository } from 'typeorm';
 import type { CreateTimeSlotTemplateDto } from './dto/create-time-slot-template.dto';
 import type { UpdateTimeSlotTemplateDto } from './dto/update-time-slot-template.dto';
 import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
+import { COURT_SLOT_GRID_STEP_MINUTES } from './booking.types';
 
 function toMinutes(time: string): number {
   if (time === '24:00') return 24 * 60;
@@ -48,9 +49,9 @@ export class TimeSlotTemplatesService {
       if (m < 0 || m >= 24 * 60) {
         throw new BadRequestException(`Invalid slot start time: ${t}`);
       }
-      if (m % 30 !== 0) {
+      if (m % COURT_SLOT_GRID_STEP_MINUTES !== 0) {
         throw new BadRequestException(
-          `Slot starts must fall on 30-minute boundaries: ${t}`,
+          `Slot starts must fall on ${COURT_SLOT_GRID_STEP_MINUTES}-minute boundaries: ${t}`,
         );
       }
       if (seen.has(m)) continue;

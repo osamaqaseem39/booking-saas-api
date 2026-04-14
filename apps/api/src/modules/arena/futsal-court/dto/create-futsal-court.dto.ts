@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
-  IsDivisibleBy,
   IsIn,
   IsInt,
   Min,
@@ -147,8 +146,7 @@ export class CreateFutsalCourtDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(60)
-  @IsDivisibleBy(30)
+  @IsIn([60])
   slotDurationMinutes?: number;
 
   @IsOptional()

@@ -17,7 +17,7 @@ export class TenantTimeSlotTemplate {
   @Column({ type: 'varchar', length: 120 })
   name!: string;
 
-  /** 30-minute-aligned HH:mm start times (booking grid), sorted ascending. */
+  /** Hourly-aligned HH:mm start times (booking grid), sorted ascending. */
   @Column({ type: 'jsonb' })
   slotStarts!: string[];
 

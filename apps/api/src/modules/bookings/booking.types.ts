@@ -39,4 +39,7 @@ export const COURT_KINDS = [
   'cricket_court',
   'padel_court',
 ] as const;
+
+/** Booking calendar grid: slot grid, facility rows, blocks, and template starts use this step. */
+export const COURT_SLOT_GRID_STEP_MINUTES = 60 as const;
 export type CourtKind = (typeof COURT_KINDS)[number];

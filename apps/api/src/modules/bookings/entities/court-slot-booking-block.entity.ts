@@ -2,7 +2,7 @@ import { Column, CreateDateColumn, Entity, PrimaryGeneratedColumn } from 'typeor
 import type { CourtKind } from '../booking.types';
 
 /**
- * Admin-disabled 30-minute booking window for a court on a calendar date.
+ * Admin-disabled hourly booking window for a court on a calendar date.
  * Presence of a row = booking is turned off for that segment start (HH:mm).
  */
 @Entity({ name: 'court_slot_booking_blocks' })
@@ -22,7 +22,7 @@ export class CourtSlotBookingBlock {
   @Column({ type: 'date' })
   blockDate!: string;
 
-  /** Start of the 30-minute segment (HH:mm, 24h). */
+  /** Start of the hourly segment (HH:mm, 24h). */
   @Column({ type: 'varchar', length: 5 })
   startTime!: string;
 

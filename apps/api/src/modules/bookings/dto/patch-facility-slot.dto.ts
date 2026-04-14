@@ -5,7 +5,7 @@ export class PatchFacilitySlotDto {
   date!: string;
 
   @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
-    message: 'startTime must be HH:mm on a 30-minute boundary',
+    message: 'startTime must be HH:mm on an hourly boundary',
   })
   startTime!: string;
 

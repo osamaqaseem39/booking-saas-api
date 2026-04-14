@@ -3,6 +3,7 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
@@ -122,9 +123,9 @@ export class CreatePadelCourtDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
-  @IsIn([60, 90])
-  slotDurationMinutes?: 60 | 90;
+  @IsInt()
+  @IsIn([60])
+  slotDurationMinutes?: 60;
 
   @IsOptional()
   @Type(() => Number)
