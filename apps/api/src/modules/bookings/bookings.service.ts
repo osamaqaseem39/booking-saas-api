@@ -413,7 +413,7 @@ export class BookingsService {
     }
 
     for (const item of dto.items) {
-      this.assertFutureSlotBooking(dto.bookingDate, item);
+      this.assertFutureSlotBooking(dto.bookingDate, item, dto.allowImmediate === true);
       await this.assertCourtValidForSport(tenantId, dto.sportType, item);
       await this.assertItemFitsTemplate(tenantId, item);
       await this.assertItemSegmentsNotBlocked(tenantId, dto.bookingDate, item);
@@ -1578,6 +1578,7 @@ export class BookingsService {
   private assertFutureSlotBooking(
     bookingDate: string,
     item: CreateBookingItemDto,
+    allowImmediate = false,
   ): void {
     const step = COURT_SLOT_GRID_STEP_MINUTES;
     const startMins = toMinutes(item.startTime);
@@ -1602,10 +1603,12 @@ export class BookingsService {
     if (Number.isNaN(startAt.getTime())) {
       throw new BadRequestException('Invalid bookingDate/startTime');
     }
-    const minStart = new Date(Date.now() + step * 60 * 1000);
+    const minStart = allowImmediate ? new Date() : new Date(Date.now() + step * 60 * 1000);
     if (startAt.getTime() < minStart.getTime()) {
       throw new BadRequestException(
-        `Bookings must be scheduled at least ${step} minutes in the future`,
+        allowImmediate
+          ? 'Booking start time cannot be in the past'
+          : `Bookings must be scheduled at least ${step} minutes in the future`,
       );
     }
   }
