@@ -17,6 +17,7 @@ import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
+import { ListBusinessLocationsQueryDto } from './dto/list-business-locations-query.dto';
 import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
 import { SearchLocationsQueryDto } from './dto/search-locations-query.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
@@ -58,7 +59,11 @@ export class BusinessesController {
   }
 
   @Get('locations')
-  async listLocations(@Req() req: Request) {
+  async listLocations(
+    @Req() req: Request,
+    @Query() query: ListBusinessLocationsQueryDto,
+  ) {
+    const name = query.name?.trim() || undefined;
     const userId = await this.tryAccessTokenUserId(req);
     if (
       userId &&
@@ -68,9 +73,10 @@ export class BusinessesController {
       return this.businessesService.listLocationsForConsole(
         userId,
         tenantHeader,
+        name,
       );
     }
-    return this.businessesService.listAllLocationsPublic();
+    return this.businessesService.listAllLocationsPublic(name);
   }
 
   @Get('locations/cities')

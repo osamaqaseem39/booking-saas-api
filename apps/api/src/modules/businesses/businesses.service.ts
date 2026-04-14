@@ -517,21 +517,26 @@ export class BusinessesService {
   async listLocationsForConsole(
     requesterUserId: string,
     tenantIdFilter?: string | null,
+    nameFilter?: string | null,
   ): Promise<
     Awaited<ReturnType<BusinessesService['listLocationsForRequester']>>
   > {
     await this.iamService.assertRequesterActive(requesterUserId);
-    const rows = await this.listLocationsForRequester(requesterUserId);
+    let rows = await this.listLocationsForRequester(requesterUserId);
     const tid = tenantIdFilter?.trim() || null;
-    if (!tid) return rows;
-    return rows.filter((r) => (r.business?.tenantId ?? '').trim() === tid);
+    if (tid) {
+      rows = rows.filter((r) => (r.business?.tenantId ?? '').trim() === tid);
+    }
+    return this.filterLocationRowsByName(rows, nameFilter);
   }
 
   /**
    * Public / unauthenticated listing: all locations (e.g. end-user discovery).
    * Each row includes active facility court summaries and derived counts.
+   *
+   * @param nameFilter optional case-insensitive substring on `BusinessLocation.name`.
    */
-  async listAllLocationsPublic() {
+  async listAllLocationsPublic(nameFilter?: string | null) {
     let allLocations: BusinessLocation[];
     try {
       allLocations = await this.locationsRepository.find({
@@ -557,10 +562,20 @@ export class BusinessesService {
       throw error;
     }
     const businessById = new Map(businesses.map((b) => [b.id, b]));
-    return this.buildLocationListRowsWithFacilityInfo(
+    const rows = await this.buildLocationListRowsWithFacilityInfo(
       allLocations,
       businessById,
     );
+    return this.filterLocationRowsByName(rows, nameFilter);
+  }
+
+  private filterLocationRowsByName<T extends { name?: string | null }>(
+    rows: T[],
+    nameFilter?: string | null,
+  ): T[] {
+    const n = nameFilter?.trim().toLowerCase();
+    if (!n) return rows;
+    return rows.filter((r) => (r.name ?? '').toLowerCase().includes(n));
   }
 
   /**
@@ -865,8 +880,13 @@ export class BusinessesService {
   }
 
   /**
-   * Filter public locations by optional cities / locationType, and optionally
+   * Filter public locations by optional cities / `locationType`, and optionally
    * `bookingStatus=unbooked` with `date` + `startTime`/`endTime` (HH:mm, supports crossing midnight).
+   *
+   * **`locationType`:** either the location’s site kind (e.g. `arena`, `gaming-zone`) or a facility
+   * token: `futsal`, `cricket`, `padel` (also `futsal-court`, …). Facility tokens keep venues that
+   * have at least one active bookable court of that kind (dual turf counts for both sports). With
+   * `unbooked`, only court keys for that sport are considered for the free-window check.
    *
    * **Availability (unbooked):** loads non-cancelled booking items on `date` (and next calendar day if
    * the window crosses midnight), builds a set of `courtKind:courtId` keys whose booked intervals
@@ -891,10 +911,13 @@ export class BusinessesService {
       });
     }
 
+    const sportFromLocationType = dto.locationType?.trim()
+      ? this.parseFacilitySportFilterToken(dto.locationType)
+      : null;
+
     if (dto.locationType?.trim()) {
-      const want = dto.locationType.trim().toLowerCase();
-      filtered = filtered.filter(
-        (r) => (r.locationType ?? '').trim().toLowerCase() === want,
+      filtered = filtered.filter((r) =>
+        this.matchesLocationTypeOrFacilityFilter(r, dto.locationType as string),
       );
     }
 
@@ -922,13 +945,71 @@ export class BusinessesService {
     const courtsByLocation = await this.loadCourtKeysByLocationId(locationIds);
 
     const matched = filtered.filter((loc) => {
-      const courts = courtsByLocation.get(loc.id) ?? [];
+      const allKeys = courtsByLocation.get(loc.id) ?? [];
+      if (allKeys.length === 0) {
+        return false;
+      }
+      const courts = sportFromLocationType
+        ? this.filterCourtKeysByFacilitySport(allKeys, sportFromLocationType)
+        : allKeys;
       if (courts.length === 0) {
         return false;
       }
       return courts.some((key) => !busyKeys.has(key));
     });
     return matched.map((r) => this.toVenueMapMarker(r));
+  }
+
+  /**
+   * When `locationType` is a facility token, match active bookable courts of that kind only.
+   * Otherwise match `BusinessLocation.locationType` (case-insensitive).
+   */
+  private matchesLocationTypeOrFacilityFilter(
+    row: {
+      locationType?: string;
+      facilityCounts?: Record<'futsal' | 'cricket' | 'padel', number>;
+    },
+    locationTypeQuery: string,
+  ): boolean {
+    const want = locationTypeQuery.trim();
+    if (!want) {
+      return true;
+    }
+    const sport = this.parseFacilitySportFilterToken(want);
+    if (sport) {
+      return (row.facilityCounts?.[sport] ?? 0) > 0;
+    }
+    return (row.locationType ?? '').trim().toLowerCase() === want.toLowerCase();
+  }
+
+  /** Recognise `futsal` / `cricket` / `padel` (+ `-court` / `_court` variants) for search filters. */
+  private parseFacilitySportFilterToken(
+    raw: string,
+  ): 'futsal' | 'cricket' | 'padel' | null {
+    const t = raw.trim().toLowerCase().replace(/_/g, '-');
+    if (t === 'futsal' || t === 'futsal-court') {
+      return 'futsal';
+    }
+    if (t === 'cricket' || t === 'cricket-court') {
+      return 'cricket';
+    }
+    if (t === 'padel' || t === 'padel-court') {
+      return 'padel';
+    }
+    return null;
+  }
+
+  private filterCourtKeysByFacilitySport(
+    keys: string[],
+    sport: 'futsal' | 'cricket' | 'padel',
+  ): string[] {
+    const prefix =
+      sport === 'futsal'
+        ? 'futsal_court:'
+        : sport === 'cricket'
+          ? 'cricket_court:'
+          : 'padel_court:';
+    return keys.filter((k) => k.startsWith(prefix));
   }
 
   private parseCitiesFilter(cities?: string): Set<string> | null {
