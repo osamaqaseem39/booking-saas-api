@@ -30,6 +30,7 @@ import { CourtFacilitySlot } from './entities/court-facility-slot.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { Booking } from './entities/booking.entity';
 import { getWorkingDayWindow } from './working-hours.util';
+import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
 
 function dec(n: number): string {
   return Number(n).toFixed(2);
@@ -251,6 +252,8 @@ export class BookingsService {
     private readonly slotBlockRepo: Repository<CourtSlotBookingBlock>,
     @InjectRepository(CourtFacilitySlot)
     private readonly facilitySlotRepo: Repository<CourtFacilitySlot>,
+    @InjectRepository(TenantTimeSlotTemplate)
+    private readonly slotTemplateRepo: Repository<TenantTimeSlotTemplate>,
   ) {}
 
   /** Map key `${courtKind}:${courtId}` → business location id (first item of each booking). */
@@ -405,6 +408,7 @@ export class BookingsService {
     for (const item of dto.items) {
       this.assertFutureSlotBooking(dto.bookingDate, item);
       await this.assertCourtValidForSport(tenantId, dto.sportType, item);
+      await this.assertItemFitsTemplate(tenantId, item);
       await this.assertItemSegmentsNotBlocked(tenantId, dto.bookingDate, item);
       await this.assertNoBookingOverlapForItem(tenantId, dto.bookingDate, item);
     }
@@ -594,12 +598,23 @@ export class BookingsService {
       params.courtId,
       dateOnly,
     );
+    const templateStarts = await this.getCourtTemplateStartSet(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+    const templateStarts = await this.getCourtTemplateStartSet(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
 
     const slots: CourtSlotsApiRow['slots'] = [];
     const step = COURT_SLOT_GRID_STEP_MINUTES;
     for (let segStart = startMin; segStart < endMin; segStart += step) {
       const segEnd = segStart + step;
       const segStartLabel = minutesToTimeString(segStart);
+      if (!templateStarts.has(segStartLabel)) continue;
       const segEndLabel = minutesToTimeString(segEnd);
       const overlap = bookings.find((b) =>
         this.segmentOverlapsMinutes(
@@ -658,14 +673,51 @@ export class BookingsService {
     const rows: Partial<CourtFacilitySlot>[] = [];
     const step = COURT_SLOT_GRID_STEP_MINUTES;
     for (const k of keys) {
+      const allowedStarts = await this.getCourtTemplateStartSet(
+        tenantId,
+        k.kind,
+        k.courtId,
+      );
+      if (allowedStarts.size === 0) {
+        await this.facilitySlotRepo.delete({
+          tenantId,
+          courtKind: k.kind,
+          courtId: k.courtId,
+          slotDate: dateOnly,
+        });
+        continue;
+      }
+      const existing = await this.facilitySlotRepo.find({
+        where: {
+          tenantId,
+          courtKind: k.kind,
+          courtId: k.courtId,
+          slotDate: dateOnly,
+        },
+        select: ['startTime'],
+      });
+      const staleStarts = existing
+        .map((r) => r.startTime)
+        .filter((s) => !allowedStarts.has(s));
+      if (staleStarts.length > 0) {
+        await this.facilitySlotRepo.delete({
+          tenantId,
+          courtKind: k.kind,
+          courtId: k.courtId,
+          slotDate: dateOnly,
+          startTime: In(staleStarts),
+        });
+      }
       for (let segStart = 0; segStart < 24 * 60; segStart += step) {
         const segEnd = segStart + step;
+        const segStartLabel = minutesToTimeString(segStart);
+        if (!allowedStarts.has(segStartLabel)) continue;
         rows.push({
           tenantId,
           courtKind: k.kind,
           courtId: k.courtId,
           slotDate: dateOnly,
-          startTime: minutesToTimeString(segStart),
+          startTime: segStartLabel,
           endTime: minutesToTimeString(segEnd),
           status: 'available',
         });
@@ -697,6 +749,14 @@ export class BookingsService {
     const dateOnly = formatDateOnly(params.date);
     this.assertSlotBlockStartTime(params.startTime);
     await this.assertCourtExistsForTenant(tenantId, params.kind, params.courtId);
+    const templateStarts = await this.getCourtTemplateStartSet(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+    if (!templateStarts.has(params.startTime)) {
+      throw new BadRequestException('This start time is outside the facility template');
+    }
 
     const gridKeys = await this.resolveBookingLinkedCourtKeys(
       tenantId,
@@ -865,6 +925,7 @@ export class BookingsService {
     for (let segStart = startMin; segStart < endMin; segStart += step) {
       const segEnd = segStart + step;
       const segStartLabel = minutesToTimeString(segStart);
+      if (!templateStarts.has(segStartLabel)) continue;
       if (dayClosedByWorkingHours) {
         segments.push({
           startTime: segStartLabel,
@@ -937,6 +998,14 @@ export class BookingsService {
     const dateOnly = formatDateOnly(params.date);
     this.assertSlotBlockStartTime(params.startTime);
     await this.assertCourtExistsForTenant(tenantId, params.kind, params.courtId);
+    const templateStarts = await this.getCourtTemplateStartSet(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+    if (!templateStarts.has(params.startTime)) {
+      throw new BadRequestException('This start time is outside the facility template');
+    }
 
     const blockKeys = await this.resolveBookingLinkedCourtKeys(
       tenantId,
@@ -1008,6 +1077,42 @@ export class BookingsService {
       default:
         return null;
     }
+  }
+
+  private async getCourtTemplateStartSet(
+    tenantId: string,
+    kind: CourtKind,
+    courtId: string,
+  ): Promise<Set<string>> {
+    let templateId: string | null = null;
+    if (kind === 'futsal_court') {
+      const row = await this.futsalCourtRepo.findOne({
+        where: { id: courtId, tenantId },
+        select: ['timeSlotTemplateId'],
+      });
+      templateId = row?.timeSlotTemplateId ?? null;
+    } else if (kind === 'cricket_court') {
+      const row = await this.cricketCourtRepo.findOne({
+        where: { id: courtId, tenantId },
+        select: ['timeSlotTemplateId'],
+      });
+      templateId = row?.timeSlotTemplateId ?? null;
+    } else {
+      const row = await this.padelRepo.findOne({
+        where: { id: courtId, tenantId },
+        select: ['timeSlotTemplateId'],
+      });
+      templateId = row?.timeSlotTemplateId ?? null;
+    }
+    if (!templateId) return new Set<string>();
+    const tpl = await this.slotTemplateRepo.findOne({
+      where: { id: templateId, tenantId },
+      select: ['slotStarts'],
+    });
+    const starts = Array.isArray(tpl?.slotStarts) ? tpl.slotStarts : [];
+    return new Set(
+      starts.filter((s): s is string => typeof s === 'string' && s.trim().length > 0),
+    );
   }
 
   private parseSlotGridWindow(
@@ -1152,6 +1257,33 @@ export class BookingsService {
       ) {
         throw new BadRequestException(
           'That time range is already booked for this pitch',
+        );
+      }
+    }
+  }
+
+  private async assertItemFitsTemplate(
+    tenantId: string,
+    item: CreateBookingItemDto,
+  ): Promise<void> {
+    const templateStarts = await this.getCourtTemplateStartSet(
+      tenantId,
+      item.courtKind,
+      item.courtId,
+    );
+    if (templateStarts.size === 0) {
+      throw new BadRequestException(
+        'This facility has no time slot template assigned. Assign a template before booking.',
+      );
+    }
+    const step = COURT_SLOT_GRID_STEP_MINUTES;
+    const startMins = toMinutes(item.startTime);
+    const endMins = toMinutes(item.endTime);
+    for (let m = startMins; m < endMins; m += step) {
+      const segStart = minutesToTimeString(m);
+      if (!templateStarts.has(segStart)) {
+        throw new BadRequestException(
+          `Booking not allowed: ${segStart} is outside the facility template`,
         );
       }
     }
