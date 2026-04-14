@@ -22,7 +22,7 @@ export class CourtFacilitySlots1711000000027 implements MigrationInterface {
         "updatedAt" timestamptz NOT NULL DEFAULT now(),
         CONSTRAINT "PK_court_facility_slots" PRIMARY KEY ("id"),
         CONSTRAINT "UQ_court_facility_slots_key" UNIQUE ("tenantId", "courtKind", "courtId", "slotDate", "startTime"),
-        CONSTRAINT "CHK_court_facility_slots_status" CHECK ("status" IN ('available', 'blocked'))
+        CONSTRAINT "CHK_court_facility_slots_status" CHECK ("status" IN ('available', 'blocked', 'booked'))
       )
     `);
     await queryRunner.query(`

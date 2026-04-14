@@ -449,6 +449,7 @@ export class BookingsService {
       where: { id: saved.id },
       relations: ['items'],
     });
+    await this.syncFacilitySlotStatusesForBooking(tenantId, full);
     const courtToLocation = await this.resolveCourtToBusinessLocationMap(tenantId, [full]);
     return this.toApi(full, courtToLocation);
   }
@@ -507,6 +508,7 @@ export class BookingsService {
     }
 
     await this.bookingRepo.save(booking);
+    await this.syncFacilitySlotStatusesForBooking(tenantId, booking);
     return this.getOne(tenantId, bookingId);
   }
 
@@ -1150,12 +1152,147 @@ export class BookingsService {
           merged.set(row.startTime, { endTime: row.endTime, status: row.status });
           continue;
         }
-        if (prev.status !== 'blocked' && row.status === 'blocked') {
+        if (prev.status === 'blocked') continue;
+        if (row.status === 'blocked') {
           merged.set(row.startTime, { endTime: row.endTime, status: 'blocked' });
+          continue;
+        }
+        if (prev.status === 'available' && row.status === 'booked') {
+          merged.set(row.startTime, { endTime: row.endTime, status: 'booked' });
         }
       }
     }
     return merged;
+  }
+
+  private async syncFacilitySlotStatusesForBooking(
+    tenantId: string,
+    booking: Booking,
+  ): Promise<void> {
+    const isConfirmedBooking = booking.bookingStatus === 'confirmed';
+    const dateOnly = formatDateOnly(booking.bookingDate);
+    const step = COURT_SLOT_GRID_STEP_MINUTES;
+
+    for (const item of booking.items ?? []) {
+      await this.ensureFacilitySlotsForDate(
+        tenantId,
+        item.courtKind,
+        item.courtId,
+        dateOnly,
+      );
+      const keys = await this.resolveBookingLinkedCourtKeys(
+        tenantId,
+        item.courtKind,
+        item.courtId,
+      );
+      const markBooked = isConfirmedBooking && item.itemStatus === 'confirmed';
+      const startM = toMinutes(item.startTime);
+      const endM = toMinutes(item.endTime);
+
+      for (let m = startM; m < endM; m += step) {
+        const segStart = minutesToTimeString(m);
+        const segEnd = minutesToTimeString(m + step);
+        for (const k of keys) {
+          const existing = await this.facilitySlotRepo.findOne({
+            where: {
+              tenantId,
+              courtKind: k.kind,
+              courtId: k.courtId,
+              slotDate: dateOnly,
+              startTime: segStart,
+            },
+            select: ['status', 'endTime'],
+          });
+          if (!existing) continue;
+          if (existing.status === 'blocked') continue;
+
+          if (markBooked) {
+            if (existing.status !== 'booked') {
+              await this.facilitySlotRepo.upsert(
+                {
+                  tenantId,
+                  courtKind: k.kind,
+                  courtId: k.courtId,
+                  slotDate: dateOnly,
+                  startTime: segStart,
+                  endTime: existing.endTime || segEnd,
+                  status: 'booked',
+                },
+                {
+                  conflictPaths: [
+                    'tenantId',
+                    'courtKind',
+                    'courtId',
+                    'slotDate',
+                    'startTime',
+                  ],
+                },
+              );
+            }
+            continue;
+          }
+
+          if (existing.status !== 'booked') continue;
+          const stillBookedByAnother = await this.hasOtherConfirmedBookingForSegment(
+            tenantId,
+            dateOnly,
+            k.kind,
+            k.courtId,
+            segStart,
+            segEnd,
+            booking.id,
+          );
+          if (!stillBookedByAnother) {
+            await this.facilitySlotRepo.upsert(
+              {
+                tenantId,
+                courtKind: k.kind,
+                courtId: k.courtId,
+                slotDate: dateOnly,
+                startTime: segStart,
+                endTime: existing.endTime || segEnd,
+                status: 'available',
+              },
+              {
+                conflictPaths: [
+                  'tenantId',
+                  'courtKind',
+                  'courtId',
+                  'slotDate',
+                  'startTime',
+                ],
+              },
+            );
+          }
+        }
+      }
+    }
+  }
+
+  private async hasOtherConfirmedBookingForSegment(
+    tenantId: string,
+    dateOnly: string,
+    courtKind: CourtKind,
+    courtId: string,
+    segmentStart: string,
+    segmentEnd: string,
+    bookingIdToExclude: string,
+  ): Promise<boolean> {
+    const overlapCount = await this.bookingRepo
+      .createQueryBuilder('b')
+      .innerJoin('b.items', 'i')
+      .where('b.tenantId = :tenantId', { tenantId })
+      .andWhere('b.bookingDate = :dateOnly', { dateOnly })
+      .andWhere("b.bookingStatus = 'confirmed'")
+      .andWhere("i.itemStatus = 'confirmed'")
+      .andWhere('i.courtKind = :courtKind', { courtKind })
+      .andWhere('i.courtId = :courtId', { courtId })
+      .andWhere('b.id <> :bookingIdToExclude', { bookingIdToExclude })
+      .andWhere('i.startTime < :segmentEnd', { segmentEnd })
+      .andWhere('i.endTime > :segmentStart', { segmentStart })
+      .getCount();
+
+    return overlapCount > 0;
   }
 
   private parseSlotGridWindow(
@@ -1584,8 +1721,8 @@ export class BookingsService {
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
       .andWhere('b.bookingDate = :dateOnly', { dateOnly })
-      .andWhere("b.bookingStatus != 'cancelled'")
-      .andWhere("i.itemStatus != 'cancelled'")
+      .andWhere("b.bookingStatus = 'confirmed'")
+      .andWhere("i.itemStatus = 'confirmed'")
       .select([
         'b.id AS bookingId',
         'i.id AS id',
