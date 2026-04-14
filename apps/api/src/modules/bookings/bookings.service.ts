@@ -1561,10 +1561,34 @@ export class BookingsService {
       );
     }
     if (!sport || sport === 'padel') {
-      const rows = await this.padelRepo.find({
-        where: { tenantId, isActive: true, courtStatus: 'active' },
-        select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
-      });
+      let rows: Array<{
+        id: string;
+        name: string;
+        pricePerSlot?: string;
+        slotDurationMinutes?: number | null;
+      }> = [];
+      try {
+        rows = await this.padelRepo.find({
+          where: { tenantId, isActive: true, courtStatus: 'active' },
+          select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : '';
+        const missingSlotDurationColumn =
+          message.includes('slotdurationminutes') ||
+          message.includes('slot_duration_minutes');
+        if (!missingSlotDurationColumn) throw error;
+        const legacyRows = await this.padelRepo.find({
+          where: { tenantId, isActive: true, courtStatus: 'active' },
+          select: ['id', 'name', 'pricePerSlot'],
+        });
+        rows = legacyRows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          pricePerSlot: row.pricePerSlot,
+          slotDurationMinutes: null,
+        }));
+      }
       out.push(
         ...rows.map((r) => ({
           kind: 'padel_court' as const,
