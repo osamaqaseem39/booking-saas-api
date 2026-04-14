@@ -35,7 +35,10 @@ export class CreateTimeSlotTemplateDto {
   @IsArray()
   @IsOptional()
   @IsString({ each: true })
-  @Matches(HH_MM, { each: true, message: 'each slot start must be HH:mm (24h)' })
+  @Matches(HH_MM, {
+    each: true,
+    message: 'each slot start must be HH:mm (24h)',
+  })
   slotStarts?: string[];
 
   @IsArray()

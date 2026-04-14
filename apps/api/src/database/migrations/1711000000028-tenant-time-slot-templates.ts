@@ -81,6 +81,8 @@ export class TenantTimeSlotTemplates1711000000028 implements MigrationInterface 
     await queryRunner.query(`
       ALTER TABLE "futsal_courts" DROP COLUMN IF EXISTS "timeSlotTemplateId"
     `);
-    await queryRunner.query(`DROP TABLE IF EXISTS "tenant_time_slot_templates"`);
+    await queryRunner.query(
+      `DROP TABLE IF EXISTS "tenant_time_slot_templates"`,
+    );
   }
 }

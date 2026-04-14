@@ -1,8 +1,6 @@
 import type { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class TenantTimeSlotTemplateLineStatus1711000000030
-  implements MigrationInterface
-{
+export class TenantTimeSlotTemplateLineStatus1711000000030 implements MigrationInterface {
   name = 'TenantTimeSlotTemplateLineStatus1711000000030';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

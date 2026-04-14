@@ -57,7 +57,10 @@ export class FutsalCourtService {
     });
   }
 
-  async create(tenantId: string, dto: CreateFutsalCourtDto): Promise<FutsalCourt> {
+  async create(
+    tenantId: string,
+    dto: CreateFutsalCourtDto,
+  ): Promise<FutsalCourt> {
     this.requireTenant(tenantId);
     const location = await this.businessesService.assertLocationBelongsToTenant(
       dto.businessLocationId,
@@ -143,15 +146,19 @@ export class FutsalCourtService {
     const row = await this.findOne(tenantId, id);
 
     if (dto.businessLocationId !== undefined) {
-      const location = await this.businessesService.assertLocationBelongsToTenant(
-        dto.businessLocationId,
-        tenantId,
-      );
+      const location =
+        await this.businessesService.assertLocationBelongsToTenant(
+          dto.businessLocationId,
+          tenantId,
+        );
       assertFacilityTypeAllowedForLocation(location, 'futsal');
     }
 
     const patch: Partial<FutsalCourt> = {};
-    const assign = <K extends keyof FutsalCourt>(key: K, val: FutsalCourt[K]) => {
+    const assign = <K extends keyof FutsalCourt>(
+      key: K,
+      val: FutsalCourt[K],
+    ) => {
       if (val !== undefined)
         (patch as Record<string, unknown>)[key as string] = val;
     };

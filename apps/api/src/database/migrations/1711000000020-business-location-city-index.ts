@@ -3,9 +3,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 /**
  * Speeds lookups and future DISTINCT city queries for discovery (e.g. GET /getAllCities).
  */
-export class BusinessLocationCityIndex1711000000020
-  implements MigrationInterface
-{
+export class BusinessLocationCityIndex1711000000020 implements MigrationInterface {
   name = 'BusinessLocationCityIndex1711000000020';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

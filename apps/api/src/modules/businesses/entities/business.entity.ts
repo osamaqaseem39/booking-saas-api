@@ -23,14 +23,18 @@ export class Business {
   owner?: { name?: string; email?: string; phone?: string } | null;
 
   @Column({ type: 'jsonb', nullable: true })
-  subscription?:
-    | { plan?: string; status?: string; billingCycle?: string }
-    | null;
+  subscription?: {
+    plan?: string;
+    status?: string;
+    billingCycle?: string;
+  } | null;
 
   @Column({ type: 'jsonb', nullable: true })
-  settings?:
-    | { timezone?: string; currency?: string; allowOnlinePayments?: boolean }
-    | null;
+  settings?: {
+    timezone?: string;
+    currency?: string;
+    allowOnlinePayments?: boolean;
+  } | null;
 
   @Column({ type: 'varchar', length: 20, default: 'active' })
   status!: string;

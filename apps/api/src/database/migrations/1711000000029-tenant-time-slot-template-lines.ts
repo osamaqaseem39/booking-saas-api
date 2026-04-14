@@ -67,6 +67,8 @@ export class TenantTimeSlotTemplateLines1711000000029 implements MigrationInterf
       ALTER TABLE "tenant_time_slot_template_lines"
       DROP CONSTRAINT IF EXISTS "FK_tenant_time_slot_template_lines_template"
     `);
-    await queryRunner.query(`DROP TABLE IF EXISTS "tenant_time_slot_template_lines"`);
+    await queryRunner.query(
+      `DROP TABLE IF EXISTS "tenant_time_slot_template_lines"`,
+    );
   }
 }

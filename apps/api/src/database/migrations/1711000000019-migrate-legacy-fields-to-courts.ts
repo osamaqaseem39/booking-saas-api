@@ -4,9 +4,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Moves legacy `futsal_fields` / `cricket_indoor_courts` into `futsal_courts` /
  * `cricket_courts` (same UUIDs), remaps booking references, then drops legacy tables.
  */
-export class MigrateLegacyFieldsToCourts1711000000019
-  implements MigrationInterface
-{
+export class MigrateLegacyFieldsToCourts1711000000019 implements MigrationInterface {
   name = 'MigrateLegacyFieldsToCourts1711000000019';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

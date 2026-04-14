@@ -45,7 +45,9 @@ function normalizeTime(value: unknown, fallback: string): string {
   return match ? `${match[1]}:${match[2]}` : fallback;
 }
 
-function parseStringRange(value: string): { open: string; close: string } | null {
+function parseStringRange(
+  value: string,
+): { open: string; close: string } | null {
   const match = value
     .trim()
     .match(/^([01]\d|2[0-3]):([0-5]\d)\s*-\s*([01]\d|2[0-3]):([0-5]\d)$/);

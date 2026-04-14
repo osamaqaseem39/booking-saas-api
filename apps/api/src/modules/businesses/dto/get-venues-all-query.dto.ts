@@ -1,4 +1,10 @@
-import { IsDateString, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import {
+  IsDateString,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from 'class-validator';
 
 /** Query params for GET /getVenues/all (optional filters; response is short map markers: venueId, name, address, lat/lng, logo, bannerImage). */
 export class GetVenuesAllQueryDto {

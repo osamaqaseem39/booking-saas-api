@@ -38,7 +38,9 @@ export class AuthService {
   ) {}
 
   private accessExpiresIn(): string {
-    return process.env.JWT_ACCESS_EXPIRES_IN ?? process.env.JWT_EXPIRES_IN ?? '15m';
+    return (
+      process.env.JWT_ACCESS_EXPIRES_IN ?? process.env.JWT_EXPIRES_IN ?? '15m'
+    );
   }
 
   private refreshExpiresIn(): string {
@@ -73,7 +75,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
     if (!user.isActive) {
-      this.logger.warn(`Login failed: user inactive (${safeEmail}, id=${user.id})`);
+      this.logger.warn(
+        `Login failed: user inactive (${safeEmail}, id=${user.id})`,
+      );
       throw new UnauthorizedException('Invalid email or password');
     }
     if (!user.passwordHash) {
@@ -98,7 +102,9 @@ export class AuthService {
     return { token, refreshToken, user: profile };
   }
 
-  async refresh(dto: RefreshTokenDto): Promise<{ token: string; refreshToken: string }> {
+  async refresh(
+    dto: RefreshTokenDto,
+  ): Promise<{ token: string; refreshToken: string }> {
     try {
       const payload = await this.jwtService.verifyAsync<{
         sub?: string;
@@ -122,9 +128,12 @@ export class AuthService {
     }
   }
 
-  async bootstrapFirstOwner(
-    dto: BootstrapFirstOwnerDto,
-  ): Promise<{ token: string; refreshToken: string; userId: string; email: string }> {
+  async bootstrapFirstOwner(dto: BootstrapFirstOwnerDto): Promise<{
+    token: string;
+    refreshToken: string;
+    userId: string;
+    email: string;
+  }> {
     const configuredSecret = process.env.AUTH_BOOTSTRAP_SECRET?.trim();
     if (!configuredSecret) {
       throw new ForbiddenException('Bootstrap is not enabled on server');
@@ -182,9 +191,12 @@ export class AuthService {
     };
   }
 
-  async registerEndUser(
-    dto: RegisterEndUserDto,
-  ): Promise<{ token: string; refreshToken: string; userId: string; email: string }> {
+  async registerEndUser(dto: RegisterEndUserDto): Promise<{
+    token: string;
+    refreshToken: string;
+    userId: string;
+    email: string;
+  }> {
     const email = dto.email.toLowerCase().trim();
     const safeEmail = this.maskEmail(email);
 
@@ -281,7 +293,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid session');
     }
     if (!user.passwordHash) {
-      throw new BadRequestException('Password login is not set for this account');
+      throw new BadRequestException(
+        'Password login is not set for this account',
+      );
     }
     const ok = await bcrypt.compare(dto.currentPassword, user.passwordHash);
     if (!ok) {
@@ -291,7 +305,9 @@ export class AuthService {
     user.passwordResetTokenHash = null;
     user.passwordResetExpiresAt = null;
     await this.usersRepository.save(user);
-    this.logger.log(`Password changed (${this.maskEmail(user.email)}, id=${user.id})`);
+    this.logger.log(
+      `Password changed (${this.maskEmail(user.email)}, id=${user.id})`,
+    );
     return { ok: true };
   }
 

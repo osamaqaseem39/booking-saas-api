@@ -15,9 +15,6 @@ import { PublicArenaFacilityController } from './public-arena-facility.controlle
     PadelCourtModule,
     GamingStationModule,
   ],
-  controllers: [
-    ArenaMetaController,
-    PublicArenaFacilityController,
-  ],
+  controllers: [ArenaMetaController, PublicArenaFacilityController],
 })
 export class ArenaModule {}

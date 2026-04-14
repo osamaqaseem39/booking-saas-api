@@ -15,7 +15,6 @@ import { IamModule } from './modules/iam/iam.module';
 import { ProductCatalogModule } from './modules/product-catalog/product-catalog.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
-
 function createTypeOrmConfig(): TypeOrmModuleOptions {
   const poolMax = resolvePoolMax();
   const poolIdleTimeoutMs = toPositiveInt(process.env.DB_POOL_IDLE_MS, 10000);
@@ -120,7 +119,9 @@ function pickDatabaseUrl(): string | undefined {
 
 function resolvePoolMax(): number {
   const configured = toPositiveInt(process.env.DB_POOL_MAX, 1);
-  const isServerless = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+  const isServerless =
+    process.env.VERCEL === '1' ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
   // Keep each warm instance tiny; concurrency scales by instances, not per-instance pool.
   const hardCap = isServerless ? 1 : 5;
   return Math.max(1, Math.min(configured, hardCap));

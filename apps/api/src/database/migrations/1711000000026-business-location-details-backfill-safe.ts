@@ -4,9 +4,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Safety migration for environments that may have skipped older startup paths.
  * Keeps schema alignment explicit in migration history.
  */
-export class BusinessLocationDetailsBackfillSafe1711000000026
-  implements MigrationInterface
-{
+export class BusinessLocationDetailsBackfillSafe1711000000026 implements MigrationInterface {
   name = 'BusinessLocationDetailsBackfillSafe1711000000026';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

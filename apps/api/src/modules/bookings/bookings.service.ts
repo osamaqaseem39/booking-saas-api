@@ -225,7 +225,11 @@ export type CourtSlotGridApiRow = {
 export class BookingsService {
   private effectiveStatus(booking: Booking): BookingStatus {
     const current = booking.bookingStatus;
-    if (current === 'cancelled' || current === 'completed' || current === 'no_show') {
+    if (
+      current === 'cancelled' ||
+      current === 'completed' ||
+      current === 'no_show'
+    ) {
       return current;
     }
     const bookingDay = formatDateOnly(booking.bookingDate);
@@ -306,7 +310,10 @@ export class BookingsService {
     return out;
   }
 
-  private toApi(booking: Booking, courtToLocation?: Map<string, string>): BookingApiRow {
+  private toApi(
+    booking: Booking,
+    courtToLocation?: Map<string, string>,
+  ): BookingApiRow {
     const first = booking.items?.[0];
     let arenaId = booking.tenantId;
     if (first && courtToLocation) {
@@ -356,7 +363,10 @@ export class BookingsService {
       relations: ['items'],
       order: { createdAt: 'DESC' },
     });
-    const courtToLocation = await this.resolveCourtToBusinessLocationMap(tenantId, rows);
+    const courtToLocation = await this.resolveCourtToBusinessLocationMap(
+      tenantId,
+      rows,
+    );
     return rows.map((b) => this.toApi(b, courtToLocation));
   }
 
@@ -375,7 +385,10 @@ export class BookingsService {
     }
     const out: BookingApiRow[] = [];
     for (const [tenantId, list] of byTenant) {
-      const courtToLocation = await this.resolveCourtToBusinessLocationMap(tenantId, list);
+      const courtToLocation = await this.resolveCourtToBusinessLocationMap(
+        tenantId,
+        list,
+      );
       for (const b of list) {
         out.push(this.toApi(b, courtToLocation));
       }
@@ -392,7 +405,10 @@ export class BookingsService {
     if (!booking) {
       throw new NotFoundException(`Booking ${bookingId} not found`);
     }
-    const courtToLocation = await this.resolveCourtToBusinessLocationMap(tenantId, [booking]);
+    const courtToLocation = await this.resolveCourtToBusinessLocationMap(
+      tenantId,
+      [booking],
+    );
     return this.toApi(booking, courtToLocation);
   }
 
@@ -406,7 +422,11 @@ export class BookingsService {
     }
 
     for (const item of dto.items) {
-      this.assertFutureSlotBooking(dto.bookingDate, item, dto.allowImmediate === true);
+      this.assertFutureSlotBooking(
+        dto.bookingDate,
+        item,
+        dto.allowImmediate === true,
+      );
       await this.assertCourtValidForSport(tenantId, dto.sportType, item);
       await this.assertItemFitsTemplate(tenantId, dto.bookingDate, item);
       await this.assertItemSegmentsNotBlocked(tenantId, dto.bookingDate, item);
@@ -450,7 +470,10 @@ export class BookingsService {
       relations: ['items'],
     });
     await this.syncFacilitySlotStatusesForBooking(tenantId, full);
-    const courtToLocation = await this.resolveCourtToBusinessLocationMap(tenantId, [full]);
+    const courtToLocation = await this.resolveCourtToBusinessLocationMap(
+      tenantId,
+      [full],
+    );
     return this.toApi(full, courtToLocation);
   }
 
@@ -581,16 +604,19 @@ export class BookingsService {
     const startT = params.startTime ?? '00:00';
     const endT = params.endTime ?? '24:00';
     const { startMin, endMin } = this.parseSlotGridWindow(startT, endT);
-    await this.ensureFacilitySlotsForDate(tenantId, params.kind, params.courtId, dateOnly);
+    await this.ensureFacilitySlotsForDate(
+      tenantId,
+      params.kind,
+      params.courtId,
+      dateOnly,
+    );
     const rows = await this.listBookedItemsForDate(tenantId, dateOnly);
     const gridKeys = await this.resolveBookingLinkedCourtKeys(
       tenantId,
       params.kind,
       params.courtId,
     );
-    const gridKeySet = new Set(
-      gridKeys.map((k) => `${k.kind}:${k.courtId}`),
-    );
+    const gridKeySet = new Set(gridKeys.map((k) => `${k.kind}:${k.courtId}`));
     const bookings = rows
       .filter((it) => gridKeySet.has(`${it.courtKind}:${it.courtId}`))
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -602,7 +628,9 @@ export class BookingsService {
     );
 
     const slots: CourtSlotsApiRow['slots'] = [];
-    const starts = [...slotState.keys()].sort((a, b) => toMinutes(a) - toMinutes(b));
+    const starts = [...slotState.keys()].sort(
+      (a, b) => toMinutes(a) - toMinutes(b),
+    );
     for (const segStartLabel of starts) {
       const seg = slotState.get(segStartLabel);
       if (!seg) continue;
@@ -610,12 +638,7 @@ export class BookingsService {
       const segEnd = toMinutes(seg.endTime);
       if (segStart < startMin || segStart >= endMin) continue;
       const overlap = bookings.find((b) =>
-        this.segmentOverlapsMinutes(
-          segStart,
-          segEnd,
-          b.startTime,
-          b.endTime,
-        ),
+        this.segmentOverlapsMinutes(segStart, segEnd, b.startTime, b.endTime),
       );
       if (overlap) {
         slots.push({
@@ -657,7 +680,11 @@ export class BookingsService {
     params: { kind: CourtKind; courtId: string; date: string },
   ): Promise<{ ok: true; upserted: number }> {
     const dateOnly = formatDateOnly(params.date);
-    await this.assertCourtExistsForTenant(tenantId, params.kind, params.courtId);
+    await this.assertCourtExistsForTenant(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
     const keys = await this.resolveBookingLinkedCourtKeys(
       tenantId,
       params.kind,
@@ -741,8 +768,17 @@ export class BookingsService {
   ): Promise<{ ok: true }> {
     const dateOnly = formatDateOnly(params.date);
     this.assertSlotBlockStartTime(params.startTime);
-    await this.assertCourtExistsForTenant(tenantId, params.kind, params.courtId);
-    await this.ensureFacilitySlotsForDate(tenantId, params.kind, params.courtId, dateOnly);
+    await this.assertCourtExistsForTenant(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+    await this.ensureFacilitySlotsForDate(
+      tenantId,
+      params.kind,
+      params.courtId,
+      dateOnly,
+    );
     const slotState = await this.loadFacilitySlotStateMapMerged(
       tenantId,
       params.kind,
@@ -751,7 +787,9 @@ export class BookingsService {
     );
     const target = slotState.get(params.startTime);
     if (!target) {
-      throw new BadRequestException('This start time is outside facility slots for the selected date');
+      throw new BadRequestException(
+        'This start time is outside facility slots for the selected date',
+      );
     }
 
     const gridKeys = await this.resolveBookingLinkedCourtKeys(
@@ -759,9 +797,7 @@ export class BookingsService {
       params.kind,
       params.courtId,
     );
-    const gridKeySet = new Set(
-      gridKeys.map((k) => `${k.kind}:${k.courtId}`),
-    );
+    const gridKeySet = new Set(gridKeys.map((k) => `${k.kind}:${k.courtId}`));
     const bookings = await this.listBookedItemsForDate(tenantId, dateOnly);
     const segStart = toMinutes(params.startTime);
     const segEnd = segStart + COURT_SLOT_GRID_STEP_MINUTES;
@@ -844,10 +880,7 @@ export class BookingsService {
           select: ['id', 'workingHours'],
         });
         if (loc?.workingHours && typeof loc.workingHours === 'object') {
-          const win = getWorkingDayWindow(
-            loc.workingHours as Record<string, unknown>,
-            dateOnly,
-          );
+          const win = getWorkingDayWindow(loc.workingHours, dateOnly);
           workingHoursApplied = true;
           if (win.closed) {
             locationClosed = true;
@@ -895,7 +928,12 @@ export class BookingsService {
     }
 
     const { startMin, endMin } = this.parseSlotGridWindow(startT, endT);
-    await this.ensureFacilitySlotsForDate(tenantId, params.kind, params.courtId, dateOnly);
+    await this.ensureFacilitySlotsForDate(
+      tenantId,
+      params.kind,
+      params.courtId,
+      dateOnly,
+    );
 
     const rows = await this.listBookedItemsForDate(tenantId, dateOnly);
     const gridKeys = await this.resolveBookingLinkedCourtKeys(
@@ -903,9 +941,7 @@ export class BookingsService {
       params.kind,
       params.courtId,
     );
-    const gridKeySet = new Set(
-      gridKeys.map((k) => `${k.kind}:${k.courtId}`),
-    );
+    const gridKeySet = new Set(gridKeys.map((k) => `${k.kind}:${k.courtId}`));
     const bookings = rows
       .filter((it) => gridKeySet.has(`${it.courtKind}:${it.courtId}`))
       .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -917,7 +953,9 @@ export class BookingsService {
     );
 
     const segments: CourtSlotGridSegment[] = [];
-    const starts = [...slotState.keys()].sort((a, b) => toMinutes(a) - toMinutes(b));
+    const starts = [...slotState.keys()].sort(
+      (a, b) => toMinutes(a) - toMinutes(b),
+    );
     for (const segStartLabel of starts) {
       const seg = slotState.get(segStartLabel);
       if (!seg) continue;
@@ -933,12 +971,7 @@ export class BookingsService {
         continue;
       }
       const overlap = bookings.find((b) =>
-        this.segmentOverlapsMinutes(
-          segStart,
-          segEnd,
-          b.startTime,
-          b.endTime,
-        ),
+        this.segmentOverlapsMinutes(segStart, segEnd, b.startTime, b.endTime),
       );
       if (overlap) {
         segments.push({
@@ -995,14 +1028,20 @@ export class BookingsService {
   ): Promise<{ ok: true }> {
     const dateOnly = formatDateOnly(params.date);
     this.assertSlotBlockStartTime(params.startTime);
-    await this.assertCourtExistsForTenant(tenantId, params.kind, params.courtId);
+    await this.assertCourtExistsForTenant(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
     const templateStarts = await this.getCourtTemplateStartSet(
       tenantId,
       params.kind,
       params.courtId,
     );
     if (!templateStarts.has(params.startTime)) {
-      throw new BadRequestException('This start time is outside the facility template');
+      throw new BadRequestException(
+        'This start time is outside the facility template',
+      );
     }
 
     const blockKeys = await this.resolveBookingLinkedCourtKeys(
@@ -1111,7 +1150,9 @@ export class BookingsService {
       ? tpl.slotLines.map((line) => line.startTime)
       : [];
     return new Set(
-      starts.filter((s): s is string => typeof s === 'string' && s.trim().length > 0),
+      starts.filter(
+        (s): s is string => typeof s === 'string' && s.trim().length > 0,
+      ),
     );
   }
 
@@ -1121,7 +1162,11 @@ export class BookingsService {
     courtId: string,
     dateOnly: string,
   ): Promise<void> {
-    await this.generateDayFacilitySlots(tenantId, { kind, courtId, date: dateOnly });
+    await this.generateDayFacilitySlots(tenantId, {
+      kind,
+      courtId,
+      date: dateOnly,
+    });
   }
 
   /**
@@ -1133,9 +1178,18 @@ export class BookingsService {
     kind: CourtKind,
     courtId: string,
     dateOnly: string,
-  ): Promise<Map<string, { endTime: string; status: CourtFacilitySlot['status'] }>> {
-    const keys = await this.resolveBookingLinkedCourtKeys(tenantId, kind, courtId);
-    const merged = new Map<string, { endTime: string; status: CourtFacilitySlot['status'] }>();
+  ): Promise<
+    Map<string, { endTime: string; status: CourtFacilitySlot['status'] }>
+  > {
+    const keys = await this.resolveBookingLinkedCourtKeys(
+      tenantId,
+      kind,
+      courtId,
+    );
+    const merged = new Map<
+      string,
+      { endTime: string; status: CourtFacilitySlot['status'] }
+    >();
     for (const k of keys) {
       const rows = await this.facilitySlotRepo.find({
         where: {
@@ -1149,12 +1203,18 @@ export class BookingsService {
       for (const row of rows) {
         const prev = merged.get(row.startTime);
         if (!prev) {
-          merged.set(row.startTime, { endTime: row.endTime, status: row.status });
+          merged.set(row.startTime, {
+            endTime: row.endTime,
+            status: row.status,
+          });
           continue;
         }
         if (prev.status === 'blocked') continue;
         if (row.status === 'blocked') {
-          merged.set(row.startTime, { endTime: row.endTime, status: 'blocked' });
+          merged.set(row.startTime, {
+            endTime: row.endTime,
+            status: 'blocked',
+          });
           continue;
         }
         if (prev.status === 'available' && row.status === 'booked') {
@@ -1233,15 +1293,16 @@ export class BookingsService {
           }
 
           if (existing.status !== 'booked') continue;
-          const stillBookedByAnother = await this.hasOtherConfirmedBookingForSegment(
-            tenantId,
-            dateOnly,
-            k.kind,
-            k.courtId,
-            segStart,
-            segEnd,
-            booking.id,
-          );
+          const stillBookedByAnother =
+            await this.hasOtherConfirmedBookingForSegment(
+              tenantId,
+              dateOnly,
+              k.kind,
+              k.courtId,
+              segStart,
+              segEnd,
+              booking.id,
+            );
           if (!stillBookedByAnother) {
             await this.facilitySlotRepo.upsert(
               {
@@ -1428,12 +1489,7 @@ export class BookingsService {
     for (const e of existing) {
       if (!keySet.has(`${e.courtKind}:${e.courtId}`)) continue;
       if (
-        this.timesOverlap(
-          item.startTime,
-          item.endTime,
-          e.startTime,
-          e.endTime,
-        )
+        this.timesOverlap(item.startTime, item.endTime, e.startTime, e.endTime)
       ) {
         throw new BadRequestException(
           'That time range is already booked for this pitch',
@@ -1680,7 +1736,8 @@ export class BookingsService {
           select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message.toLowerCase() : '';
+        const message =
+          error instanceof Error ? error.message.toLowerCase() : '';
         const missingSlotDurationColumn =
           message.includes('slotdurationminutes') ||
           message.includes('slot_duration_minutes');
@@ -1774,7 +1831,11 @@ export class BookingsService {
         `Booking duration must be at least ${step} minutes`,
       );
     }
-    if (startMins % step !== 0 || endMins % step !== 0 || duration % step !== 0) {
+    if (
+      startMins % step !== 0 ||
+      endMins % step !== 0 ||
+      duration % step !== 0
+    ) {
       throw new BadRequestException(
         `startTime/endTime must be on ${step}-minute (hourly) intervals`,
       );
@@ -1784,7 +1845,9 @@ export class BookingsService {
     if (Number.isNaN(startAt.getTime())) {
       throw new BadRequestException('Invalid bookingDate/startTime');
     }
-    const minStart = allowImmediate ? new Date() : new Date(Date.now() + step * 60 * 1000);
+    const minStart = allowImmediate
+      ? new Date()
+      : new Date(Date.now() + step * 60 * 1000);
     if (startAt.getTime() < minStart.getTime()) {
       throw new BadRequestException(
         allowImmediate

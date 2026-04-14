@@ -4,9 +4,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Match JS/dashboard numeric coordinates: decimal(10,6) rounded values and came back
  * as strings from the driver. double precision aligns with normalized 14-digit floats.
  */
-export class BusinessLocationCoordinatesFloat81711000000017
-  implements MigrationInterface
-{
+export class BusinessLocationCoordinatesFloat81711000000017 implements MigrationInterface {
   name = 'BusinessLocationCoordinatesFloat81711000000017';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

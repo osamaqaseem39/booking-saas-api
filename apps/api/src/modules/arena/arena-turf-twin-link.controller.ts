@@ -1,4 +1,10 @@
-import { BadRequestException, Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import type { TenantContext } from '../../tenancy/tenant-context.interface';
 import { Roles } from '../iam/authz/roles.decorator';

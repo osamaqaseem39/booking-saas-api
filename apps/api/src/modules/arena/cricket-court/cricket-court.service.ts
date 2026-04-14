@@ -146,10 +146,11 @@ export class CricketCourtService {
     const row = await this.findOne(tenantId, id);
 
     if (dto.businessLocationId !== undefined) {
-      const location = await this.businessesService.assertLocationBelongsToTenant(
-        dto.businessLocationId,
-        tenantId,
-      );
+      const location =
+        await this.businessesService.assertLocationBelongsToTenant(
+          dto.businessLocationId,
+          tenantId,
+        );
       assertFacilityTypeAllowedForLocation(location, 'cricket');
     }
 

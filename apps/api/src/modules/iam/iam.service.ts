@@ -80,7 +80,9 @@ export class IamService implements OnModuleInit {
     }
     const myCoworkers = new Set(await this.coworkerUserIdsFor(requesterId));
     if (!myCoworkers.has(targetUserId)) {
-      throw new ForbiddenException('You can only manage users in your business');
+      throw new ForbiddenException(
+        'You can only manage users in your business',
+      );
     }
     if (await this.hasAnyRole(targetUserId, ['platform-owner'])) {
       throw new ForbiddenException('Insufficient permissions');
@@ -119,7 +121,10 @@ export class IamService implements OnModuleInit {
           : sortByInput === 'createdat'
             ? 'createdAt'
             : 'createdAt';
-    const sortOrder = sortOrderInput === 'ASC' || sortOrderInput === 'DESC' ? sortOrderInput : 'DESC';
+    const sortOrder =
+      sortOrderInput === 'ASC' || sortOrderInput === 'DESC'
+        ? sortOrderInput
+        : 'DESC';
 
     const query = this.usersRepository
       .createQueryBuilder('user')
@@ -127,12 +132,12 @@ export class IamService implements OnModuleInit {
 
     if (search) {
       query.andWhere(
-        '(LOWER(user.fullName) LIKE :search OR LOWER(user.email) LIKE :search OR LOWER(COALESCE(user.phone, \'\')) LIKE :search)',
+        "(LOWER(user.fullName) LIKE :search OR LOWER(user.email) LIKE :search OR LOWER(COALESCE(user.phone, '')) LIKE :search)",
         { search: `%${search}%` },
       );
     }
 
-    query.orderBy(`user.${sortBy}`, sortOrder as 'ASC' | 'DESC');
+    query.orderBy(`user.${sortBy}`, sortOrder);
     const users = await query.getMany();
     const userIds = users.map((u) => u.id);
     if (userIds.length === 0) return [];

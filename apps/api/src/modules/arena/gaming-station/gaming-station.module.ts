@@ -10,7 +10,11 @@ import { GamingStationService } from './gaming-station.service';
 import { GamingStation } from './entities/gaming-station.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([GamingStation]), IamModule, BusinessesModule],
+  imports: [
+    TypeOrmModule.forFeature([GamingStation]),
+    IamModule,
+    BusinessesModule,
+  ],
   controllers: [GamingStationController, TypedGamingStationController],
   providers: [GamingStationService],
   exports: [GamingStationService],

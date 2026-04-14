@@ -5,9 +5,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * Preserves turf row UUID when the pitch was single-sport; splits `both` into two new UUIDs
  * and remaps booking_items + court_slot_booking_blocks.
  */
-export class SplitTurfIntoFutsalCricketCourts1711000000018
-  implements MigrationInterface
-{
+export class SplitTurfIntoFutsalCricketCourts1711000000018 implements MigrationInterface {
   name = 'SplitTurfIntoFutsalCricketCourts1711000000018';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
@@ -405,7 +403,9 @@ export class SplitTurfIntoFutsalCricketCourts1711000000018
   }
 
   /** Fresh DBs that never had turf_courts (migrations reordered) */
-  private async createEmptySplitTables(queryRunner: QueryRunner): Promise<void> {
+  private async createEmptySplitTables(
+    queryRunner: QueryRunner,
+  ): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "futsal_courts" (
         "id" uuid NOT NULL DEFAULT gen_random_uuid(),

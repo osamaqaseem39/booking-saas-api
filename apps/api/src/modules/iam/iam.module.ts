@@ -12,7 +12,13 @@ import { IamService } from './iam.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([User, Role, UserRole, Business, BusinessMembership]),
+    TypeOrmModule.forFeature([
+      User,
+      Role,
+      UserRole,
+      Business,
+      BusinessMembership,
+    ]),
     JwtModule.register({
       secret:
         process.env.JWT_SECRET ??

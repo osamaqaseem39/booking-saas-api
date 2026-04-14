@@ -1,8 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class BusinessLocationLogoGallery1711000000012
-  implements MigrationInterface
-{
+export class BusinessLocationLogoGallery1711000000012 implements MigrationInterface {
   name = 'BusinessLocationLogoGallery1711000000012';
 
   public async up(queryRunner: QueryRunner): Promise<void> {

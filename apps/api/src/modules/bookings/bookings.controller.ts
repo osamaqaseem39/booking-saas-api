@@ -78,10 +78,7 @@ export class BookingsController {
         bookedSlots: [],
       };
     }
-    return this.bookingsService.getAvailabilityByTime(
-      tenantId,
-      query,
-    );
+    return this.bookingsService.getAvailabilityByTime(tenantId, query);
   }
 
   @Get('time-slot-templates')
@@ -209,13 +206,16 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
-    return this.bookingsService.setCourtSlotBlock(this.requireTenantUuid(tenant), {
-      kind: courtKind as CourtKind,
-      courtId,
-      date: dto.date,
-      startTime: dto.startTime,
-      blocked: dto.blocked,
-    });
+    return this.bookingsService.setCourtSlotBlock(
+      this.requireTenantUuid(tenant),
+      {
+        kind: courtKind as CourtKind,
+        courtId,
+        date: dto.date,
+        startTime: dto.startTime,
+        blocked: dto.blocked,
+      },
+    );
   }
 
   @Post('courts/:courtKind/:courtId/facility-slots/generate')
@@ -269,7 +269,10 @@ export class BookingsController {
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
   ) {
-    return this.bookingsService.getOne(this.requireTenantUuid(tenant), bookingId);
+    return this.bookingsService.getOne(
+      this.requireTenantUuid(tenant),
+      bookingId,
+    );
   }
 
   @Post()

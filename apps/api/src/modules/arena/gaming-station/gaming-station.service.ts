@@ -126,10 +126,11 @@ export class GamingStationService {
     if (dto.businessLocationId !== undefined || dto.setupCode !== undefined) {
       const locationId = dto.businessLocationId ?? row.businessLocationId;
       const setupCode = dto.setupCode ?? row.setupCode;
-      const location = await this.businessesService.assertLocationBelongsToTenant(
-        locationId,
-        tenantId,
-      );
+      const location =
+        await this.businessesService.assertLocationBelongsToTenant(
+          locationId,
+          tenantId,
+        );
       if ((location.locationType ?? '') !== 'gaming-zone') {
         throw new BadRequestException(
           `Location "${location.name}" is not a gaming-zone location.`,
@@ -139,18 +140,23 @@ export class GamingStationService {
     }
 
     const patch: Partial<GamingStation> = {};
-    const assign = <K extends keyof GamingStation>(key: K, val: GamingStation[K]) => {
+    const assign = <K extends keyof GamingStation>(
+      key: K,
+      val: GamingStation[K],
+    ) => {
       if (val !== undefined)
         (patch as Record<string, unknown>)[key as string] = val;
     };
-    if (dto.businessLocationId !== undefined) assign('businessLocationId', dto.businessLocationId);
+    if (dto.businessLocationId !== undefined)
+      assign('businessLocationId', dto.businessLocationId);
     if (dto.setupCode !== undefined) assign('setupCode', dto.setupCode);
     if (dto.name !== undefined) assign('name', dto.name);
     if (dto.unitStatus !== undefined) assign('unitStatus', dto.unitStatus);
     if (dto.isActive !== undefined) assign('isActive', dto.isActive);
     if (dto.description !== undefined) assign('description', dto.description);
     if (dto.imageUrls !== undefined) assign('imageUrls', dto.imageUrls);
-    if (dto.pricePerSlot !== undefined) assign('pricePerSlot', dec(dto.pricePerSlot));
+    if (dto.pricePerSlot !== undefined)
+      assign('pricePerSlot', dec(dto.pricePerSlot));
     if (dto.peakPricing !== undefined) assign('peakPricing', dto.peakPricing);
     if (dto.bundleNote !== undefined) assign('bundleNote', dto.bundleNote);
     if (dto.slotDurationMinutes !== undefined)

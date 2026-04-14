@@ -29,7 +29,9 @@ export class PublicArenaFacilityController {
   }
 
   @Get('cricket-courts/:courtId')
-  async getCricketCourtPublic(@Param('courtId', ParseUUIDPipe) courtId: string) {
+  async getCricketCourtPublic(
+    @Param('courtId', ParseUUIDPipe) courtId: string,
+  ) {
     const row = await this.cricketCourtService.findOnePublicById(courtId);
     return this.withoutTenant(row);
   }

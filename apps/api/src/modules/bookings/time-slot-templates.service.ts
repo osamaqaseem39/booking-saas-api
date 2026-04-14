@@ -70,12 +70,16 @@ export class TimeSlotTemplatesService {
     }
     out.sort((a, b) => a - b);
     if (!out.length) {
-      throw new BadRequestException('At least one valid slot start is required');
+      throw new BadRequestException(
+        'At least one valid slot start is required',
+      );
     }
     return out.map(minutesToLabel);
   }
 
-  private normalizeSlotLines(dto: CreateTimeSlotTemplateDto | UpdateTimeSlotTemplateDto): Array<{
+  private normalizeSlotLines(
+    dto: CreateTimeSlotTemplateDto | UpdateTimeSlotTemplateDto,
+  ): Array<{
     startTime: string;
     endTime: string;
     status: 'available' | 'blocked';
@@ -84,7 +88,9 @@ export class TimeSlotTemplatesService {
     const hasLines = Array.isArray(dto.slotLines);
     const hasStarts = Array.isArray(dto.slotStarts);
     if (!hasLines && !hasStarts) {
-      throw new BadRequestException('Either slotLines or slotStarts is required');
+      throw new BadRequestException(
+        'Either slotLines or slotStarts is required',
+      );
     }
     if (hasLines) {
       const rows: Array<{
@@ -96,22 +102,34 @@ export class TimeSlotTemplatesService {
         const startTime = String(line.startTime ?? '').trim();
         const endTime = String(line.endTime ?? '').trim();
         if (!startTime || !endTime) {
-          throw new BadRequestException('Each slot line requires startTime and endTime');
+          throw new BadRequestException(
+            'Each slot line requires startTime and endTime',
+          );
         }
         const startMin = toMinutes(startTime);
         const endMin = toMinutes(endTime);
-        if (startMin < 0 || startMin >= 24 * 60 || endMin <= 0 || endMin > 24 * 60) {
+        if (
+          startMin < 0 ||
+          startMin >= 24 * 60 ||
+          endMin <= 0 ||
+          endMin > 24 * 60
+        ) {
           throw new BadRequestException(
             `Invalid slot line time range: ${startTime}-${endTime}`,
           );
         }
-        if (startMin % COURT_SLOT_GRID_STEP_MINUTES !== 0 || endMin % COURT_SLOT_GRID_STEP_MINUTES !== 0) {
+        if (
+          startMin % COURT_SLOT_GRID_STEP_MINUTES !== 0 ||
+          endMin % COURT_SLOT_GRID_STEP_MINUTES !== 0
+        ) {
           throw new BadRequestException(
             `Slot lines must follow ${COURT_SLOT_GRID_STEP_MINUTES}-minute boundaries`,
           );
         }
         if (endMin <= startMin) {
-          throw new BadRequestException(`slot line endTime must be after startTime: ${startTime}`);
+          throw new BadRequestException(
+            `slot line endTime must be after startTime: ${startTime}`,
+          );
         }
         const status: 'available' | 'blocked' =
           line.status === 'blocked' ? 'blocked' : 'available';
@@ -132,7 +150,9 @@ export class TimeSlotTemplatesService {
         seenStarts.add(row.startTime);
       }
       if (!rows.length) {
-        throw new BadRequestException('At least one valid slot line is required');
+        throw new BadRequestException(
+          'At least one valid slot line is required',
+        );
       }
       return rows;
     }
@@ -143,9 +163,7 @@ export class TimeSlotTemplatesService {
       .map((m, idx) => m - startMinutes[idx])
       .filter((d) => d > 0);
     const inferredDuration =
-      diffs.length > 0
-        ? Math.min(...diffs)
-        : COURT_SLOT_GRID_STEP_MINUTES;
+      diffs.length > 0 ? Math.min(...diffs) : COURT_SLOT_GRID_STEP_MINUTES;
     return starts.map((startTime, idx) => {
       const start = toMinutes(startTime);
       const nextStart = startMinutes[idx + 1];
@@ -233,10 +251,9 @@ export class TimeSlotTemplatesService {
     }
     await this.templateRepo.manager.transaction(async (tx) => {
       if (dto.name !== undefined) {
-        await tx.getRepository(TenantTimeSlotTemplate).update(
-          { id, tenantId },
-          { name: dto.name.trim() },
-        );
+        await tx
+          .getRepository(TenantTimeSlotTemplate)
+          .update({ id, tenantId }, { name: dto.name.trim() });
       }
       if (dto.slotLines !== undefined || dto.slotStarts !== undefined) {
         const lines = this.normalizeSlotLines(dto);
@@ -259,11 +276,15 @@ export class TimeSlotTemplatesService {
       where: { id, tenantId },
       relations: { slotLines: true },
     });
-    if (!saved) throw new NotFoundException(`Time slot template ${id} not found`);
+    if (!saved)
+      throw new NotFoundException(`Time slot template ${id} not found`);
     return this.toApiRow(saved);
   }
 
-  async remove(tenantId: string, id: string): Promise<{ deleted: true; id: string }> {
+  async remove(
+    tenantId: string,
+    id: string,
+  ): Promise<{ deleted: true; id: string }> {
     const row = await this.templateRepo.findOne({ where: { id, tenantId } });
     if (!row) {
       throw new NotFoundException(`Time slot template ${id} not found`);
@@ -273,7 +294,9 @@ export class TimeSlotTemplatesService {
   }
 
   private toApiRow(r: TenantTimeSlotTemplate): TimeSlotTemplateApiRow {
-    const slotLines: TimeSlotTemplateApiRow['slotLines'] = (Array.isArray(r.slotLines) ? r.slotLines : [])
+    const slotLines: TimeSlotTemplateApiRow['slotLines'] = (
+      Array.isArray(r.slotLines) ? r.slotLines : []
+    )
       .slice()
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((line) => ({

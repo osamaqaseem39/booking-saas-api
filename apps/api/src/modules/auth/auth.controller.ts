@@ -1,4 +1,11 @@
-import { Body, Controller, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Post,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import type { Request } from 'express';
 import { BootstrapFirstOwnerDto } from './dto/bootstrap-first-owner.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
@@ -17,9 +24,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  async login(
-    @Body() dto: LoginDto,
-  ): Promise<{
+  async login(@Body() dto: LoginDto): Promise<{
     token: string;
     refreshToken: string;
     user: {
@@ -35,21 +40,29 @@ export class AuthController {
   }
 
   @Post('refresh')
-  async refresh(@Body() dto: RefreshTokenDto): Promise<{ token: string; refreshToken: string }> {
+  async refresh(
+    @Body() dto: RefreshTokenDto,
+  ): Promise<{ token: string; refreshToken: string }> {
     return this.authService.refresh(dto);
   }
 
   @Post('bootstrap-first-owner')
-  async bootstrapFirstOwner(
-    @Body() dto: BootstrapFirstOwnerDto,
-  ): Promise<{ token: string; refreshToken: string; userId: string; email: string }> {
+  async bootstrapFirstOwner(@Body() dto: BootstrapFirstOwnerDto): Promise<{
+    token: string;
+    refreshToken: string;
+    userId: string;
+    email: string;
+  }> {
     return this.authService.bootstrapFirstOwner(dto);
   }
 
   @Post('register-end-user')
-  async registerEndUser(
-    @Body() dto: RegisterEndUserDto,
-  ): Promise<{ token: string; refreshToken: string; userId: string; email: string }> {
+  async registerEndUser(@Body() dto: RegisterEndUserDto): Promise<{
+    token: string;
+    refreshToken: string;
+    userId: string;
+    email: string;
+  }> {
     return this.authService.registerEndUser(dto);
   }
 

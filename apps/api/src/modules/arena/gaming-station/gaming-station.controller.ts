@@ -152,8 +152,8 @@ export class TypedGamingStationController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     const setupCode = setupCodeFromRequestPath(req.path);
-    return this.service.findOneBySetup(tenant.tenantId, id, setupCode).then(() =>
-      this.service.remove(tenant.tenantId, id),
-    );
+    return this.service
+      .findOneBySetup(tenant.tenantId, id, setupCode)
+      .then(() => this.service.remove(tenant.tenantId, id));
   }
 }

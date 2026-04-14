@@ -42,8 +42,12 @@ export class GamingStations1711000000024 implements MigrationInterface {
     await queryRunner.query(
       `DROP INDEX IF EXISTS "IDX_gaming_stations_setup_code"`,
     );
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_gaming_stations_location"`);
-    await queryRunner.query(`DROP INDEX IF EXISTS "IDX_gaming_stations_tenant"`);
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_gaming_stations_location"`,
+    );
+    await queryRunner.query(
+      `DROP INDEX IF EXISTS "IDX_gaming_stations_tenant"`,
+    );
     await queryRunner.query(`DROP TABLE IF EXISTS "gaming_stations"`);
   }
 }

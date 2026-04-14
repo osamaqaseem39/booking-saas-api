@@ -38,7 +38,10 @@ export class PlaceFutsalBookingDto {
     if (typeof obj?.facilityId === 'string' && obj.facilityId.trim()) {
       return obj.facilityId.trim();
     }
-    if (typeof obj?.selectedFacilityId === 'string' && obj.selectedFacilityId.trim()) {
+    if (
+      typeof obj?.selectedFacilityId === 'string' &&
+      obj.selectedFacilityId.trim()
+    ) {
       return obj.selectedFacilityId.trim();
     }
     return value;

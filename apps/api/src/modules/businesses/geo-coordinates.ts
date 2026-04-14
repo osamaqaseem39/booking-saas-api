@@ -7,12 +7,13 @@ export const STORED_COORDINATE_DECIMAL_PLACES = 14;
  * Coerce API / JSON input and round like the dashboard before persisting.
  * Omits when value is absent; rejects non-finite numbers.
  */
-export function normalizeCoordinateForPersist(value: unknown): number | undefined {
+export function normalizeCoordinateForPersist(
+  value: unknown,
+): number | undefined {
   if (value === null || value === undefined || value === '') {
     return undefined;
   }
-  const n =
-    typeof value === 'number' ? value : Number(String(value).trim());
+  const n = typeof value === 'number' ? value : Number(String(value).trim());
   if (!Number.isFinite(n)) {
     throw new BadRequestException(
       'latitude and longitude must be valid finite numbers',
@@ -26,7 +27,6 @@ export function coordinateToJsonNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') {
     return null;
   }
-  const n =
-    typeof value === 'number' ? value : Number(String(value).trim());
+  const n = typeof value === 'number' ? value : Number(String(value).trim());
   return Number.isFinite(n) ? n : null;
 }

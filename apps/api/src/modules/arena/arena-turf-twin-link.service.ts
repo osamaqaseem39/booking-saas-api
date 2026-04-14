@@ -126,7 +126,9 @@ export class ArenaTurfTwinLinkService {
     if (!twin) {
       throw new NotFoundException(`Futsal court ${nextId} not found`);
     }
-    if ((twin.businessLocationId ?? '') !== (cricket.businessLocationId ?? '')) {
+    if (
+      (twin.businessLocationId ?? '') !== (cricket.businessLocationId ?? '')
+    ) {
       throw new BadRequestException(
         'Linked pitch must belong to the same location as this cricket pitch',
       );

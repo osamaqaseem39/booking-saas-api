@@ -11,7 +11,10 @@ import {
 import { TenantTimeSlotTemplate } from './tenant-time-slot-template.entity';
 
 @Entity({ name: 'tenant_time_slot_template_lines' })
-@Unique('UQ_tenant_time_slot_template_lines_template_start', ['templateId', 'startTime'])
+@Unique('UQ_tenant_time_slot_template_lines_template_start', [
+  'templateId',
+  'startTime',
+])
 export class TenantTimeSlotTemplateLine {
   @PrimaryGeneratedColumn('uuid')
   id!: string;

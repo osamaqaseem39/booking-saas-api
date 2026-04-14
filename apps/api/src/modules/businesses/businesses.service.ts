@@ -193,7 +193,10 @@ export class BusinessesService {
       .groupBy('location.businessId')
       .getRawMany<{ businessId: string; count: string }>();
     const locationCountByBusinessId = new Map(
-      locationCountRows.map((row) => [row.businessId, Number.parseInt(row.count, 10)]),
+      locationCountRows.map((row) => [
+        row.businessId,
+        Number.parseInt(row.count, 10),
+      ]),
     );
 
     const locations = await this.locationsRepository.find({
@@ -201,8 +204,11 @@ export class BusinessesService {
       select: ['id', 'businessId'],
     });
     const locationIds = locations.map((x) => x.id);
-    const businessIdByLocationId = new Map(locations.map((x) => [x.id, x.businessId]));
-    const courtKeysByLocationId = await this.loadCourtKeysByLocationId(locationIds);
+    const businessIdByLocationId = new Map(
+      locations.map((x) => [x.id, x.businessId]),
+    );
+    const courtKeysByLocationId =
+      await this.loadCourtKeysByLocationId(locationIds);
 
     const courtCountByBusinessId = new Map<string, number>();
     for (const [locationId, courtKeys] of courtKeysByLocationId.entries()) {
@@ -273,9 +279,11 @@ export class BusinessesService {
       }
       bookingByBusinessId.set(businessId, {
         bookingCount: Number.parseInt(row.bookingCount, 10) || 0,
-        confirmedBookingCount: Number.parseInt(row.confirmedBookingCount, 10) || 0,
+        confirmedBookingCount:
+          Number.parseInt(row.confirmedBookingCount, 10) || 0,
         pendingBookingCount: Number.parseInt(row.pendingBookingCount, 10) || 0,
-        cancelledBookingCount: Number.parseInt(row.cancelledBookingCount, 10) || 0,
+        cancelledBookingCount:
+          Number.parseInt(row.cancelledBookingCount, 10) || 0,
         revenueTotal: this.toNumber(row.revenueTotal),
         revenuePaid: this.toNumber(row.revenuePaid),
       });
@@ -283,7 +291,8 @@ export class BusinessesService {
 
     const businessViews = businesses.map((business) => {
       const typedBusiness = business as Business;
-      const locationCount = locationCountByBusinessId.get(typedBusiness.id) ?? 0;
+      const locationCount =
+        locationCountByBusinessId.get(typedBusiness.id) ?? 0;
       const courtCount = courtCountByBusinessId.get(typedBusiness.id) ?? 0;
       const booking = bookingByBusinessId.get(typedBusiness.id) ?? {
         bookingCount: 0,
@@ -308,11 +317,17 @@ export class BusinessesService {
       generatedAt: new Date().toISOString(),
       scope: {
         businessCount: businesses.length,
-        locationCount: businessViews.reduce((sum, row) => sum + row.locationCount, 0),
+        locationCount: businessViews.reduce(
+          (sum, row) => sum + row.locationCount,
+          0,
+        ),
       },
       totals: {
         courtCount: businessViews.reduce((sum, row) => sum + row.courtCount, 0),
-        bookingCount: businessViews.reduce((sum, row) => sum + row.bookingCount, 0),
+        bookingCount: businessViews.reduce(
+          (sum, row) => sum + row.bookingCount,
+          0,
+        ),
         confirmedBookingCount: businessViews.reduce(
           (sum, row) => sum + row.confirmedBookingCount,
           0,
@@ -502,7 +517,9 @@ export class BusinessesService {
   async listLocationsForConsole(
     requesterUserId: string,
     tenantIdFilter?: string | null,
-  ): Promise<Awaited<ReturnType<BusinessesService['listLocationsForRequester']>>> {
+  ): Promise<
+    Awaited<ReturnType<BusinessesService['listLocationsForRequester']>>
+  > {
     await this.iamService.assertRequesterActive(requesterUserId);
     const rows = await this.listLocationsForRequester(requesterUserId);
     const tid = tenantIdFilter?.trim() || null;
@@ -540,7 +557,10 @@ export class BusinessesService {
       throw error;
     }
     const businessById = new Map(businesses.map((b) => [b.id, b]));
-    return this.buildLocationListRowsWithFacilityInfo(allLocations, businessById);
+    return this.buildLocationListRowsWithFacilityInfo(
+      allLocations,
+      businessById,
+    );
   }
 
   /**
@@ -860,7 +880,11 @@ export class BusinessesService {
       throw new BadRequestException('endTime must be different from startTime');
     }
 
-    const busyKeys = await this.loadBusyCourtKeysForWindow(date, reqStart, reqEnd);
+    const busyKeys = await this.loadBusyCourtKeysForWindow(
+      date,
+      reqStart,
+      reqEnd,
+    );
     const locationIds = filtered.map((r) => r.id);
     if (locationIds.length === 0) {
       return [];
@@ -895,7 +919,9 @@ export class BusinessesService {
   }
 
   private addDaysToIsoDate(date: string, days: number): string {
-    const [year, month, day] = date.split('-').map((x) => Number.parseInt(x, 10));
+    const [year, month, day] = date
+      .split('-')
+      .map((x) => Number.parseInt(x, 10));
     const utcDate = new Date(Date.UTC(year, month - 1, day));
     utcDate.setUTCDate(utcDate.getUTCDate() + days);
     const yyyy = utcDate.getUTCFullYear().toString().padStart(4, '0');
@@ -1007,7 +1033,11 @@ export class BusinessesService {
     locationIds: string[],
   ): Promise<Map<string, string[]>> {
     const map = new Map<string, Set<string>>();
-    const push = (locId: string | null | undefined, kind: string, id: string) => {
+    const push = (
+      locId: string | null | undefined,
+      kind: string,
+      id: string,
+    ) => {
       if (!locId) {
         return;
       }
@@ -1347,7 +1377,8 @@ export class BusinessesService {
     if (dto.manager !== undefined || dto.contact?.manager !== undefined) {
       location.manager = dto.contact?.manager ?? dto.manager;
     }
-    if (dto.workingHours !== undefined) location.workingHours = dto.workingHours;
+    if (dto.workingHours !== undefined)
+      location.workingHours = dto.workingHours;
     if (dto.timezone !== undefined || dto.settings?.timezone !== undefined) {
       location.timezone = dto.settings?.timezone ?? dto.timezone;
     }
@@ -1473,13 +1504,7 @@ export class BusinessesService {
   /** Internal marker category after normalizing legacy path + query values. */
   private normalizeVenueMarkerCategory(
     raw: string | undefined,
-  ):
-    | 'all'
-    | 'gaming'
-    | 'FutsalArenas'
-    | 'futsal'
-    | 'cricket'
-    | 'padel' {
+  ): 'all' | 'gaming' | 'FutsalArenas' | 'futsal' | 'cricket' | 'padel' {
     const c = (raw ?? 'all').trim().toLowerCase();
     if (!c || c === 'all') {
       return 'all';
@@ -1517,11 +1542,7 @@ export class BusinessesService {
     if (category === 'gaming') {
       return active.filter((r) => {
         const t = (r.locationType ?? '').trim().toLowerCase();
-        return (
-          t === 'gaming' ||
-          t === 'gaming-zone' ||
-          t.includes('gaming')
-        );
+        return t === 'gaming' || t === 'gaming-zone' || t.includes('gaming');
       });
     }
     if (category === 'FutsalArenas' || category === 'futsal') {
@@ -1569,7 +1590,9 @@ export class BusinessesService {
           r.country,
           r.business?.businessName,
         ]
-          .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+          .filter(
+            (x): x is string => typeof x === 'string' && x.trim().length > 0,
+          )
           .join(' ')
           .toLowerCase();
         return parts.includes(q);
@@ -1590,14 +1613,21 @@ export class BusinessesService {
       const reqStart = this.hhMmToMinutes(dto.startTime as string);
       const reqEnd = this.hhMmToMinutes(dto.endTime as string);
       if (reqEnd === reqStart) {
-        throw new BadRequestException('endTime must be different from startTime');
+        throw new BadRequestException(
+          'endTime must be different from startTime',
+        );
       }
-      const busyKeys = await this.loadBusyCourtKeysForWindow(date, reqStart, reqEnd);
+      const busyKeys = await this.loadBusyCourtKeysForWindow(
+        date,
+        reqStart,
+        reqEnd,
+      );
       const locationIds = filtered.map((r) => r.id);
       if (locationIds.length === 0) {
         return [];
       }
-      const courtsByLocation = await this.loadCourtKeysByLocationId(locationIds);
+      const courtsByLocation =
+        await this.loadCourtKeysByLocationId(locationIds);
       filtered = filtered.filter((loc) => {
         const courts = courtsByLocation.get(loc.id) ?? [];
         if (courts.length === 0) {
@@ -1659,7 +1689,9 @@ export class BusinessesService {
 
   /** One public “venue detail” object — same shape for profile and search hits. */
   private buildVenueDetailsPublicPayload(
-    row: Awaited<ReturnType<BusinessesService['listAllLocationsPublic']>>[number],
+    row: Awaited<
+      ReturnType<BusinessesService['listAllLocationsPublic']>
+    >[number],
     business: Business | null | undefined,
   ) {
     const b = business ?? null;
@@ -1696,8 +1728,7 @@ export class BusinessesService {
       packages: [] as unknown[],
       availability: {
         tenantId,
-        note:
-          'Use GET /bookings/courts/{courtKind}/{courtId}/slot-grid with X-Tenant-Id for live slots.',
+        note: 'Use GET /bookings/courts/{courtKind}/{courtId}/slot-grid with X-Tenant-Id for live slots.',
       },
       dailyOpenHours: row.workingHours ?? null,
       facilityAvailable,
