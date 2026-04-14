@@ -1470,6 +1470,7 @@ export class BookingsService {
     courtId: string,
   ): Promise<Array<{ kind: CourtKind; courtId: string }>> {
     void tenantId;
+    await Promise.resolve();
     return [{ kind, courtId }];
   }
 
@@ -2141,6 +2142,6 @@ export class BookingsService {
       }
       return;
     }
-    throw new BadRequestException(`Unsupported court kind: ${courtKind}`);
+    throw new BadRequestException('Unsupported court kind');
   }
 }
