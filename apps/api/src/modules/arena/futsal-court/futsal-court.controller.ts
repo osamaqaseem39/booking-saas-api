@@ -36,7 +36,11 @@ export class FutsalCourtController {
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.service.findOne(tenant.tenantId, id);
+    const tenantId = tenant?.tenantId?.trim();
+    if (!tenantId || tenantId === 'public') {
+      return this.service.findOnePublicById(id);
+    }
+    return this.service.findOne(tenantId, id);
   }
 
   @Post()
