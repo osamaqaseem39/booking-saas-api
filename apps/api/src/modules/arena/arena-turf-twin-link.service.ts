@@ -173,4 +173,71 @@ export class ArenaTurfTwinLinkService {
       await this.futsalRepo.save(f);
     }
   }
+
+  async linkCourts(
+    tenantId: string,
+    futsalCourtId: string,
+    cricketCourtId: string,
+  ): Promise<{
+    message: string;
+    link: { futsalCourtId: string; cricketCourtId: string };
+  }> {
+    const futsal = await this.futsalRepo.findOne({
+      where: { id: futsalCourtId, tenantId },
+    });
+    if (!futsal) {
+      throw new NotFoundException(`Futsal court ${futsalCourtId} not found`);
+    }
+    const cricket = await this.cricketRepo.findOne({
+      where: { id: cricketCourtId, tenantId },
+    });
+    if (!cricket) {
+      throw new NotFoundException(`Cricket court ${cricketCourtId} not found`);
+    }
+
+    const previousTwinId = futsal.linkedTwinCourtId ?? null;
+    futsal.linkedTwinCourtId = cricketCourtId;
+    futsal.linkedTwinCourtKind = 'cricket_court';
+    await this.applyAfterFutsalSaved(tenantId, futsal, previousTwinId);
+    await this.futsalRepo.save(futsal);
+
+    return {
+      message: 'Turf twin link saved',
+      link: { futsalCourtId, cricketCourtId },
+    };
+  }
+
+  async unlinkCourt(
+    tenantId: string,
+    courtKind: 'futsal_court' | 'cricket_court',
+    courtId: string,
+  ): Promise<{ message: string }> {
+    if (courtKind === 'futsal_court') {
+      const futsal = await this.futsalRepo.findOne({
+        where: { id: courtId, tenantId },
+      });
+      if (!futsal) {
+        throw new NotFoundException(`Futsal court ${courtId} not found`);
+      }
+      const previousTwinId = futsal.linkedTwinCourtId ?? null;
+      futsal.linkedTwinCourtId = undefined;
+      futsal.linkedTwinCourtKind = undefined;
+      await this.applyAfterFutsalSaved(tenantId, futsal, previousTwinId);
+      await this.futsalRepo.save(futsal);
+    } else {
+      const cricket = await this.cricketRepo.findOne({
+        where: { id: courtId, tenantId },
+      });
+      if (!cricket) {
+        throw new NotFoundException(`Cricket court ${courtId} not found`);
+      }
+      const previousTwinId = cricket.linkedTwinCourtId ?? null;
+      cricket.linkedTwinCourtId = undefined;
+      cricket.linkedTwinCourtKind = undefined;
+      await this.applyAfterCricketSaved(tenantId, cricket, previousTwinId);
+      await this.cricketRepo.save(cricket);
+    }
+
+    return { message: 'Turf twin link removed' };
+  }
 }

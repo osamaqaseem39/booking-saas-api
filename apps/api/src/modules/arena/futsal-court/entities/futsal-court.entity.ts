@@ -14,6 +14,10 @@ import type {
   ArenaPeakPricing,
   ArenaRules,
 } from '../../arena-court-json.types';
+import type {
+  CricketFormat,
+  CricketPracticeMode,
+} from '../../cricket-court/entities/cricket-court.entity';
 
 export type FutsalCourtStatus = 'active' | 'maintenance' | 'draft';
 
@@ -128,6 +132,25 @@ export class FutsalCourt {
 
   @Column({ type: 'uuid', nullable: true })
   linkedTwinCourtId?: string;
+
+  /**
+   * When true, this row is the single DB record for a dual futsal+cricket turf; cricket APIs
+   * resolve the same {@link id} as a cricket surface (no `cricket_courts` row).
+   */
+  @Column({ type: 'boolean', default: false })
+  supportsCricket!: boolean;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  cricketFormat?: CricketFormat;
+
+  @Column({ type: 'boolean', nullable: true })
+  cricketStumpsAvailable?: boolean;
+
+  @Column({ type: 'boolean', nullable: true })
+  cricketBowlingMachine?: boolean;
+
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  cricketPracticeMode?: CricketPracticeMode;
 
   /** Optional named list of hourly slot starts for booking UI (see tenant time slot templates). */
   @Column({ type: 'uuid', nullable: true })

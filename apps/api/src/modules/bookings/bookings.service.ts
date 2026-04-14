@@ -237,6 +237,67 @@ export type LocationFacilitiesAvailableSlotsApiRow = {
 
 @Injectable()
 export class BookingsService {
+  async resolveTenantIdByCourt(
+    kind: CourtKind,
+    courtId: string,
+  ): Promise<string | null> {
+    if (kind === 'futsal_court') {
+      const row = await this.futsalCourtRepo.findOne({
+        where: { id: courtId },
+        select: ['tenantId'],
+      });
+      return row?.tenantId ?? null;
+    }
+    if (kind === 'cricket_court') {
+      const row = await this.cricketCourtRepo.findOne({
+        where: { id: courtId },
+        select: ['tenantId'],
+      });
+      if (row?.tenantId) return row.tenantId;
+      const dual = await this.futsalCourtRepo.findOne({
+        where: { id: courtId, supportsCricket: true },
+        select: ['tenantId'],
+      });
+      return dual?.tenantId ?? null;
+    }
+    const row = await this.padelRepo.findOne({
+      where: { id: courtId },
+      select: ['tenantId'],
+    });
+    return row?.tenantId ?? null;
+  }
+
+  async resolveTenantIdByBooking(bookingId: string): Promise<string | null> {
+    const row = await this.bookingRepo.findOne({
+      where: { id: bookingId },
+      select: ['tenantId'],
+    });
+    return row?.tenantId ?? null;
+  }
+
+  async resolveTenantIdByTimeSlotTemplate(
+    templateId: string,
+  ): Promise<string | null> {
+    const row = await this.slotTemplateRepo.findOne({
+      where: { id: templateId },
+      select: ['tenantId'],
+    });
+    return row?.tenantId ?? null;
+  }
+
+  async resolveTenantIdByLocation(locationId: string): Promise<string | null> {
+    const location = await this.locationRepo.findOne({
+      where: { id: locationId },
+      select: ['businessId'],
+    });
+    if (!location) return null;
+    const business = await this.businessRepo.findOne({
+      where: { id: location.businessId },
+      select: ['tenantId'],
+    });
+    return business?.tenantId ?? null;
+  }
+
   private effectiveStatus(booking: Booking): BookingStatus {
     const current = booking.bookingStatus;
     if (
@@ -302,13 +363,26 @@ export class BookingsService {
       }
     }
     if (cricketIds.size > 0) {
+      const ids = [...cricketIds];
       const rows = await this.cricketCourtRepo.find({
-        where: { tenantId, id: In([...cricketIds]) },
+        where: { tenantId, id: In(ids) },
         select: ['id', 'businessLocationId'],
       });
+      const foundCricket = new Set(rows.map((r) => r.id));
       for (const r of rows) {
         const bl = r.businessLocationId?.trim();
         if (bl) out.set(key('cricket_court', r.id), bl);
+      }
+      const missing = ids.filter((id) => !foundCricket.has(id));
+      if (missing.length > 0) {
+        const dualRows = await this.futsalCourtRepo.find({
+          where: { tenantId, id: In(missing), supportsCricket: true },
+          select: ['id', 'businessLocationId'],
+        });
+        for (const r of dualRows) {
+          const bl = r.businessLocationId?.trim();
+          if (bl) out.set(key('cricket_court', r.id), bl);
+        }
       }
     }
     if (padelIds.size > 0) {
@@ -1115,7 +1189,6 @@ export class BookingsService {
   }
 
   async getLocationFacilitiesAvailableSlots(
-    tenantId: string,
     params: {
       locationId: string;
       date: string;
@@ -1126,32 +1199,25 @@ export class BookingsService {
     const dateOnly = formatDateOnly(params.date);
     const location = await this.locationRepo.findOne({
       where: { id: params.locationId },
-      select: ['id', 'businessId'],
+      select: ['id'],
     });
     if (!location) {
       throw new NotFoundException(`Location ${params.locationId} not found`);
     }
-    const business = await this.businessRepo.findOne({
-      where: { id: location.businessId },
-      select: ['id', 'tenantId'],
-    });
-    if (!business || business.tenantId !== tenantId) {
-      throw new NotFoundException(
-        `Location ${params.locationId} not found for this tenant`,
-      );
-    }
+
+    /** Courts are keyed by `businessLocationId`; use each row's `tenantId` for slot logic (avoids empty lists when business.tenantId ≠ court.tenantId). */
+    const bookableCourtStatus = In(['active', 'draft']);
 
     const facilities: LocationFacilitiesAvailableSlotsApiRow['facilities'] = [];
     const futsalRows = await this.futsalCourtRepo.find({
       where: {
-        tenantId,
         businessLocationId: params.locationId,
-        courtStatus: 'active',
+        courtStatus: bookableCourtStatus,
       },
-      select: ['id', 'name'],
+      select: ['id', 'name', 'tenantId'],
     });
     for (const row of futsalRows) {
-      const grid = await this.getCourtSlotGrid(tenantId, {
+      const grid = await this.getCourtSlotGrid(row.tenantId, {
         kind: 'futsal_court',
         courtId: row.id,
         date: dateOnly,
@@ -1171,14 +1237,26 @@ export class BookingsService {
     }
     const cricketRows = await this.cricketCourtRepo.find({
       where: {
-        tenantId,
         businessLocationId: params.locationId,
-        courtStatus: 'active',
+        courtStatus: bookableCourtStatus,
       },
-      select: ['id', 'name'],
+      select: ['id', 'name', 'tenantId'],
     });
-    for (const row of cricketRows) {
-      const grid = await this.getCourtSlotGrid(tenantId, {
+    const dualCricketFutsal = await this.futsalCourtRepo.find({
+      where: {
+        businessLocationId: params.locationId,
+        courtStatus: bookableCourtStatus,
+        supportsCricket: true,
+      },
+      select: ['id', 'name', 'tenantId'],
+    });
+    const cricketRowIds = new Set(cricketRows.map((r) => r.id));
+    const cricketSlotSources = [
+      ...cricketRows,
+      ...dualCricketFutsal.filter((r) => !cricketRowIds.has(r.id)),
+    ];
+    for (const row of cricketSlotSources) {
+      const grid = await this.getCourtSlotGrid(row.tenantId, {
         kind: 'cricket_court',
         courtId: row.id,
         date: dateOnly,
@@ -1198,15 +1276,14 @@ export class BookingsService {
     }
     const padelRows = await this.padelRepo.find({
       where: {
-        tenantId,
         businessLocationId: params.locationId,
-        courtStatus: 'active',
-        isActive: true,
+        courtStatus: bookableCourtStatus,
       },
-      select: ['id', 'name'],
+      select: ['id', 'name', 'tenantId', 'isActive'],
     });
     for (const row of padelRows) {
-      const grid = await this.getCourtSlotGrid(tenantId, {
+      if (row.isActive === false) continue;
+      const grid = await this.getCourtSlotGrid(row.tenantId, {
         kind: 'padel_court',
         courtId: row.id,
         date: dateOnly,
@@ -1250,7 +1327,14 @@ export class BookingsService {
           where: { id: courtId, tenantId },
           select: ['businessLocationId'],
         });
-        return row?.businessLocationId ?? null;
+        if (row) {
+          return row.businessLocationId ?? null;
+        }
+        const dual = await this.futsalCourtRepo.findOne({
+          where: { id: courtId, tenantId, supportsCricket: true },
+          select: ['businessLocationId'],
+        });
+        return dual?.businessLocationId ?? null;
       }
       case 'padel_court': {
         const row = await this.padelRepo.findOne({
@@ -1282,6 +1366,13 @@ export class BookingsService {
         select: ['timeSlotTemplateId'],
       });
       templateId = row?.timeSlotTemplateId ?? null;
+      if (templateId == null) {
+        const dual = await this.futsalCourtRepo.findOne({
+          where: { id: courtId, tenantId, supportsCricket: true },
+          select: ['timeSlotTemplateId'],
+        });
+        templateId = dual?.timeSlotTemplateId ?? null;
+      }
     } else {
       const row = await this.padelRepo.findOne({
         where: { id: courtId, tenantId },
@@ -1618,14 +1709,77 @@ export class BookingsService {
     return merged;
   }
 
+  private dedupeCourtKeys(
+    keys: Array<{ kind: CourtKind; courtId: string }>,
+  ): Array<{ kind: CourtKind; courtId: string }> {
+    const seen = new Set<string>();
+    const out: Array<{ kind: CourtKind; courtId: string }> = [];
+    for (const k of keys) {
+      const s = `${k.kind}:${k.courtId}`;
+      if (seen.has(s)) continue;
+      seen.add(s);
+      out.push(k);
+    }
+    return out;
+  }
+
   private async resolveBookingLinkedCourtKeys(
     tenantId: string,
     kind: CourtKind,
     courtId: string,
   ): Promise<Array<{ kind: CourtKind; courtId: string }>> {
-    void tenantId;
-    await Promise.resolve();
-    return [{ kind, courtId }];
+    if (kind === 'padel_court') {
+      return [{ kind, courtId }];
+    }
+    if (kind === 'futsal_court') {
+      const row = await this.futsalCourtRepo.findOne({
+        where: { id: courtId, tenantId },
+        select: ['linkedTwinCourtId', 'linkedTwinCourtKind', 'supportsCricket'],
+      });
+      if (!row) return [{ kind, courtId }];
+      const keys: Array<{ kind: CourtKind; courtId: string }> = [
+        { kind: 'futsal_court', courtId },
+      ];
+      if (row.supportsCricket === true) {
+        keys.push({ kind: 'cricket_court', courtId });
+      }
+      if (
+        row.linkedTwinCourtId &&
+        row.linkedTwinCourtKind === 'cricket_court' &&
+        row.linkedTwinCourtId !== courtId
+      ) {
+        keys.push({
+          kind: 'cricket_court',
+          courtId: row.linkedTwinCourtId,
+        });
+      }
+      return this.dedupeCourtKeys(keys);
+    }
+    const cricket = await this.cricketCourtRepo.findOne({
+      where: { id: courtId, tenantId },
+      select: ['linkedTwinCourtId', 'linkedTwinCourtKind'],
+    });
+    const keys: Array<{ kind: CourtKind; courtId: string }> = [
+      { kind: 'cricket_court', courtId },
+    ];
+    const futsalDual = await this.futsalCourtRepo.findOne({
+      where: { id: courtId, tenantId, supportsCricket: true },
+      select: ['id'],
+    });
+    if (futsalDual) {
+      keys.push({ kind: 'futsal_court', courtId: futsalDual.id });
+    }
+    if (
+      cricket?.linkedTwinCourtId &&
+      cricket.linkedTwinCourtKind === 'futsal_court' &&
+      cricket.linkedTwinCourtId !== courtId
+    ) {
+      keys.push({
+        kind: 'futsal_court',
+        courtId: cricket.linkedTwinCourtId,
+      });
+    }
+    return this.dedupeCourtKeys(keys);
   }
 
   private async assertNoBookingOverlapForItem(
@@ -1735,7 +1889,11 @@ export class BookingsService {
         const row = await this.cricketCourtRepo.findOne({
           where: { id: courtId, tenantId },
         });
-        if (!row) {
+        if (row) break;
+        const dual = await this.futsalCourtRepo.findOne({
+          where: { id: courtId, tenantId, supportsCricket: true },
+        });
+        if (!dual) {
           throw new BadRequestException(
             `Cricket court ${courtId} not found for this tenant`,
           );
@@ -1804,10 +1962,15 @@ export class BookingsService {
         break;
       }
       case 'cricket_court': {
-        const row = await this.cricketCourtRepo.findOne({
+        const cricketRow = await this.cricketCourtRepo.findOne({
           where: { id: courtId, tenantId },
         });
-        if (!row) {
+        const surface =
+          cricketRow ??
+          (await this.futsalCourtRepo.findOne({
+            where: { id: courtId, tenantId, supportsCricket: true },
+          }));
+        if (!surface) {
           throw new BadRequestException(
             `Cricket court ${courtId} not found for this tenant`,
           );
@@ -1817,7 +1980,7 @@ export class BookingsService {
             `cricket_court ${courtId} only accepts cricket bookings`,
           );
         }
-        if (row.courtStatus !== 'active') {
+        if (surface.courtStatus !== 'active') {
           throw new BadRequestException(
             'This cricket pitch is not active and cannot be booked',
           );
@@ -1868,6 +2031,11 @@ export class BookingsService {
         where: { tenantId, courtStatus: 'active' },
         select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
       });
+      const dualCricket = await this.futsalCourtRepo.find({
+        where: { tenantId, courtStatus: 'active', supportsCricket: true },
+        select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
+      });
+      const cricketIds = new Set(cricketCourts.map((r) => r.id));
       out.push(
         ...cricketCourts.map((r) => ({
           kind: 'cricket_court' as const,
@@ -1876,6 +2044,15 @@ export class BookingsService {
           pricePerSlot: optNumFromDec(r.pricePerSlot),
           slotDurationMinutes: r.slotDurationMinutes ?? null,
         })),
+        ...dualCricket
+          .filter((r) => !cricketIds.has(r.id))
+          .map((r) => ({
+            kind: 'cricket_court' as const,
+            id: r.id,
+            name: r.name,
+            pricePerSlot: optNumFromDec(r.pricePerSlot),
+            slotDurationMinutes: r.slotDurationMinutes ?? null,
+          })),
       );
     }
     if (!sport || sport === 'padel') {
@@ -2265,9 +2442,14 @@ export class BookingsService {
       return;
     }
     if (courtKind === 'cricket_court') {
-      const row = await this.cricketCourtRepo.findOne({
+      const cricketRow = await this.cricketCourtRepo.findOne({
         where: { id: courtId, tenantId },
       });
+      const row =
+        cricketRow ??
+        (await this.futsalCourtRepo.findOne({
+          where: { id: courtId, tenantId, supportsCricket: true },
+        }));
       if (!row || (row.businessLocationId ?? '') !== venueId) {
         throw new BadRequestException(
           'Cricket court does not belong to this venue',

@@ -1,14 +1,9 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import type { TenantContext } from '../../tenancy/tenant-context.interface';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { ArenaTurfTwinLinkService } from './arena-turf-twin-link.service';
 import {
   CreateTurfTwinLinkDto,
   RemoveTurfTwinLinkDto,
@@ -17,15 +12,19 @@ import {
 @Controller('arena/turf-twin-links')
 @UseGuards(RolesGuard)
 export class ArenaTurfTwinLinkController {
-  @Post('link')
+  constructor(private readonly turfTwinLinkService: ArenaTurfTwinLinkService) {}
+
+  @Post()
   @Roles('platform-owner', 'business-admin')
-  async link(
+  async createLink(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateTurfTwinLinkDto,
   ) {
-    void tenant;
-    void dto;
-    throw new BadRequestException('Field linking has been removed.');
+    return this.turfTwinLinkService.linkCourts(
+      tenant.tenantId,
+      dto.futsalCourtId,
+      dto.cricketCourtId,
+    );
   }
 
   @Post('unlink')
@@ -34,8 +33,10 @@ export class ArenaTurfTwinLinkController {
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: RemoveTurfTwinLinkDto,
   ) {
-    void tenant;
-    void dto;
-    throw new BadRequestException('Field linking has been removed.');
+    return this.turfTwinLinkService.unlinkCourt(
+      tenant.tenantId,
+      dto.courtKind,
+      dto.courtId,
+    );
   }
 }

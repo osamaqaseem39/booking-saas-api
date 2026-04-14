@@ -67,6 +67,10 @@ export class FutsalCourtService {
       tenantId,
     );
     assertFacilityTypeAllowedForLocation(location, 'futsal');
+    const supportsCricket = dto.supportsCricket === true;
+    if (supportsCricket) {
+      assertFacilityTypeAllowedForLocation(location, 'cricket');
+    }
 
     let timeSlotTemplateId: string | null = null;
     if (dto.timeSlotTemplateId) {
@@ -110,6 +114,17 @@ export class FutsalCourtService {
       amenities: dto.amenities,
       rules: dto.rules,
       timeSlotTemplateId,
+      supportsCricket,
+      cricketFormat: supportsCricket ? dto.cricketFormat : undefined,
+      cricketStumpsAvailable: supportsCricket
+        ? dto.cricketStumpsAvailable
+        : undefined,
+      cricketBowlingMachine: supportsCricket
+        ? dto.cricketBowlingMachine
+        : undefined,
+      cricketPracticeMode: supportsCricket
+        ? dto.cricketPracticeMode
+        : undefined,
     });
     return this.repo.save(row);
   }
@@ -205,6 +220,27 @@ export class FutsalCourtService {
       assign('bufferBetweenSlotsMinutes', dto.bufferBetweenSlotsMinutes);
     if (dto.allowParallelBooking !== undefined)
       assign('allowParallelBooking', dto.allowParallelBooking);
+    if (dto.supportsCricket !== undefined) {
+      assign('supportsCricket', dto.supportsCricket);
+      if (dto.supportsCricket === true) {
+        const locId = dto.businessLocationId ?? row.businessLocationId;
+        if (locId) {
+          const loc =
+            await this.businessesService.assertLocationBelongsToTenant(
+              locId,
+              tenantId,
+            );
+          assertFacilityTypeAllowedForLocation(loc, 'cricket');
+        }
+      }
+    }
+    if (dto.cricketFormat !== undefined) assign('cricketFormat', dto.cricketFormat);
+    if (dto.cricketStumpsAvailable !== undefined)
+      assign('cricketStumpsAvailable', dto.cricketStumpsAvailable);
+    if (dto.cricketBowlingMachine !== undefined)
+      assign('cricketBowlingMachine', dto.cricketBowlingMachine);
+    if (dto.cricketPracticeMode !== undefined)
+      assign('cricketPracticeMode', dto.cricketPracticeMode);
     if (dto.amenities !== undefined) assign('amenities', dto.amenities);
     if (dto.rules !== undefined) assign('rules', dto.rules);
     if (dto.timeSlotTemplateId !== undefined) {

@@ -59,6 +59,34 @@ export class BookingsController {
     return tenantId;
   }
 
+  private async resolveTenantForCourt(
+    tenant: TenantContext,
+    courtKind: CourtKind,
+    courtId: string,
+  ): Promise<string | null> {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (tenantId) return tenantId;
+    return this.bookingsService.resolveTenantIdByCourt(courtKind, courtId);
+  }
+
+  private async resolveTenantForBooking(
+    tenant: TenantContext,
+    bookingId: string,
+  ): Promise<string | null> {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (tenantId) return tenantId;
+    return this.bookingsService.resolveTenantIdByBooking(bookingId);
+  }
+
+  private async resolveTenantForTemplate(
+    tenant: TenantContext,
+    templateId: string,
+  ): Promise<string | null> {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (tenantId) return tenantId;
+    return this.bookingsService.resolveTenantIdByTimeSlotTemplate(templateId);
+  }
+
   @Get()
   list(@CurrentTenant() tenant: TenantContext) {
     return this.bookingsService.list(this.requireTenantUuid(tenant));
@@ -93,46 +121,50 @@ export class BookingsController {
   @Post('time-slot-templates')
   @UseGuards(RolesGuard)
   @Roles('platform-owner', 'business-admin')
-  createTimeSlotTemplate(
+  async createTimeSlotTemplate(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateTimeSlotTemplateDto,
   ) {
-    return this.timeSlotTemplatesService.create(
-      this.requireTenantUuid(tenant),
-      dto,
-    );
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      throw new BadRequestException(
+        'X-Tenant-Id is optional for reads but required to create a template.',
+      );
+    }
+    return this.timeSlotTemplatesService.create(tenantId, dto);
   }
 
   @Patch('time-slot-templates/:templateId')
   @UseGuards(RolesGuard)
   @Roles('platform-owner', 'business-admin')
-  updateTimeSlotTemplate(
+  async updateTimeSlotTemplate(
     @CurrentTenant() tenant: TenantContext,
     @Param('templateId', ParseUUIDPipe) templateId: string,
     @Body() dto: UpdateTimeSlotTemplateDto,
   ) {
-    return this.timeSlotTemplatesService.update(
-      this.requireTenantUuid(tenant),
-      templateId,
-      dto,
-    );
+    const tenantId = await this.resolveTenantForTemplate(tenant, templateId);
+    if (!tenantId) {
+      throw new BadRequestException('Unable to resolve tenant for template.');
+    }
+    return this.timeSlotTemplatesService.update(tenantId, templateId, dto);
   }
 
   @Delete('time-slot-templates/:templateId')
   @UseGuards(RolesGuard)
   @Roles('platform-owner', 'business-admin')
-  deleteTimeSlotTemplate(
+  async deleteTimeSlotTemplate(
     @CurrentTenant() tenant: TenantContext,
     @Param('templateId', ParseUUIDPipe) templateId: string,
   ) {
-    return this.timeSlotTemplatesService.remove(
-      this.requireTenantUuid(tenant),
-      templateId,
-    );
+    const tenantId = await this.resolveTenantForTemplate(tenant, templateId);
+    if (!tenantId) {
+      throw new BadRequestException('Unable to resolve tenant for template.');
+    }
+    return this.timeSlotTemplatesService.remove(tenantId, templateId);
   }
 
   @Get('courts/:courtKind/:courtId/slots')
-  courtSlots(
+  async courtSlots(
     @CurrentTenant() tenant: TenantContext,
     @Param('courtKind') courtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
@@ -143,7 +175,11 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
-    const tenantId = this.getTenantUuidOrNull(tenant);
+    const tenantId = await this.resolveTenantForCourt(
+      tenant,
+      courtKind as CourtKind,
+      courtId,
+    );
     if (!tenantId) {
       return {
         date: query.date,
@@ -162,7 +198,7 @@ export class BookingsController {
   }
 
   @Get('courts/:courtKind/:courtId/slot-grid')
-  courtSlotGrid(
+  async courtSlotGrid(
     @CurrentTenant() tenant: TenantContext,
     @Param('courtKind') courtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
@@ -173,7 +209,11 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
-    const tenantId = this.getTenantUuidOrNull(tenant);
+    const tenantId = await this.resolveTenantForCourt(
+      tenant,
+      courtKind as CourtKind,
+      courtId,
+    );
     if (!tenantId) {
       return {
         date: query.date,
@@ -197,20 +237,11 @@ export class BookingsController {
   }
 
   @Get('locations/:locationId/facilities/available-slots')
-  locationFacilitiesAvailableSlots(
-    @CurrentTenant() tenant: TenantContext,
+  async locationFacilitiesAvailableSlots(
     @Param('locationId', ParseUUIDPipe) locationId: string,
     @Query() query: LocationFacilitySlotsQueryDto,
   ) {
-    const tenantId = this.getTenantUuidOrNull(tenant);
-    if (!tenantId) {
-      return {
-        date: query.date,
-        locationId,
-        facilities: [],
-      };
-    }
-    return this.bookingsService.getLocationFacilitiesAvailableSlots(tenantId, {
+    return this.bookingsService.getLocationFacilitiesAvailableSlots({
       locationId,
       date: query.date,
       startTime: query.startTime,
@@ -219,7 +250,7 @@ export class BookingsController {
   }
 
   @Put('courts/:courtKind/:courtId/slot-blocks')
-  setCourtSlotBlock(
+  async setCourtSlotBlock(
     @CurrentTenant() tenant: TenantContext,
     @Param('courtKind') courtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
@@ -230,20 +261,25 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
-    return this.bookingsService.setCourtSlotBlock(
-      this.requireTenantUuid(tenant),
-      {
-        kind: courtKind as CourtKind,
-        courtId,
-        date: dto.date,
-        startTime: dto.startTime,
-        blocked: dto.blocked,
-      },
+    const tenantId = await this.resolveTenantForCourt(
+      tenant,
+      courtKind as CourtKind,
+      courtId,
     );
+    if (!tenantId) {
+      throw new BadRequestException('Unable to resolve tenant for court.');
+    }
+    return this.bookingsService.setCourtSlotBlock(tenantId, {
+      kind: courtKind as CourtKind,
+      courtId,
+      date: dto.date,
+      startTime: dto.startTime,
+      blocked: dto.blocked,
+    });
   }
 
   @Post('courts/:courtKind/:courtId/facility-slots/generate')
-  generateFacilityDaySlots(
+  async generateFacilityDaySlots(
     @CurrentTenant() tenant: TenantContext,
     @Param('courtKind') courtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
@@ -254,18 +290,23 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
-    return this.bookingsService.generateDayFacilitySlots(
-      this.requireTenantUuid(tenant),
-      {
-        kind: courtKind as CourtKind,
-        courtId,
-        date: dto.date,
-      },
+    const tenantId = await this.resolveTenantForCourt(
+      tenant,
+      courtKind as CourtKind,
+      courtId,
     );
+    if (!tenantId) {
+      throw new BadRequestException('Unable to resolve tenant for court.');
+    }
+    return this.bookingsService.generateDayFacilitySlots(tenantId, {
+      kind: courtKind as CourtKind,
+      courtId,
+      date: dto.date,
+    });
   }
 
   @Patch('courts/:courtKind/:courtId/facility-slots')
-  patchFacilitySlot(
+  async patchFacilitySlot(
     @CurrentTenant() tenant: TenantContext,
     @Param('courtKind') courtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
@@ -276,58 +317,82 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
-    return this.bookingsService.patchFacilitySlot(
-      this.requireTenantUuid(tenant),
-      {
-        kind: courtKind as CourtKind,
-        courtId,
-        date: dto.date,
-        startTime: dto.startTime,
-        status: dto.status,
-      },
+    const tenantId = await this.resolveTenantForCourt(
+      tenant,
+      courtKind as CourtKind,
+      courtId,
     );
+    if (!tenantId) {
+      throw new BadRequestException('Unable to resolve tenant for court.');
+    }
+    return this.bookingsService.patchFacilitySlot(tenantId, {
+      kind: courtKind as CourtKind,
+      courtId,
+      date: dto.date,
+      startTime: dto.startTime,
+      status: dto.status,
+    });
   }
 
   @Get(':bookingId')
-  getOne(
+  async getOne(
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
   ) {
-    return this.bookingsService.getOne(
-      this.requireTenantUuid(tenant),
-      bookingId,
-    );
+    const tenantId = await this.resolveTenantForBooking(tenant, bookingId);
+    if (!tenantId) {
+      throw new BadRequestException('Unable to resolve tenant for booking.');
+    }
+    return this.bookingsService.getOne(tenantId, bookingId);
   }
 
   @Post()
-  create(
+  async create(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateBookingDto,
   ) {
-    return this.bookingsService.create(this.requireTenantUuid(tenant), dto);
+    const tenantIdFromHeader = this.getTenantUuidOrNull(tenant);
+    const firstItem = dto.items?.[0];
+    const resolvedFromCourt = firstItem
+      ? await this.bookingsService.resolveTenantIdByCourt(
+          firstItem.courtKind,
+          firstItem.courtId,
+        )
+      : null;
+    const tenantId = tenantIdFromHeader ?? resolvedFromCourt;
+    if (!tenantId) {
+      throw new BadRequestException(
+        'Unable to resolve tenant. Provide a valid court in items or X-Tenant-Id.',
+      );
+    }
+    return this.bookingsService.create(tenantId, dto);
   }
 
   @Patch(':bookingId')
-  update(
+  async update(
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Body() dto: UpdateBookingDto,
   ) {
-    return this.bookingsService.update(
-      this.requireTenantUuid(tenant),
-      bookingId,
-      dto,
-    );
+    const tenantId = await this.resolveTenantForBooking(tenant, bookingId);
+    if (!tenantId) {
+      throw new BadRequestException('Unable to resolve tenant for booking.');
+    }
+    return this.bookingsService.update(tenantId, bookingId, dto);
   }
 
   @Patch(':bookingId/facility-slots')
-  editBookingFacilitySlots(
+  async editBookingFacilitySlots(
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
     @Body() dto: EditBookingFacilitySlotsDto,
   ) {
+    const tenantId = await this.resolveTenantForBooking(tenant, bookingId);
+    if (!tenantId) {
+      throw new BadRequestException('Unable to resolve tenant for booking.');
+    }
     return this.bookingsService.editBookingFacilitySlots(
-      this.requireTenantUuid(tenant),
+      tenantId,
       bookingId,
       dto.blocked,
     );

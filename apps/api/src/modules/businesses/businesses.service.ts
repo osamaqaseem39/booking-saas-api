@@ -671,21 +671,27 @@ export class BusinessesService {
     let padel: PadelCourt[];
     let futsalCourt: FutsalCourt[];
     let cricketCourt: CricketCourt[];
+    let dualCricketFutsal: FutsalCourt[];
     try {
-      [padel, futsalCourt, cricketCourt] = await Promise.all([
-        this.padelCourtRepository.find({
-          where: { ...whereLoc, isActive: true, courtStatus: 'active' },
-          select: ['id', 'name', 'businessLocationId'],
-        }),
-        this.futsalCourtRepository.find({
-          where: { ...whereLoc, courtStatus: 'active' },
-          select: ['id', 'name', 'businessLocationId'],
-        }),
-        this.cricketCourtRepository.find({
-          where: { ...whereLoc, courtStatus: 'active' },
-          select: ['id', 'name', 'businessLocationId'],
-        }),
-      ]);
+      [padel, futsalCourt, cricketCourt, dualCricketFutsal] =
+        await Promise.all([
+          this.padelCourtRepository.find({
+            where: { ...whereLoc, isActive: true, courtStatus: 'active' },
+            select: ['id', 'name', 'businessLocationId'],
+          }),
+          this.futsalCourtRepository.find({
+            where: { ...whereLoc, courtStatus: 'active' },
+            select: ['id', 'name', 'businessLocationId'],
+          }),
+          this.cricketCourtRepository.find({
+            where: { ...whereLoc, courtStatus: 'active' },
+            select: ['id', 'name', 'businessLocationId'],
+          }),
+          this.futsalCourtRepository.find({
+            where: { ...whereLoc, courtStatus: 'active', supportsCricket: true },
+            select: ['id', 'name', 'businessLocationId'],
+          }),
+        ]);
     } catch (error: unknown) {
       if (this.isMissingArenaCourtRelationError(error)) {
         throw new ServiceUnavailableException(
@@ -701,8 +707,14 @@ export class BusinessesService {
     for (const row of futsalCourt) {
       push(row.businessLocationId, 'futsal', row.id, row.name);
     }
+    const cricketIds = new Set(cricketCourt.map((r) => r.id));
     for (const row of cricketCourt) {
       push(row.businessLocationId, 'cricket', row.id, row.name);
+    }
+    for (const row of dualCricketFutsal) {
+      if (!cricketIds.has(row.id)) {
+        push(row.businessLocationId, 'cricket', row.id, row.name);
+      }
     }
 
     return map;
@@ -1053,26 +1065,37 @@ export class BusinessesService {
 
     const whereLoc = { businessLocationId: In(locationIds) };
 
-    const [futsalCourt, cricketCourt, padel] = await Promise.all([
-      this.futsalCourtRepository.find({
-        where: { ...whereLoc, courtStatus: 'active' },
-        select: ['id', 'businessLocationId'],
-      }),
-      this.cricketCourtRepository.find({
-        where: { ...whereLoc, courtStatus: 'active' },
-        select: ['id', 'businessLocationId'],
-      }),
-      this.padelCourtRepository.find({
-        where: { ...whereLoc, isActive: true, courtStatus: 'active' },
-        select: ['id', 'businessLocationId'],
-      }),
-    ]);
+    const [futsalCourt, cricketCourt, dualCricketFutsal, padel] =
+      await Promise.all([
+        this.futsalCourtRepository.find({
+          where: { ...whereLoc, courtStatus: 'active' },
+          select: ['id', 'businessLocationId'],
+        }),
+        this.cricketCourtRepository.find({
+          where: { ...whereLoc, courtStatus: 'active' },
+          select: ['id', 'businessLocationId'],
+        }),
+        this.futsalCourtRepository.find({
+          where: { ...whereLoc, courtStatus: 'active', supportsCricket: true },
+          select: ['id', 'businessLocationId'],
+        }),
+        this.padelCourtRepository.find({
+          where: { ...whereLoc, isActive: true, courtStatus: 'active' },
+          select: ['id', 'businessLocationId'],
+        }),
+      ]);
 
     for (const row of futsalCourt) {
       push(row.businessLocationId, 'futsal_court', row.id);
     }
+    const cricketCourtIds = new Set(cricketCourt.map((r) => r.id));
     for (const row of cricketCourt) {
       push(row.businessLocationId, 'cricket_court', row.id);
+    }
+    for (const row of dualCricketFutsal) {
+      if (!cricketCourtIds.has(row.id)) {
+        push(row.businessLocationId, 'cricket_court', row.id);
+      }
     }
     for (const row of padel) {
       push(row.businessLocationId, 'padel_court', row.id);

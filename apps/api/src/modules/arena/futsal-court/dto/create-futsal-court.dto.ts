@@ -30,6 +30,8 @@ const SURFACE = ['artificial_turf', 'hard_surface'] as const;
 const FUTSAL_FMT = ['5v5', '6v6', '7v7'] as const;
 const LINE_MARK = ['permanent', 'temporary'] as const;
 const VENT = ['natural', 'fans', 'ac'] as const;
+const CRICKET_FMT = ['tape_ball', 'tennis_ball', 'hard_ball'] as const;
+const CRICKET_PRACTICE = ['full_ground', 'nets_mode'] as const;
 
 export class CreateFutsalCourtDto {
   @IsString()
@@ -157,6 +159,29 @@ export class CreateFutsalCourtDto {
   @IsOptional()
   @IsBoolean()
   allowParallelBooking?: boolean;
+
+  /** When true, cricket is hosted on this same row (no separate `cricket_courts` record). */
+  @IsOptional()
+  @IsBoolean()
+  supportsCricket?: boolean;
+
+  @IsOptional()
+  @ValidateIf((o: CreateFutsalCourtDto) => o.supportsCricket === true)
+  @IsIn(CRICKET_FMT)
+  cricketFormat?: (typeof CRICKET_FMT)[number];
+
+  @IsOptional()
+  @IsBoolean()
+  cricketStumpsAvailable?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  cricketBowlingMachine?: boolean;
+
+  @IsOptional()
+  @ValidateIf((o: CreateFutsalCourtDto) => o.supportsCricket === true)
+  @IsIn(CRICKET_PRACTICE)
+  cricketPracticeMode?: (typeof CRICKET_PRACTICE)[number];
 
   @IsOptional()
   @ValidateNested()
