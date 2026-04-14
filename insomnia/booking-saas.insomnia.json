@@ -2,7 +2,7 @@
   "_type": "export",
   "__export_format": 4,
   "__export_date": "2026-04-09T18:49:14.870Z",
-  "__export_source": "Maintained in-repo (booking-saas/api/booking-saas.insomnia.json)",
+  "__export_source": "Maintained in-repo (booking-saas/insomnia/booking-saas.insomnia.json)",
   "resources": [
     {
       "_id": "wrk_booking_saas",

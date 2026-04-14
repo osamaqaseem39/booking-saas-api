@@ -33,4 +33,4 @@ GET {{baseUrl}}/arena
 
 ### Full API surface
 # Edit and import: booking-saas-all-endpoints.postman_collection.json (repo root)
-# or backend-saas/api/booking-saas.insomnia.json — both are maintained manually in-repo.
+# or backend-saas/insomnia/booking-saas.insomnia.json — both are maintained manually in-repo.
