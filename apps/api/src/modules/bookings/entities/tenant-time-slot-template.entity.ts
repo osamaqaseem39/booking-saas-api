@@ -2,9 +2,11 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { TenantTimeSlotTemplateLine } from './tenant-time-slot-template-line.entity';
 
 @Entity({ name: 'tenant_time_slot_templates' })
 export class TenantTimeSlotTemplate {
@@ -17,9 +19,10 @@ export class TenantTimeSlotTemplate {
   @Column({ type: 'varchar', length: 120 })
   name!: string;
 
-  /** Hourly-aligned HH:mm start times (booking grid), sorted ascending. */
-  @Column({ type: 'jsonb' })
-  slotStarts!: string[];
+  @OneToMany(() => TenantTimeSlotTemplateLine, (line) => line.template, {
+    cascade: true,
+  })
+  slotLines!: TenantTimeSlotTemplateLine[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

@@ -7,6 +7,7 @@ import { User } from '../iam/entities/user.entity';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
 import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
+import { TenantTimeSlotTemplateLine } from './entities/tenant-time-slot-template-line.entity';
 import { TimeSlotTemplatesService } from './time-slot-templates.service';
 import { CourtFacilitySlot } from './entities/court-facility-slot.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
@@ -38,6 +39,7 @@ import { IamModule } from '../iam/iam.module';
       CourtSlotBookingBlock,
       CourtFacilitySlot,
       TenantTimeSlotTemplate,
+      TenantTimeSlotTemplateLine,
     ]),
   ],
   controllers: [

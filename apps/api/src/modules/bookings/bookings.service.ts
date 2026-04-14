@@ -603,11 +603,6 @@ export class BookingsService {
       params.kind,
       params.courtId,
     );
-    const templateStarts = await this.getCourtTemplateStartSet(
-      tenantId,
-      params.kind,
-      params.courtId,
-    );
 
     const slots: CourtSlotsApiRow['slots'] = [];
     const step = COURT_SLOT_GRID_STEP_MINUTES;
@@ -919,6 +914,11 @@ export class BookingsService {
       params.courtId,
       dateOnly,
     );
+    const templateStarts = await this.getCourtTemplateStartSet(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
 
     const segments: CourtSlotGridSegment[] = [];
     const step = COURT_SLOT_GRID_STEP_MINUTES;
@@ -1107,9 +1107,11 @@ export class BookingsService {
     if (!templateId) return new Set<string>();
     const tpl = await this.slotTemplateRepo.findOne({
       where: { id: templateId, tenantId },
-      select: ['slotStarts'],
+      relations: { slotLines: true },
     });
-    const starts = Array.isArray(tpl?.slotStarts) ? tpl.slotStarts : [];
+    const starts = Array.isArray(tpl?.slotLines)
+      ? tpl.slotLines.map((line) => line.startTime)
+      : [];
     return new Set(
       starts.filter((s): s is string => typeof s === 'string' && s.trim().length > 0),
     );
