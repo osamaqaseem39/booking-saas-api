@@ -1,3 +1,15 @@
 {
-  "framework": "nestjs"
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/index.js": {
+      "runtime": "@vercel/node"
+    }
+  },
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "dist/apps/api/main.js"
+    }
+  ]
 }
