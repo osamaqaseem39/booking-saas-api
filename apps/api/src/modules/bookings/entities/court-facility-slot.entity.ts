@@ -8,7 +8,7 @@ import {
 } from 'typeorm';
 import type { CourtKind } from '../booking.types';
 
-export type CourtFacilitySlotStatus = 'available' | 'blocked' | 'booked';
+export type CourtFacilitySlotStatus = 'available' | 'blocked';
 
 @Entity({ name: 'court_facility_slots' })
 @Unique('UQ_court_facility_slots_key', [

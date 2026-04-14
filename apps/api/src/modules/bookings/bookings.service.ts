@@ -1217,9 +1217,6 @@ export class BookingsService {
           });
           continue;
         }
-        if (prev.status === 'available' && row.status === 'booked') {
-          merged.set(row.startTime, { endTime: row.endTime, status: 'booked' });
-        }
       }
     }
     return merged;
@@ -1245,7 +1242,7 @@ export class BookingsService {
         item.courtKind,
         item.courtId,
       );
-      const markBooked = isConfirmedBooking && item.itemStatus === 'confirmed';
+      const markBlocked = isConfirmedBooking && item.itemStatus === 'confirmed';
       const startM = toMinutes(item.startTime);
       const endM = toMinutes(item.endTime);
 
@@ -1264,46 +1261,9 @@ export class BookingsService {
             select: ['status', 'endTime'],
           });
           if (!existing) continue;
-          if (existing.status === 'blocked') continue;
 
-          if (markBooked) {
-            if (existing.status !== 'booked') {
-              await this.facilitySlotRepo.upsert(
-                {
-                  tenantId,
-                  courtKind: k.kind,
-                  courtId: k.courtId,
-                  slotDate: dateOnly,
-                  startTime: segStart,
-                  endTime: existing.endTime || segEnd,
-                  status: 'booked',
-                },
-                {
-                  conflictPaths: [
-                    'tenantId',
-                    'courtKind',
-                    'courtId',
-                    'slotDate',
-                    'startTime',
-                  ],
-                },
-              );
-            }
-            continue;
-          }
-
-          if (existing.status !== 'booked') continue;
-          const stillBookedByAnother =
-            await this.hasOtherConfirmedBookingForSegment(
-              tenantId,
-              dateOnly,
-              k.kind,
-              k.courtId,
-              segStart,
-              segEnd,
-              booking.id,
-            );
-          if (!stillBookedByAnother) {
+          if (!markBlocked) continue;
+          if (existing.status !== 'blocked') {
             await this.facilitySlotRepo.upsert(
               {
                 tenantId,
@@ -1312,7 +1272,7 @@ export class BookingsService {
                 slotDate: dateOnly,
                 startTime: segStart,
                 endTime: existing.endTime || segEnd,
-                status: 'available',
+                status: 'blocked',
               },
               {
                 conflictPaths: [
@@ -1328,32 +1288,6 @@ export class BookingsService {
         }
       }
     }
-  }
-
-  private async hasOtherConfirmedBookingForSegment(
-    tenantId: string,
-    dateOnly: string,
-    courtKind: CourtKind,
-    courtId: string,
-    segmentStart: string,
-    segmentEnd: string,
-    bookingIdToExclude: string,
-  ): Promise<boolean> {
-    const overlapCount = await this.bookingRepo
-      .createQueryBuilder('b')
-      .innerJoin('b.items', 'i')
-      .where('b.tenantId = :tenantId', { tenantId })
-      .andWhere('b.bookingDate = :dateOnly', { dateOnly })
-      .andWhere("b.bookingStatus = 'confirmed'")
-      .andWhere("i.itemStatus = 'confirmed'")
-      .andWhere('i.courtKind = :courtKind', { courtKind })
-      .andWhere('i.courtId = :courtId', { courtId })
-      .andWhere('b.id <> :bookingIdToExclude', { bookingIdToExclude })
-      .andWhere('i.startTime < :segmentEnd', { segmentEnd })
-      .andWhere('i.endTime > :segmentStart', { segmentStart })
-      .getCount();
-
-    return overlapCount > 0;
   }
 
   private parseSlotGridWindow(
