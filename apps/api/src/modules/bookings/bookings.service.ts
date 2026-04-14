@@ -224,6 +224,8 @@ export type CourtSlotGridApiRow = {
 export type LocationFacilitiesAvailableSlotsApiRow = {
   date: string;
   locationId: string;
+  /** Echo of normalized filter; omitted when all court kinds are included. */
+  courtType?: CourtKind;
   facilities: Array<{
     kind: CourtKind;
     courtId: string;
@@ -232,6 +234,11 @@ export type LocationFacilitiesAvailableSlotsApiRow = {
       startTime: string;
       endTime: string;
     }>;
+  }>;
+  /** Unique start/end pairs that are available on at least one included facility, sorted by time. */
+  unionSlots: Array<{
+    startTime: string;
+    endTime: string;
   }>;
 };
 
@@ -1201,12 +1208,30 @@ export class BookingsService {
     return { ok: true };
   }
 
+  /**
+   * `null` = include all kinds; otherwise only that {@link CourtKind}.
+   * DTO validates input; unknown values are rejected here defensively.
+   */
+  private normalizeLocationSlotsCourtTypeParam(
+    raw: string | undefined,
+  ): CourtKind | null {
+    if (raw == null || String(raw).trim() === '') return null;
+    const s = String(raw).trim().toLowerCase().replace(/-/g, '_');
+    if (s === 'futsal' || s === 'futsal_court') return 'futsal_court';
+    if (s === 'cricket' || s === 'cricket_court') return 'cricket_court';
+    if (s === 'padel' || s === 'padel_court') return 'padel_court';
+    throw new BadRequestException(
+      'courtType must be futsal, cricket, padel, or futsal_court / cricket_court / padel_court',
+    );
+  }
+
   async getLocationFacilitiesAvailableSlots(
     params: {
       locationId: string;
       date: string;
       startTime?: string;
       endTime?: string;
+      courtType?: string;
     },
   ): Promise<LocationFacilitiesAvailableSlotsApiRow> {
     const dateOnly = formatDateOnly(params.date);
@@ -1218,108 +1243,145 @@ export class BookingsService {
       throw new NotFoundException(`Location ${params.locationId} not found`);
     }
 
+    const courtTypeFilter = this.normalizeLocationSlotsCourtTypeParam(
+      params.courtType,
+    );
+    const includeFutsal =
+      courtTypeFilter == null || courtTypeFilter === 'futsal_court';
+    const includeCricket =
+      courtTypeFilter == null || courtTypeFilter === 'cricket_court';
+    const includePadel =
+      courtTypeFilter == null || courtTypeFilter === 'padel_court';
+
     /** Courts are keyed by `businessLocationId`; use each row's `tenantId` for slot logic (avoids empty lists when business.tenantId ≠ court.tenantId). */
     const bookableCourtStatus = In(['active', 'draft']);
 
     const facilities: LocationFacilitiesAvailableSlotsApiRow['facilities'] = [];
-    const futsalRows = await this.futsalCourtRepo.find({
-      where: {
-        businessLocationId: params.locationId,
-        courtStatus: bookableCourtStatus,
-      },
-      select: ['id', 'name', 'tenantId'],
-    });
-    for (const row of futsalRows) {
-      const grid = await this.getCourtSlotGrid(row.tenantId, {
-        kind: 'futsal_court',
-        courtId: row.id,
-        date: dateOnly,
-        startTime: params.startTime,
-        endTime: params.endTime,
-        availableOnly: true,
+    if (includeFutsal) {
+      const futsalRows = await this.futsalCourtRepo.find({
+        where: {
+          businessLocationId: params.locationId,
+          courtStatus: bookableCourtStatus,
+        },
+        select: ['id', 'name', 'tenantId'],
       });
-      facilities.push({
-        kind: 'futsal_court',
-        courtId: row.id,
-        name: row.name,
-        slots: grid.segments.map((seg) => ({
-          startTime: seg.startTime,
-          endTime: seg.endTime,
-        })),
-      });
+      for (const row of futsalRows) {
+        const grid = await this.getCourtSlotGrid(row.tenantId, {
+          kind: 'futsal_court',
+          courtId: row.id,
+          date: dateOnly,
+          startTime: params.startTime,
+          endTime: params.endTime,
+          availableOnly: true,
+        });
+        facilities.push({
+          kind: 'futsal_court',
+          courtId: row.id,
+          name: row.name,
+          slots: grid.segments.map((seg) => ({
+            startTime: seg.startTime,
+            endTime: seg.endTime,
+          })),
+        });
+      }
     }
-    const cricketRows = await this.cricketCourtRepo.find({
-      where: {
-        businessLocationId: params.locationId,
-        courtStatus: bookableCourtStatus,
-      },
-      select: ['id', 'name', 'tenantId'],
-    });
-    const dualCricketFutsal = await this.futsalCourtRepo.find({
-      where: {
-        businessLocationId: params.locationId,
-        courtStatus: bookableCourtStatus,
-        supportsCricket: true,
-      },
-      select: ['id', 'name', 'tenantId'],
-    });
-    const cricketRowIds = new Set(cricketRows.map((r) => r.id));
-    const cricketSlotSources = [
-      ...cricketRows,
-      ...dualCricketFutsal.filter((r) => !cricketRowIds.has(r.id)),
-    ];
-    for (const row of cricketSlotSources) {
-      const grid = await this.getCourtSlotGrid(row.tenantId, {
-        kind: 'cricket_court',
-        courtId: row.id,
-        date: dateOnly,
-        startTime: params.startTime,
-        endTime: params.endTime,
-        availableOnly: true,
+    if (includeCricket) {
+      const cricketRows = await this.cricketCourtRepo.find({
+        where: {
+          businessLocationId: params.locationId,
+          courtStatus: bookableCourtStatus,
+        },
+        select: ['id', 'name', 'tenantId'],
       });
-      facilities.push({
-        kind: 'cricket_court',
-        courtId: row.id,
-        name: row.name,
-        slots: grid.segments.map((seg) => ({
-          startTime: seg.startTime,
-          endTime: seg.endTime,
-        })),
+      const dualCricketFutsal = await this.futsalCourtRepo.find({
+        where: {
+          businessLocationId: params.locationId,
+          courtStatus: bookableCourtStatus,
+          supportsCricket: true,
+        },
+        select: ['id', 'name', 'tenantId'],
       });
+      const cricketRowIds = new Set(cricketRows.map((r) => r.id));
+      const cricketSlotSources = [
+        ...cricketRows,
+        ...dualCricketFutsal.filter((r) => !cricketRowIds.has(r.id)),
+      ];
+      for (const row of cricketSlotSources) {
+        const grid = await this.getCourtSlotGrid(row.tenantId, {
+          kind: 'cricket_court',
+          courtId: row.id,
+          date: dateOnly,
+          startTime: params.startTime,
+          endTime: params.endTime,
+          availableOnly: true,
+        });
+        facilities.push({
+          kind: 'cricket_court',
+          courtId: row.id,
+          name: row.name,
+          slots: grid.segments.map((seg) => ({
+            startTime: seg.startTime,
+            endTime: seg.endTime,
+          })),
+        });
+      }
     }
-    const padelRows = await this.padelRepo.find({
-      where: {
-        businessLocationId: params.locationId,
-        courtStatus: bookableCourtStatus,
-      },
-      select: ['id', 'name', 'tenantId', 'isActive'],
-    });
-    for (const row of padelRows) {
-      if (row.isActive === false) continue;
-      const grid = await this.getCourtSlotGrid(row.tenantId, {
-        kind: 'padel_court',
-        courtId: row.id,
-        date: dateOnly,
-        startTime: params.startTime,
-        endTime: params.endTime,
-        availableOnly: true,
+    if (includePadel) {
+      const padelRows = await this.padelRepo.find({
+        where: {
+          businessLocationId: params.locationId,
+          courtStatus: bookableCourtStatus,
+        },
+        select: ['id', 'name', 'tenantId', 'isActive'],
       });
-      facilities.push({
-        kind: 'padel_court',
-        courtId: row.id,
-        name: row.name,
-        slots: grid.segments.map((seg) => ({
-          startTime: seg.startTime,
-          endTime: seg.endTime,
-        })),
-      });
+      for (const row of padelRows) {
+        if (row.isActive === false) continue;
+        const grid = await this.getCourtSlotGrid(row.tenantId, {
+          kind: 'padel_court',
+          courtId: row.id,
+          date: dateOnly,
+          startTime: params.startTime,
+          endTime: params.endTime,
+          availableOnly: true,
+        });
+        facilities.push({
+          kind: 'padel_court',
+          courtId: row.id,
+          name: row.name,
+          slots: grid.segments.map((seg) => ({
+            startTime: seg.startTime,
+            endTime: seg.endTime,
+          })),
+        });
+      }
     }
 
-    return {
+    const unionByKey = new Map<
+      string,
+      { startTime: string; endTime: string }
+    >();
+    for (const f of facilities) {
+      for (const s of f.slots) {
+        const key = `${s.startTime}\t${s.endTime}`;
+        if (!unionByKey.has(key)) {
+          unionByKey.set(key, { startTime: s.startTime, endTime: s.endTime });
+        }
+      }
+    }
+    const unionSlots = [...unionByKey.values()].sort((a, b) =>
+      a.startTime.localeCompare(b.startTime),
+    );
+
+    const out: LocationFacilitiesAvailableSlotsApiRow = {
       date: dateOnly,
       locationId: params.locationId,
       facilities,
+      unionSlots,
     };
+    if (courtTypeFilter != null) {
+      out.courtType = courtTypeFilter;
+    }
+    return out;
   }
 
   /**
