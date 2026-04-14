@@ -988,7 +988,7 @@
       "parentId": "fld_arena_58",
       "name": "List futsal pitches (optional ?businessLocationId)",
       "method": "GET",
-      "url": "{{ base_url }}/arena/futsal-courts?businessLocationId=",
+      "url": "{{ base_url }}/arena/turf-courts?businessLocationId=",
       "headers": [
         {
           "name": "X-Tenant-Id",
@@ -1007,7 +1007,7 @@
       "parentId": "fld_arena_58",
       "name": "Get one futsal pitch",
       "method": "GET",
-      "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
+      "url": "{{ base_url }}/arena/turf-courts/{{ courtId }}",
       "headers": [
         {
           "name": "X-Tenant-Id",
@@ -1026,7 +1026,7 @@
       "parentId": "fld_arena_58",
       "name": "Add futsal pitch (example body)",
       "method": "POST",
-      "url": "{{ base_url }}/arena/futsal-courts",
+      "url": "{{ base_url }}/arena/turf-courts",
       "headers": [
         {
           "name": "Content-Type",
@@ -1053,7 +1053,7 @@
       "parentId": "fld_arena_58",
       "name": "Edit futsal pitch",
       "method": "PATCH",
-      "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
+      "url": "{{ base_url }}/arena/turf-courts/{{ courtId }}",
       "headers": [
         {
           "name": "Content-Type",
@@ -1080,7 +1080,7 @@
       "parentId": "fld_arena_58",
       "name": "Remove futsal pitch",
       "method": "DELETE",
-      "url": "{{ base_url }}/arena/futsal-courts/{{ courtId }}",
+      "url": "{{ base_url }}/arena/turf-courts/{{ courtId }}",
       "headers": [
         {
           "name": "X-Tenant-Id",
@@ -1099,7 +1099,7 @@
       "parentId": "fld_arena_58",
       "name": "List cricket pitches (optional ?businessLocationId)",
       "method": "GET",
-      "url": "{{ base_url }}/arena/cricket-courts?businessLocationId=",
+      "url": "{{ base_url }}/arena/turf-courts/surface?businessLocationId=",
       "headers": [
         {
           "name": "X-Tenant-Id",
@@ -1118,7 +1118,7 @@
       "parentId": "fld_arena_58",
       "name": "Get one cricket pitch",
       "method": "GET",
-      "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
+      "url": "{{ base_url }}/arena/turf-courts/surface/{{ courtId }}",
       "headers": [
         {
           "name": "X-Tenant-Id",
@@ -1137,7 +1137,7 @@
       "parentId": "fld_arena_58",
       "name": "Add cricket pitch (example body)",
       "method": "POST",
-      "url": "{{ base_url }}/arena/cricket-courts",
+      "url": "{{ base_url }}/arena/turf-courts/surface",
       "headers": [
         {
           "name": "Content-Type",
@@ -1164,7 +1164,7 @@
       "parentId": "fld_arena_58",
       "name": "Edit cricket pitch",
       "method": "PATCH",
-      "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
+      "url": "{{ base_url }}/arena/turf-courts/surface/{{ courtId }}",
       "headers": [
         {
           "name": "Content-Type",
@@ -1191,7 +1191,7 @@
       "parentId": "fld_arena_58",
       "name": "Remove cricket pitch",
       "method": "DELETE",
-      "url": "{{ base_url }}/arena/cricket-courts/{{ courtId }}",
+      "url": "{{ base_url }}/arena/turf-courts/surface/{{ courtId }}",
       "headers": [
         {
           "name": "X-Tenant-Id",

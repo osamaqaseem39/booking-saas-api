@@ -22,6 +22,7 @@ import { BookingAvailabilityQueryDto } from './dto/booking-availability-query.dt
 import { CourtSlotGridQueryDto } from './dto/court-slot-grid-query.dto';
 import { CourtSlotsQueryDto } from './dto/court-slots-query.dto';
 import { LocationFacilitySlotsQueryDto } from './dto/location-facility-slots-query.dto';
+import { LocationFacilitySlotPickQueryDto } from './dto/location-facility-slot-pick-query.dto';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
 import { BookingsService } from './bookings.service';
@@ -242,6 +243,19 @@ export class BookingsController {
     @Query() query: LocationFacilitySlotsQueryDto,
   ) {
     return this.bookingsService.getLocationFacilitiesAvailableSlots({
+      locationId,
+      date: query.date,
+      startTime: query.startTime,
+      endTime: query.endTime,
+    });
+  }
+
+  @Get('locations/:locationId/facilities/available-for-slot')
+  async locationFacilitiesAvailableForSlot(
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Query() query: LocationFacilitySlotPickQueryDto,
+  ) {
+    return this.bookingsService.getLocationFacilitiesAvailableForSlot({
       locationId,
       date: query.date,
       startTime: query.startTime,

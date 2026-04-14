@@ -12,13 +12,13 @@ export class ArenaMetaController {
       facilityTypeCodes: ['futsal', 'cricket', 'padel'],
       note: 'POST create bodies require businessLocationId; list with ?businessLocationId= to scope courts to a business location.',
       resources: {
-        'futsal-courts': {
-          path: '/arena/futsal-courts',
-          label: 'Futsal pitch',
+        'turf-courts': {
+          path: '/arena/turf-courts',
+          label: 'Turf pitches (storage rows)',
         },
-        'cricket-courts': {
-          path: '/arena/cricket-courts',
-          label: 'Cricket pitch',
+        'turf-courts-surface': {
+          path: '/arena/turf-courts/surface',
+          label: 'Turf pitches (surface view)',
         },
         'padel-court': { path: '/arena/padel-court', label: 'Padel' },
       },

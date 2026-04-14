@@ -55,7 +55,8 @@ Upcoming:
 - `POST /businesses/onboard`
 - `GET /product-catalog`
 - `GET /arena` — meta (vertical + sub-type route map)
-- `GET|POST|PATCH|DELETE /arena/turf-courts` — **combined Futsal + Cricket turf setup** (full form fields: structure, dimensions, surface, per-sport settings, pricing, slots, amenities, rules). Each court has **`sportMode`**: `futsal_only` \| `cricket_only` \| `both` (synced with `supportsFutsal` / `supportsCricket`). List filter: `GET /arena/turf-courts?sport=futsal` or `?sport=cricket` returns only courts that support that sport.
+- `GET|POST|PATCH|DELETE /arena/turf-courts` — **turf storage rows** (primary `futsal_courts` table; dual-sport uses `supportsCricket` + cricket fields on the same row).
+- `GET|POST|PATCH|DELETE /arena/turf-courts/surface` (+ `GET|PATCH|DELETE …/surface/:id`) — **surface view** backed by `cricket_courts` plus dual-sport rows projected from storage.
 - `GET|POST|PATCH|DELETE /arena/cricket-indoor` (+ `GET :id`)
 - `GET|POST|PATCH|DELETE /arena/futsal-field` (+ `GET :id`)
 - `GET|POST|PATCH|DELETE /arena/padel-court` (+ `GET :id`) — **padel setup form** (structure, glass walls, dimensions ~20×10m defaults, surface, match type, pricing, slots, extras, amenities, rules)

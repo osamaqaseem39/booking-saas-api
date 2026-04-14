@@ -235,6 +235,19 @@ export type LocationFacilitiesAvailableSlotsApiRow = {
   }>;
 };
 
+/** Facilities at a location that are bookable for one specific grid slot. */
+export type LocationFacilitiesAvailableForSlotApiRow = {
+  date: string;
+  locationId: string;
+  startTime: string;
+  endTime: string;
+  facilities: Array<{
+    kind: CourtKind;
+    courtId: string;
+    name: string;
+  }>;
+};
+
 @Injectable()
 export class BookingsService {
   async resolveTenantIdByCourt(
@@ -1309,6 +1322,131 @@ export class BookingsService {
     };
   }
 
+  /**
+   * All active/draft facilities at the location where the given calendar slot
+   * is exactly available (not booked, not blocked, within template).
+   */
+  async getLocationFacilitiesAvailableForSlot(
+    params: {
+      locationId: string;
+      date: string;
+      startTime: string;
+      endTime?: string;
+    },
+  ): Promise<LocationFacilitiesAvailableForSlotApiRow> {
+    const dateOnly = formatDateOnly(params.date);
+    const location = await this.locationRepo.findOne({
+      where: { id: params.locationId },
+      select: ['id'],
+    });
+    if (!location) {
+      throw new NotFoundException(`Location ${params.locationId} not found`);
+    }
+
+    const startT = params.startTime;
+    const endT =
+      params.endTime ??
+      minutesToTimeString(
+        toMinutes(startT) + COURT_SLOT_GRID_STEP_MINUTES,
+      );
+    this.parseSlotGridWindow(startT, endT);
+    const spanMin =
+      (endT === '24:00' ? 24 * 60 : toMinutes(endT)) - toMinutes(startT);
+    if (spanMin !== COURT_SLOT_GRID_STEP_MINUTES) {
+      throw new BadRequestException(
+        `Slot length must be exactly ${COURT_SLOT_GRID_STEP_MINUTES} minutes; omit endTime for a single grid slot.`,
+      );
+    }
+
+    const bookableCourtStatus = In(['active', 'draft']);
+    const facilities: LocationFacilitiesAvailableForSlotApiRow['facilities'] =
+      [];
+
+    const addIfSlotAvailable = async (
+      tenantId: string,
+      kind: CourtKind,
+      courtId: string,
+      name: string,
+    ): Promise<void> => {
+      const courtSlots = await this.getCourtSlots(tenantId, {
+        kind,
+        courtId,
+        date: dateOnly,
+        startTime: startT,
+        endTime: endT,
+      });
+      const hasExactFree = courtSlots.slots.some(
+        (s) =>
+          s.startTime === startT &&
+          s.endTime === endT &&
+          s.availability === 'available',
+      );
+      if (hasExactFree) {
+        facilities.push({ kind, courtId, name });
+      }
+    };
+
+    const futsalRows = await this.futsalCourtRepo.find({
+      where: {
+        businessLocationId: params.locationId,
+        courtStatus: bookableCourtStatus,
+      },
+      select: ['id', 'name', 'tenantId'],
+    });
+    for (const row of futsalRows) {
+      await addIfSlotAvailable(row.tenantId, 'futsal_court', row.id, row.name);
+    }
+
+    const cricketRows = await this.cricketCourtRepo.find({
+      where: {
+        businessLocationId: params.locationId,
+        courtStatus: bookableCourtStatus,
+      },
+      select: ['id', 'name', 'tenantId'],
+    });
+    const dualCricketFutsal = await this.futsalCourtRepo.find({
+      where: {
+        businessLocationId: params.locationId,
+        courtStatus: bookableCourtStatus,
+        supportsCricket: true,
+      },
+      select: ['id', 'name', 'tenantId'],
+    });
+    const cricketRowIds = new Set(cricketRows.map((r) => r.id));
+    const cricketSlotSources = [
+      ...cricketRows,
+      ...dualCricketFutsal.filter((r) => !cricketRowIds.has(r.id)),
+    ];
+    for (const row of cricketSlotSources) {
+      await addIfSlotAvailable(
+        row.tenantId,
+        'cricket_court',
+        row.id,
+        row.name,
+      );
+    }
+
+    const padelRows = await this.padelRepo.find({
+      where: {
+        businessLocationId: params.locationId,
+        courtStatus: bookableCourtStatus,
+      },
+      select: ['id', 'name', 'tenantId', 'isActive'],
+    });
+    for (const row of padelRows) {
+      if (row.isActive === false) continue;
+      await addIfSlotAvailable(row.tenantId, 'padel_court', row.id, row.name);
+    }
+
+    return {
+      date: dateOnly,
+      locationId: params.locationId,
+      startTime: startT,
+      endTime: endT,
+      facilities,
+    };
+  }
+
   private async getBusinessLocationIdForCourt(
     tenantId: string,
     kind: CourtKind,
@@ -2150,6 +2288,11 @@ export class BookingsService {
     item: CreateBookingItemDto,
     allowImmediate = false,
   ): void {
+    const dateOnly = formatDateOnly(bookingDate);
+    if (isPastDate(dateOnly)) {
+      throw new BadRequestException('Booking date cannot be in the past');
+    }
+
     const step = COURT_SLOT_GRID_STEP_MINUTES;
     const startMins = toMinutes(item.startTime);
     const endMins = toMinutes(item.endTime);

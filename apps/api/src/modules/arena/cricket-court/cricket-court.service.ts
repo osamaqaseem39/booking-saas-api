@@ -21,7 +21,7 @@ function dec(n?: number): string | undefined {
 }
 
 @Injectable()
-export class CricketCourtService {
+export class ArenaTurfSurfacesService {
   constructor(
     @InjectRepository(CricketCourt)
     private readonly repo: Repository<CricketCourt>,

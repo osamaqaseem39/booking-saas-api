@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ArenaMetaController } from './arena-meta.controller';
+import { ArenaTurfCourtsController } from './arena-turf-courts.controller';
 import { ArenaTurfTwinLinkModule } from './arena-turf-twin-link.module';
 import { CricketCourtModule } from './cricket-court/cricket-court.module';
 import { FutsalCourtModule } from './futsal-court/futsal-court.module';
@@ -17,6 +18,10 @@ import { PublicArenaFacilityController } from './public-arena-facility.controlle
     PadelCourtModule,
     GamingStationModule,
   ],
-  controllers: [ArenaMetaController, PublicArenaFacilityController],
+  controllers: [
+    ArenaMetaController,
+    PublicArenaFacilityController,
+    ArenaTurfCourtsController,
+  ],
 })
 export class ArenaModule {}

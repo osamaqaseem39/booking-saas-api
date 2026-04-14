@@ -1,15 +1,15 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { CricketCourt } from './cricket-court/entities/cricket-court.entity';
-import { CricketCourtService } from './cricket-court/cricket-court.service';
+import { ArenaTurfSurfacesService } from './cricket-court/cricket-court.service';
 import { FutsalCourt } from './futsal-court/entities/futsal-court.entity';
-import { FutsalCourtService } from './futsal-court/futsal-court.service';
+import { ArenaTurfRowsService } from './futsal-court/futsal-court.service';
 import { PadelCourt } from './padel-court/entities/padel-court.entity';
 import { PadelCourtService } from './padel-court/padel-court.service';
 
 /**
  * Public facility detail by court id — no auth, no `X-Tenant-Id`.
- * Mirrors tenant routes: `GET /arena/futsal-courts/:id`, `GET /arena/cricket-courts/:id`,
+ * Mirrors tenant routes: `GET /arena/turf-courts/:id`, `GET /arena/turf-courts/surface/:id`,
  * `GET /arena/padel-court/:id` but resolves by UUID only. `tenantId` is omitted from JSON.
  * Includes `location` (id, name, `about` from site details, address) when the court is linked to a site;
  * use **GET /public/venues/:id** when you need full venue payload and tenant id for booking APIs.
@@ -17,22 +17,24 @@ import { PadelCourtService } from './padel-court/padel-court.service';
 @Controller('public')
 export class PublicArenaFacilityController {
   constructor(
-    private readonly futsalCourtService: FutsalCourtService,
-    private readonly cricketCourtService: CricketCourtService,
+    private readonly turfRows: ArenaTurfRowsService,
+    private readonly turfSurfaces: ArenaTurfSurfacesService,
     private readonly padelCourtService: PadelCourtService,
   ) {}
 
-  @Get('futsal-courts/:courtId')
-  async getFutsalCourtPublic(@Param('courtId', ParseUUIDPipe) courtId: string) {
-    const row = await this.futsalCourtService.findOnePublicById(courtId);
+  @Get('turf-courts/surface/:courtId')
+  async getTurfCourtSurfacePublic(
+    @Param('courtId', ParseUUIDPipe) courtId: string,
+  ) {
+    const row = await this.turfSurfaces.findOnePublicById(courtId);
     return this.withoutTenant(row);
   }
 
-  @Get('cricket-courts/:courtId')
-  async getCricketCourtPublic(
+  @Get('turf-courts/:courtId')
+  async getTurfCourtStoragePublic(
     @Param('courtId', ParseUUIDPipe) courtId: string,
   ) {
-    const row = await this.cricketCourtService.findOnePublicById(courtId);
+    const row = await this.turfRows.findOnePublicById(courtId);
     return this.withoutTenant(row);
   }
 

@@ -4,8 +4,7 @@ import { BookingsModule } from '../../bookings/bookings.module';
 import { BusinessesModule } from '../../businesses/businesses.module';
 import { IamModule } from '../../iam/iam.module';
 import { FutsalCourt } from './entities/futsal-court.entity';
-import { FutsalCourtController } from './futsal-court.controller';
-import { FutsalCourtService } from './futsal-court.service';
+import { ArenaTurfRowsService } from './futsal-court.service';
 
 @Module({
   imports: [
@@ -14,8 +13,8 @@ import { FutsalCourtService } from './futsal-court.service';
     BusinessesModule,
     BookingsModule,
   ],
-  controllers: [FutsalCourtController],
-  providers: [FutsalCourtService],
-  exports: [FutsalCourtService],
+  controllers: [],
+  providers: [ArenaTurfRowsService],
+  exports: [ArenaTurfRowsService],
 })
 export class FutsalCourtModule {}
