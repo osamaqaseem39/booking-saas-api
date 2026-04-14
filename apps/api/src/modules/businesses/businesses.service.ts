@@ -587,12 +587,17 @@ export class BusinessesService {
 
   private countsFromCourtSummaries(
     courts: Array<{
-      facilityType: 'futsal' | 'cricket' | 'padel';
+      facilityType: 'futsal' | 'cricket' | 'padel' | 'turf';
     }>,
   ): Record<'futsal' | 'cricket' | 'padel', number> {
     const base = this.emptyFacilityCountsRecord();
     for (const c of courts) {
-      base[c.facilityType]++;
+      if (c.facilityType === 'turf') {
+        base.futsal += 1;
+        base.cricket += 1;
+      } else {
+        base[c.facilityType]++;
+      }
     }
     return base;
   }
@@ -605,7 +610,7 @@ export class BusinessesService {
       ReturnType<BusinessesService['toLocationListRow']> & {
         facilityCounts: Record<'futsal' | 'cricket' | 'padel', number>;
         facilityCourts: Array<{
-          facilityType: 'futsal' | 'cricket' | 'padel';
+          facilityType: 'futsal' | 'cricket' | 'padel' | 'turf';
           id: string;
           name: string;
         }>;
@@ -633,7 +638,7 @@ export class BusinessesService {
     Map<
       string,
       Array<{
-        facilityType: 'futsal' | 'cricket' | 'padel';
+        facilityType: 'futsal' | 'cricket' | 'padel' | 'turf';
         id: string;
         name: string;
       }>
@@ -642,7 +647,7 @@ export class BusinessesService {
     const map = new Map<
       string,
       Array<{
-        facilityType: 'futsal' | 'cricket' | 'padel';
+        facilityType: 'futsal' | 'cricket' | 'padel' | 'turf';
         id: string;
         name: string;
       }>
@@ -658,7 +663,7 @@ export class BusinessesService {
 
     const push = (
       locId: string | null | undefined,
-      facilityType: 'futsal' | 'cricket' | 'padel',
+      facilityType: 'futsal' | 'cricket' | 'padel' | 'turf',
       id: string,
       name: string,
     ) => {
@@ -671,27 +676,21 @@ export class BusinessesService {
     let padel: PadelCourt[];
     let futsalCourt: FutsalCourt[];
     let cricketCourt: CricketCourt[];
-    let dualCricketFutsal: FutsalCourt[];
     try {
-      [padel, futsalCourt, cricketCourt, dualCricketFutsal] =
-        await Promise.all([
-          this.padelCourtRepository.find({
-            where: { ...whereLoc, isActive: true, courtStatus: 'active' },
-            select: ['id', 'name', 'businessLocationId'],
-          }),
-          this.futsalCourtRepository.find({
-            where: { ...whereLoc, courtStatus: 'active' },
-            select: ['id', 'name', 'businessLocationId'],
-          }),
-          this.cricketCourtRepository.find({
-            where: { ...whereLoc, courtStatus: 'active' },
-            select: ['id', 'name', 'businessLocationId'],
-          }),
-          this.futsalCourtRepository.find({
-            where: { ...whereLoc, courtStatus: 'active', supportsCricket: true },
-            select: ['id', 'name', 'businessLocationId'],
-          }),
-        ]);
+      [padel, futsalCourt, cricketCourt] = await Promise.all([
+        this.padelCourtRepository.find({
+          where: { ...whereLoc, isActive: true, courtStatus: 'active' },
+          select: ['id', 'name', 'businessLocationId'],
+        }),
+        this.futsalCourtRepository.find({
+          where: { ...whereLoc, courtStatus: 'active' },
+          select: ['id', 'name', 'businessLocationId', 'supportsCricket'],
+        }),
+        this.cricketCourtRepository.find({
+          where: { ...whereLoc, courtStatus: 'active' },
+          select: ['id', 'name', 'businessLocationId'],
+        }),
+      ]);
     } catch (error: unknown) {
       if (this.isMissingArenaCourtRelationError(error)) {
         throw new ServiceUnavailableException(
@@ -704,17 +703,27 @@ export class BusinessesService {
     for (const row of padel) {
       push(row.businessLocationId, 'padel', row.id, row.name);
     }
+    const dualTurfIds = new Set(
+      futsalCourt
+        .filter((r) => r.supportsCricket === true)
+        .map((r) => r.id),
+    );
+
     for (const row of futsalCourt) {
-      push(row.businessLocationId, 'futsal', row.id, row.name);
-    }
-    const cricketIds = new Set(cricketCourt.map((r) => r.id));
-    for (const row of cricketCourt) {
-      push(row.businessLocationId, 'cricket', row.id, row.name);
-    }
-    for (const row of dualCricketFutsal) {
-      if (!cricketIds.has(row.id)) {
-        push(row.businessLocationId, 'cricket', row.id, row.name);
+      if (row.supportsCricket === true) {
+        push(
+          row.businessLocationId,
+          'turf',
+          row.id,
+          `${row.name} (futsal + cricket)`,
+        );
+      } else {
+        push(row.businessLocationId, 'futsal', row.id, row.name);
       }
+    }
+    for (const row of cricketCourt) {
+      if (dualTurfIds.has(row.id)) continue;
+      push(row.businessLocationId, 'cricket', row.id, row.name);
     }
 
     return map;
@@ -858,6 +867,14 @@ export class BusinessesService {
   /**
    * Filter public locations by optional cities / locationType, and optionally
    * `bookingStatus=unbooked` with `date` + `startTime`/`endTime` (HH:mm, supports crossing midnight).
+   *
+   * **Availability (unbooked):** loads non-cancelled booking items on `date` (and next calendar day if
+   * the window crosses midnight), builds a set of `courtKind:courtId` keys whose booked intervals
+   * overlap the requested window, then **expands** keys for dual-sport turf (`futsal_courts.supportsCricket`)
+   * so futsal and cricket bookings on the same pitch both block the same physical slot. A venue is
+   * returned if it has at least one active bookable court whose key is not busy (separate pitches are
+   * independent).
+   *
    * Each hit is a short map marker — same fields as {@link listVenueMarkersPublic} / legacy GET /getVenues.
    */
   async searchLocationsPublic(
@@ -1038,7 +1055,43 @@ export class BusinessesService {
         }
       }
     }
+    const dualTurfPitchIds = await this.loadDualTurfFutsalCourtIds();
+    this.expandBusyCourtKeysForDualTurf(busy, dualTurfPitchIds);
     return busy;
+  }
+
+  /** Futsal row ids where the same pitch is used for cricket (single storage row, shared calendar). */
+  private async loadDualTurfFutsalCourtIds(): Promise<Set<string>> {
+    const rows = await this.futsalCourtRepository.find({
+      where: { supportsCricket: true, courtStatus: 'active' },
+      select: ['id'],
+    });
+    return new Set(rows.map((r) => r.id));
+  }
+
+  /**
+   * If either `futsal_court:id` or `cricket_court:id` is busy for a dual pitch id, mark both busy so
+   * venue search treats the physical turf as unavailable for the window.
+   */
+  private expandBusyCourtKeysForDualTurf(
+    busy: Set<string>,
+    dualTurfPitchIds: Set<string>,
+  ): void {
+    if (dualTurfPitchIds.size === 0 || busy.size === 0) {
+      return;
+    }
+    for (const key of [...busy]) {
+      const colon = key.indexOf(':');
+      if (colon <= 0) {
+        continue;
+      }
+      const id = key.slice(colon + 1);
+      if (!dualTurfPitchIds.has(id)) {
+        continue;
+      }
+      busy.add(`futsal_court:${id}`);
+      busy.add(`cricket_court:${id}`);
+    }
   }
 
   private async loadCourtKeysByLocationId(
@@ -1065,25 +1118,20 @@ export class BusinessesService {
 
     const whereLoc = { businessLocationId: In(locationIds) };
 
-    const [futsalCourt, cricketCourt, dualCricketFutsal, padel] =
-      await Promise.all([
-        this.futsalCourtRepository.find({
-          where: { ...whereLoc, courtStatus: 'active' },
-          select: ['id', 'businessLocationId'],
-        }),
-        this.cricketCourtRepository.find({
-          where: { ...whereLoc, courtStatus: 'active' },
-          select: ['id', 'businessLocationId'],
-        }),
-        this.futsalCourtRepository.find({
-          where: { ...whereLoc, courtStatus: 'active', supportsCricket: true },
-          select: ['id', 'businessLocationId'],
-        }),
-        this.padelCourtRepository.find({
-          where: { ...whereLoc, isActive: true, courtStatus: 'active' },
-          select: ['id', 'businessLocationId'],
-        }),
-      ]);
+    const [futsalCourt, cricketCourt, padel] = await Promise.all([
+      this.futsalCourtRepository.find({
+        where: { ...whereLoc, courtStatus: 'active' },
+        select: ['id', 'businessLocationId', 'supportsCricket'],
+      }),
+      this.cricketCourtRepository.find({
+        where: { ...whereLoc, courtStatus: 'active' },
+        select: ['id', 'businessLocationId'],
+      }),
+      this.padelCourtRepository.find({
+        where: { ...whereLoc, isActive: true, courtStatus: 'active' },
+        select: ['id', 'businessLocationId'],
+      }),
+    ]);
 
     for (const row of futsalCourt) {
       push(row.businessLocationId, 'futsal_court', row.id);
@@ -1092,8 +1140,8 @@ export class BusinessesService {
     for (const row of cricketCourt) {
       push(row.businessLocationId, 'cricket_court', row.id);
     }
-    for (const row of dualCricketFutsal) {
-      if (!cricketCourtIds.has(row.id)) {
+    for (const row of futsalCourt) {
+      if (row.supportsCricket && !cricketCourtIds.has(row.id)) {
         push(row.businessLocationId, 'cricket_court', row.id);
       }
     }

@@ -529,6 +529,12 @@ export class BookingsService {
       throw new BadRequestException(`User ${dto.userId} not found`);
     }
 
+    await this.assertNoOverlapAmongNewBookingItems(
+      tenantId,
+      dto.bookingDate,
+      dto.items,
+    );
+
     for (const item of dto.items) {
       this.assertFutureSlotBooking(
         dto.bookingDate,
@@ -2003,6 +2009,47 @@ export class BookingsService {
         throw new BadRequestException(
           'That time range is already booked for this pitch',
         );
+      }
+    }
+  }
+
+  /** Rejects overlapping windows among new items on the same facility (including linked twins). */
+  private async assertNoOverlapAmongNewBookingItems(
+    tenantId: string,
+    bookingDate: string,
+    items: CreateBookingItemDto[],
+  ): Promise<void> {
+    if (items.length < 2) return;
+    const keySets = await Promise.all(
+      items.map((it) =>
+        this.resolveBookingLinkedCourtKeys(
+          tenantId,
+          it.courtKind,
+          it.courtId,
+        ).then((keys) => new Set(keys.map((k) => `${k.kind}:${k.courtId}`))),
+      ),
+    );
+    for (let i = 0; i < items.length; i++) {
+      for (let j = i + 1; j < items.length; j++) {
+        const a = items[i]!;
+        const b = items[j]!;
+        const ksA = keySets[i]!;
+        const ksB = keySets[j]!;
+        let sharesPitch = false;
+        for (const k of ksA) {
+          if (ksB.has(k)) {
+            sharesPitch = true;
+            break;
+          }
+        }
+        if (!sharesPitch) continue;
+        if (
+          this.timesOverlap(a.startTime, a.endTime, b.startTime, b.endTime)
+        ) {
+          throw new BadRequestException(
+            'Booking items overlap on the same facility; use separate non-overlapping time ranges.',
+          );
+        }
       }
     }
   }
