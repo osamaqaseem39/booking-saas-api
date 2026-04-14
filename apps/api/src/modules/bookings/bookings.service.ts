@@ -221,6 +221,20 @@ export type CourtSlotGridApiRow = {
   segments: CourtSlotGridSegment[];
 };
 
+export type LocationFacilitiesAvailableSlotsApiRow = {
+  date: string;
+  locationId: string;
+  facilities: Array<{
+    kind: CourtKind;
+    courtId: string;
+    name: string;
+    slots: Array<{
+      startTime: string;
+      endTime: string;
+    }>;
+  }>;
+};
+
 @Injectable()
 export class BookingsService {
   private effectiveStatus(booking: Booking): BookingStatus {
@@ -1098,6 +1112,124 @@ export class BookingsService {
       }
     }
     return { ok: true };
+  }
+
+  async getLocationFacilitiesAvailableSlots(
+    tenantId: string,
+    params: {
+      locationId: string;
+      date: string;
+      startTime?: string;
+      endTime?: string;
+    },
+  ): Promise<LocationFacilitiesAvailableSlotsApiRow> {
+    const dateOnly = formatDateOnly(params.date);
+    const location = await this.locationRepo.findOne({
+      where: { id: params.locationId },
+      select: ['id', 'businessId'],
+    });
+    if (!location) {
+      throw new NotFoundException(`Location ${params.locationId} not found`);
+    }
+    const business = await this.businessRepo.findOne({
+      where: { id: location.businessId },
+      select: ['id', 'tenantId'],
+    });
+    if (!business || business.tenantId !== tenantId) {
+      throw new NotFoundException(
+        `Location ${params.locationId} not found for this tenant`,
+      );
+    }
+
+    const facilities: LocationFacilitiesAvailableSlotsApiRow['facilities'] = [];
+    const futsalRows = await this.futsalCourtRepo.find({
+      where: {
+        tenantId,
+        businessLocationId: params.locationId,
+        courtStatus: 'active',
+      },
+      select: ['id', 'name'],
+    });
+    for (const row of futsalRows) {
+      const grid = await this.getCourtSlotGrid(tenantId, {
+        kind: 'futsal_court',
+        courtId: row.id,
+        date: dateOnly,
+        startTime: params.startTime,
+        endTime: params.endTime,
+        availableOnly: true,
+      });
+      facilities.push({
+        kind: 'futsal_court',
+        courtId: row.id,
+        name: row.name,
+        slots: grid.segments.map((seg) => ({
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+        })),
+      });
+    }
+    const cricketRows = await this.cricketCourtRepo.find({
+      where: {
+        tenantId,
+        businessLocationId: params.locationId,
+        courtStatus: 'active',
+      },
+      select: ['id', 'name'],
+    });
+    for (const row of cricketRows) {
+      const grid = await this.getCourtSlotGrid(tenantId, {
+        kind: 'cricket_court',
+        courtId: row.id,
+        date: dateOnly,
+        startTime: params.startTime,
+        endTime: params.endTime,
+        availableOnly: true,
+      });
+      facilities.push({
+        kind: 'cricket_court',
+        courtId: row.id,
+        name: row.name,
+        slots: grid.segments.map((seg) => ({
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+        })),
+      });
+    }
+    const padelRows = await this.padelRepo.find({
+      where: {
+        tenantId,
+        businessLocationId: params.locationId,
+        courtStatus: 'active',
+        isActive: true,
+      },
+      select: ['id', 'name'],
+    });
+    for (const row of padelRows) {
+      const grid = await this.getCourtSlotGrid(tenantId, {
+        kind: 'padel_court',
+        courtId: row.id,
+        date: dateOnly,
+        startTime: params.startTime,
+        endTime: params.endTime,
+        availableOnly: true,
+      });
+      facilities.push({
+        kind: 'padel_court',
+        courtId: row.id,
+        name: row.name,
+        slots: grid.segments.map((seg) => ({
+          startTime: seg.startTime,
+          endTime: seg.endTime,
+        })),
+      });
+    }
+
+    return {
+      date: dateOnly,
+      locationId: params.locationId,
+      facilities,
+    };
   }
 
   private async getBusinessLocationIdForCourt(

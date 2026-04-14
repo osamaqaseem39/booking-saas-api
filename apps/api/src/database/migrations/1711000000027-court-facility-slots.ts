@@ -32,6 +32,6 @@ export class CourtFacilitySlots1711000000027 implements MigrationInterface {
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`DROP TABLE IF EXISTS "court_facility_slots"`);
+    await queryRunner.query(`DROP TABLE IF EXISTS "court_facility_slots"`); 
   }
 }

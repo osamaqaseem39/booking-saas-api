@@ -21,6 +21,7 @@ import {
 import { BookingAvailabilityQueryDto } from './dto/booking-availability-query.dto';
 import { CourtSlotGridQueryDto } from './dto/court-slot-grid-query.dto';
 import { CourtSlotsQueryDto } from './dto/court-slots-query.dto';
+import { LocationFacilitySlotsQueryDto } from './dto/location-facility-slots-query.dto';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
 import { BookingsService } from './bookings.service';
@@ -192,6 +193,28 @@ export class BookingsController {
       endTime: query.endTime,
       useWorkingHours: query.useWorkingHours === 'true',
       availableOnly: query.availableOnly === 'true',
+    });
+  }
+
+  @Get('locations/:locationId/facilities/available-slots')
+  locationFacilitiesAvailableSlots(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Query() query: LocationFacilitySlotsQueryDto,
+  ) {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      return {
+        date: query.date,
+        locationId,
+        facilities: [],
+      };
+    }
+    return this.bookingsService.getLocationFacilitiesAvailableSlots(tenantId, {
+      locationId,
+      date: query.date,
+      startTime: query.startTime,
+      endTime: query.endTime,
     });
   }
 
