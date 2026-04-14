@@ -418,9 +418,132 @@ export class BookingsService {
     return out;
   }
 
+  /** `${courtKind}:${courtId}` → current facility rate card (for API responses). */
+  private async loadCourtFacilityPricingMap(
+    tenantId: string,
+    bookings: Booking[],
+  ): Promise<
+    Map<
+      string,
+      { pricePerSlot: number | null; slotDurationMinutes: number | null }
+    >
+  > {
+    const key = (kind: CourtKind, courtId: string) => `${kind}:${courtId}`;
+    const out = new Map<
+      string,
+      { pricePerSlot: number | null; slotDurationMinutes: number | null }
+    >();
+    const futsalIds = new Set<string>();
+    const cricketIds = new Set<string>();
+    const padelIds = new Set<string>();
+    for (const b of bookings) {
+      for (const it of b.items ?? []) {
+        if (!it?.courtId || !it.courtKind) continue;
+        if (it.courtKind === 'futsal_court') futsalIds.add(it.courtId);
+        else if (it.courtKind === 'cricket_court') cricketIds.add(it.courtId);
+        else if (it.courtKind === 'padel_court') padelIds.add(it.courtId);
+      }
+    }
+    if (futsalIds.size > 0) {
+      const rows = await this.futsalCourtRepo.find({
+        where: { tenantId, id: In([...futsalIds]) },
+        select: ['id', 'pricePerSlot', 'slotDurationMinutes'],
+      });
+      for (const r of rows) {
+        out.set(key('futsal_court', r.id), {
+          pricePerSlot: optNumFromDec(r.pricePerSlot),
+          slotDurationMinutes: r.slotDurationMinutes ?? null,
+        });
+      }
+    }
+    if (cricketIds.size > 0) {
+      const ids = [...cricketIds];
+      const cricketRows = await this.cricketCourtRepo.find({
+        where: { tenantId, id: In(ids) },
+        select: ['id', 'pricePerSlot', 'slotDurationMinutes'],
+      });
+      const foundCricket = new Set(cricketRows.map((r) => r.id));
+      for (const r of cricketRows) {
+        out.set(key('cricket_court', r.id), {
+          pricePerSlot: optNumFromDec(r.pricePerSlot),
+          slotDurationMinutes: r.slotDurationMinutes ?? null,
+        });
+      }
+      const missing = ids.filter((id) => !foundCricket.has(id));
+      if (missing.length > 0) {
+        const dual = await this.futsalCourtRepo.find({
+          where: { tenantId, id: In(missing), supportsCricket: true },
+          select: ['id', 'pricePerSlot', 'slotDurationMinutes'],
+        });
+        for (const r of dual) {
+          out.set(key('cricket_court', r.id), {
+            pricePerSlot: optNumFromDec(r.pricePerSlot),
+            slotDurationMinutes: r.slotDurationMinutes ?? null,
+          });
+        }
+      }
+    }
+    if (padelIds.size > 0) {
+      try {
+        const rows = await this.padelRepo.find({
+          where: { tenantId, id: In([...padelIds]) },
+          select: ['id', 'pricePerSlot', 'slotDurationMinutes'],
+        });
+        for (const r of rows) {
+          out.set(key('padel_court', r.id), {
+            pricePerSlot: optNumFromDec(r.pricePerSlot),
+            slotDurationMinutes: r.slotDurationMinutes ?? null,
+          });
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message.toLowerCase() : '';
+        const missingSlotDurationColumn =
+          message.includes('slotdurationminutes') ||
+          message.includes('slot_duration_minutes');
+        if (!missingSlotDurationColumn) throw error;
+        const legacyRows = await this.padelRepo.find({
+          where: { tenantId, id: In([...padelIds]) },
+          select: ['id', 'pricePerSlot'],
+        });
+        for (const r of legacyRows) {
+          out.set(key('padel_court', r.id), {
+            pricePerSlot: optNumFromDec(r.pricePerSlot),
+            slotDurationMinutes: null,
+          });
+        }
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Line total from facility rate: (duration / slot length) × price per slot.
+   * When {@link slotDurationMinutes} is unset, uses {@link COURT_SLOT_GRID_STEP_MINUTES}.
+   */
+  private computeLiveLinePrice(
+    startTime: string,
+    endTime: string,
+    pricePerSlot: number,
+    slotDurationMinutes: number | null | undefined,
+  ): number {
+    const durationMin = toMinutes(endTime) - toMinutes(startTime);
+    if (durationMin <= 0) return 0;
+    const slotMin =
+      slotDurationMinutes != null && slotDurationMinutes > 0
+        ? slotDurationMinutes
+        : COURT_SLOT_GRID_STEP_MINUTES;
+    const slots = durationMin / slotMin;
+    return Math.round(slots * pricePerSlot * 100) / 100;
+  }
+
   private toApi(
     booking: Booking,
     courtToLocation?: Map<string, string>,
+    courtFacilityPricing?: Map<
+      string,
+      { pricePerSlot: number | null; slotDurationMinutes: number | null }
+    >,
   ): BookingApiRow {
     const first = booking.items?.[0];
     let arenaId = booking.tenantId;
@@ -428,28 +551,54 @@ export class BookingsService {
       const locId = courtToLocation.get(`${first.courtKind}:${first.courtId}`);
       if (locId) arenaId = locId;
     }
-    return {
-      bookingId: booking.id,
-      arenaId,
-      userId: booking.userId,
-      sportType: booking.sportType,
-      bookingDate: formatDateOnly(booking.bookingDate),
-      items: (booking.items ?? []).map((it) => ({
+    const items = (booking.items ?? []).map((it) => {
+      const meta = courtFacilityPricing?.get(`${it.courtKind}:${it.courtId}`);
+      let price = numFromDec(it.price);
+      if (
+        meta &&
+        meta.pricePerSlot != null &&
+        Number.isFinite(meta.pricePerSlot)
+      ) {
+        price = this.computeLiveLinePrice(
+          it.startTime,
+          it.endTime,
+          meta.pricePerSlot,
+          meta.slotDurationMinutes,
+        );
+      }
+      return {
         id: it.id,
         courtKind: it.courtKind,
         courtId: it.courtId,
         slotId: it.slotId,
         startTime: it.startTime,
         endTime: it.endTime,
-        price: numFromDec(it.price),
+        price,
         currency: it.currency,
         status: it.itemStatus,
-      })),
+      };
+    });
+    const useFacilityPricing = courtFacilityPricing !== undefined;
+    const subTotal = useFacilityPricing
+      ? Math.round(items.reduce((s, row) => s + row.price, 0) * 100) / 100
+      : numFromDec(booking.subTotal);
+    const discount = numFromDec(booking.discount);
+    const tax = numFromDec(booking.tax);
+    const totalAmount = useFacilityPricing
+      ? Math.round((subTotal - discount + tax) * 100) / 100
+      : numFromDec(booking.totalAmount);
+    return {
+      bookingId: booking.id,
+      arenaId,
+      userId: booking.userId,
+      sportType: booking.sportType,
+      bookingDate: formatDateOnly(booking.bookingDate),
+      items,
       pricing: {
-        subTotal: numFromDec(booking.subTotal),
-        discount: numFromDec(booking.discount),
-        tax: numFromDec(booking.tax),
-        totalAmount: numFromDec(booking.totalAmount),
+        subTotal,
+        discount,
+        tax,
+        totalAmount,
       },
       payment: {
         paymentStatus: booking.paymentStatus,
@@ -475,7 +624,11 @@ export class BookingsService {
       tenantId,
       rows,
     );
-    return rows.map((b) => this.toApi(b, courtToLocation));
+    const courtFacilityPricing =
+      await this.loadCourtFacilityPricingMap(tenantId, rows);
+    return rows.map((b) =>
+      this.toApi(b, courtToLocation, courtFacilityPricing),
+    );
   }
 
   /** All bookings for a user across tenants (e.g. GET /PreviousBookings/:userId). */
@@ -497,8 +650,10 @@ export class BookingsService {
         tenantId,
         list,
       );
+      const courtFacilityPricing =
+        await this.loadCourtFacilityPricingMap(tenantId, list);
       for (const b of list) {
-        out.push(this.toApi(b, courtToLocation));
+        out.push(this.toApi(b, courtToLocation, courtFacilityPricing));
       }
     }
     out.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -517,7 +672,11 @@ export class BookingsService {
       tenantId,
       [booking],
     );
-    return this.toApi(booking, courtToLocation);
+    const courtFacilityPricing = await this.loadCourtFacilityPricingMap(
+      tenantId,
+      [booking],
+    );
+    return this.toApi(booking, courtToLocation, courtFacilityPricing);
   }
 
   async create(
@@ -588,7 +747,11 @@ export class BookingsService {
       tenantId,
       [full],
     );
-    return this.toApi(full, courtToLocation);
+    const courtFacilityPricing = await this.loadCourtFacilityPricingMap(
+      tenantId,
+      [full],
+    );
+    return this.toApi(full, courtToLocation, courtFacilityPricing);
   }
 
   async update(
