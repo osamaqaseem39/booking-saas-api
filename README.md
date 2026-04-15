@@ -118,6 +118,27 @@ npm install
 npm run start:dev
 ```
 
+## Enterprise mode (Supabase/PostgreSQL)
+
+This repository now includes an enterprise-ready architecture path with:
+
+- Domain-driven modular layout (`controller -> service -> repository`)
+- Shared libs (`libs/common`, `libs/database`, `libs/auth`)
+- Redis caching + BullMQ background workers
+- JWT auth + refresh tokens + RBAC
+- Global exception handling + structured logging + Prometheus metrics
+
+Enable it by setting:
+
+```bash
+API_MODE=enterprise
+```
+
+Then use either:
+
+- `DATABASE_URL` (Supabase pooler URL recommended), or
+- local DB vars (`DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME`)
+
 ## Next implementation steps
 
 1. Replace remaining in-memory modules (facility-catalog, bookings, billing) with TypeORM.

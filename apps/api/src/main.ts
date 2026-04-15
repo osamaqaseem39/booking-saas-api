@@ -1,3 +1,10 @@
 import { bootstrapHttpApp } from './bootstrap-http';
+import { bootstrapEnterpriseApp } from './bootstrap-enterprise';
 
-bootstrapHttpApp();
+const mode = process.env.API_MODE ?? 'legacy';
+
+if (mode === 'enterprise') {
+  void bootstrapEnterpriseApp();
+} else {
+  void bootstrapHttpApp();
+}

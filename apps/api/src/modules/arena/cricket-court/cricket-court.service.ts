@@ -195,10 +195,12 @@ export class ArenaTurfSurfacesService {
       if (dto.name !== undefined) assign(patch, 'name', dto.name);
       if (dto.businessLocationId !== undefined)
         assign(patch, 'businessLocationId', dto.businessLocationId);
-      if (dto.arenaLabel !== undefined) assign(patch, 'arenaLabel', dto.arenaLabel);
+      if (dto.arenaLabel !== undefined)
+        assign(patch, 'arenaLabel', dto.arenaLabel);
       if (dto.courtStatus !== undefined)
         assign(patch, 'courtStatus', dto.courtStatus);
-      if (dto.imageUrls !== undefined) assign(patch, 'imageUrls', dto.imageUrls);
+      if (dto.imageUrls !== undefined)
+        assign(patch, 'imageUrls', dto.imageUrls);
       if (dto.ceilingHeightValue !== undefined)
         assign(patch, 'ceilingHeightValue', dec(dto.ceilingHeightValue));
       if (dto.ceilingHeightUnit !== undefined)
@@ -207,7 +209,8 @@ export class ArenaTurfSurfacesService {
         assign(patch, 'coveredType', dto.coveredType);
       if (dto.sideNetting !== undefined)
         assign(patch, 'sideNetting', dto.sideNetting);
-      if (dto.netHeight !== undefined) assign(patch, 'netHeight', dto.netHeight);
+      if (dto.netHeight !== undefined)
+        assign(patch, 'netHeight', dto.netHeight);
       if (dto.boundaryType !== undefined)
         assign(patch, 'boundaryType', dto.boundaryType);
       if (dto.ventilation !== undefined)
@@ -231,7 +234,8 @@ export class ArenaTurfSurfacesService {
         assign(patch, 'cricketPracticeMode', dto.cricketPracticeMode);
       if (dto.pricePerSlot !== undefined)
         assign(patch, 'pricePerSlot', dec(dto.pricePerSlot));
-      if (dto.peakPricing !== undefined) assign(patch, 'peakPricing', dto.peakPricing);
+      if (dto.peakPricing !== undefined)
+        assign(patch, 'peakPricing', dto.peakPricing);
       if (dto.discountMembership !== undefined)
         assign(patch, 'discountMembership', dto.discountMembership);
       if (dto.slotDurationMinutes !== undefined)
@@ -244,7 +248,8 @@ export class ArenaTurfSurfacesService {
         );
       if (dto.allowParallelBooking !== undefined)
         assign(patch, 'allowParallelBooking', dto.allowParallelBooking);
-      if (dto.amenities !== undefined) assign(patch, 'amenities', dto.amenities);
+      if (dto.amenities !== undefined)
+        assign(patch, 'amenities', dto.amenities);
       if (dto.rules !== undefined) assign(patch, 'rules', dto.rules);
       if (dto.timeSlotTemplateId !== undefined) {
         if (dto.timeSlotTemplateId) {
@@ -281,24 +286,31 @@ export class ArenaTurfSurfacesService {
     if (dto.name !== undefined) assign(patch, 'name', dto.name);
     if (dto.businessLocationId !== undefined)
       assign(patch, 'businessLocationId', dto.businessLocationId);
-    if (dto.arenaLabel !== undefined) assign(patch, 'arenaLabel', dto.arenaLabel);
-    if (dto.courtStatus !== undefined) assign(patch, 'courtStatus', dto.courtStatus);
+    if (dto.arenaLabel !== undefined)
+      assign(patch, 'arenaLabel', dto.arenaLabel);
+    if (dto.courtStatus !== undefined)
+      assign(patch, 'courtStatus', dto.courtStatus);
     if (dto.imageUrls !== undefined) assign(patch, 'imageUrls', dto.imageUrls);
     if (dto.ceilingHeightValue !== undefined)
       assign(patch, 'ceilingHeightValue', dec(dto.ceilingHeightValue));
     if (dto.ceilingHeightUnit !== undefined)
       assign(patch, 'ceilingHeightUnit', dto.ceilingHeightUnit);
-    if (dto.coveredType !== undefined) assign(patch, 'coveredType', dto.coveredType);
-    if (dto.sideNetting !== undefined) assign(patch, 'sideNetting', dto.sideNetting);
+    if (dto.coveredType !== undefined)
+      assign(patch, 'coveredType', dto.coveredType);
+    if (dto.sideNetting !== undefined)
+      assign(patch, 'sideNetting', dto.sideNetting);
     if (dto.netHeight !== undefined) assign(patch, 'netHeight', dto.netHeight);
     if (dto.boundaryType !== undefined)
       assign(patch, 'boundaryType', dto.boundaryType);
-    if (dto.ventilation !== undefined) assign(patch, 'ventilation', dto.ventilation);
+    if (dto.ventilation !== undefined)
+      assign(patch, 'ventilation', dto.ventilation);
     if (dto.lighting !== undefined) assign(patch, 'lighting', dto.lighting);
     if (dto.lengthM !== undefined) assign(patch, 'lengthM', dec(dto.lengthM));
     if (dto.widthM !== undefined) assign(patch, 'widthM', dec(dto.widthM));
-    if (dto.surfaceType !== undefined) assign(patch, 'surfaceType', dto.surfaceType);
-    if (dto.turfQuality !== undefined) assign(patch, 'turfQuality', dto.turfQuality);
+    if (dto.surfaceType !== undefined)
+      assign(patch, 'surfaceType', dto.surfaceType);
+    if (dto.turfQuality !== undefined)
+      assign(patch, 'turfQuality', dto.turfQuality);
     if (dto.shockAbsorptionLayer !== undefined)
       assign(patch, 'shockAbsorptionLayer', dto.shockAbsorptionLayer);
     if (dto.cricketFormat !== undefined)
@@ -311,17 +323,14 @@ export class ArenaTurfSurfacesService {
       assign(patch, 'cricketPracticeMode', dto.cricketPracticeMode);
     if (dto.pricePerSlot !== undefined)
       assign(patch, 'pricePerSlot', dec(dto.pricePerSlot));
-    if (dto.peakPricing !== undefined) assign(patch, 'peakPricing', dto.peakPricing);
+    if (dto.peakPricing !== undefined)
+      assign(patch, 'peakPricing', dto.peakPricing);
     if (dto.discountMembership !== undefined)
       assign(patch, 'discountMembership', dto.discountMembership);
     if (dto.slotDurationMinutes !== undefined)
       assign(patch, 'slotDurationMinutes', dto.slotDurationMinutes);
     if (dto.bufferBetweenSlotsMinutes !== undefined)
-      assign(
-        patch,
-        'bufferBetweenSlotsMinutes',
-        dto.bufferBetweenSlotsMinutes,
-      );
+      assign(patch, 'bufferBetweenSlotsMinutes', dto.bufferBetweenSlotsMinutes);
     if (dto.allowParallelBooking !== undefined)
       assign(patch, 'allowParallelBooking', dto.allowParallelBooking);
     if (dto.amenities !== undefined) assign(patch, 'amenities', dto.amenities);

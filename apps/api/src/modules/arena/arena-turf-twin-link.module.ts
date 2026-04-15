@@ -7,10 +7,7 @@ import { CricketCourt } from './cricket-court/entities/cricket-court.entity';
 import { FutsalCourt } from './futsal-court/entities/futsal-court.entity';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([FutsalCourt, CricketCourt]),
-    IamModule,
-  ],
+  imports: [TypeOrmModule.forFeature([FutsalCourt, CricketCourt]), IamModule],
   controllers: [ArenaTurfTwinLinkController],
   providers: [ArenaTurfTwinLinkService],
   exports: [ArenaTurfTwinLinkService],

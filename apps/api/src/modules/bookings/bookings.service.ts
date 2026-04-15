@@ -624,8 +624,10 @@ export class BookingsService {
       tenantId,
       rows,
     );
-    const courtFacilityPricing =
-      await this.loadCourtFacilityPricingMap(tenantId, rows);
+    const courtFacilityPricing = await this.loadCourtFacilityPricingMap(
+      tenantId,
+      rows,
+    );
     return rows.map((b) =>
       this.toApi(b, courtToLocation, courtFacilityPricing),
     );
@@ -650,8 +652,10 @@ export class BookingsService {
         tenantId,
         list,
       );
-      const courtFacilityPricing =
-        await this.loadCourtFacilityPricingMap(tenantId, list);
+      const courtFacilityPricing = await this.loadCourtFacilityPricingMap(
+        tenantId,
+        list,
+      );
       for (const b of list) {
         out.push(this.toApi(b, courtToLocation, courtFacilityPricing));
       }
@@ -1394,15 +1398,13 @@ export class BookingsService {
     );
   }
 
-  async getLocationFacilitiesAvailableSlots(
-    params: {
-      locationId: string;
-      date: string;
-      startTime?: string;
-      endTime?: string;
-      courtType?: string;
-    },
-  ): Promise<LocationFacilitiesAvailableSlotsApiRow> {
+  async getLocationFacilitiesAvailableSlots(params: {
+    locationId: string;
+    date: string;
+    startTime?: string;
+    endTime?: string;
+    courtType?: string;
+  }): Promise<LocationFacilitiesAvailableSlotsApiRow> {
     const dateOnly = formatDateOnly(params.date);
     const location = await this.locationRepo.findOne({
       where: { id: params.locationId },
@@ -1557,14 +1559,12 @@ export class BookingsService {
    * All active/draft facilities at the location where the given calendar slot
    * is exactly available (not booked, not blocked, within template).
    */
-  async getLocationFacilitiesAvailableForSlot(
-    params: {
-      locationId: string;
-      date: string;
-      startTime: string;
-      endTime?: string;
-    },
-  ): Promise<LocationFacilitiesAvailableForSlotApiRow> {
+  async getLocationFacilitiesAvailableForSlot(params: {
+    locationId: string;
+    date: string;
+    startTime: string;
+    endTime?: string;
+  }): Promise<LocationFacilitiesAvailableForSlotApiRow> {
     const dateOnly = formatDateOnly(params.date);
     const location = await this.locationRepo.findOne({
       where: { id: params.locationId },
@@ -1577,9 +1577,7 @@ export class BookingsService {
     const startT = params.startTime;
     const endT =
       params.endTime ??
-      minutesToTimeString(
-        toMinutes(startT) + COURT_SLOT_GRID_STEP_MINUTES,
-      );
+      minutesToTimeString(toMinutes(startT) + COURT_SLOT_GRID_STEP_MINUTES);
     this.parseSlotGridWindow(startT, endT);
     const spanMin =
       (endT === '24:00' ? 24 * 60 : toMinutes(endT)) - toMinutes(startT);
@@ -1649,12 +1647,7 @@ export class BookingsService {
       ...dualCricketFutsal.filter((r) => !cricketRowIds.has(r.id)),
     ];
     for (const row of cricketSlotSources) {
-      await addIfSlotAvailable(
-        row.tenantId,
-        'cricket_court',
-        row.id,
-        row.name,
-      );
+      await addIfSlotAvailable(row.tenantId, 'cricket_court', row.id, row.name);
     }
 
     const padelRows = await this.padelRepo.find({
@@ -2194,10 +2187,10 @@ export class BookingsService {
     );
     for (let i = 0; i < items.length; i++) {
       for (let j = i + 1; j < items.length; j++) {
-        const a = items[i]!;
-        const b = items[j]!;
-        const ksA = keySets[i]!;
-        const ksB = keySets[j]!;
+        const a = items[i];
+        const b = items[j];
+        const ksA = keySets[i];
+        const ksB = keySets[j];
         let sharesPitch = false;
         for (const k of ksA) {
           if (ksB.has(k)) {
@@ -2206,9 +2199,7 @@ export class BookingsService {
           }
         }
         if (!sharesPitch) continue;
-        if (
-          this.timesOverlap(a.startTime, a.endTime, b.startTime, b.endTime)
-        ) {
+        if (this.timesOverlap(a.startTime, a.endTime, b.startTime, b.endTime)) {
           throw new BadRequestException(
             'Booking items overlap on the same facility; use separate non-overlapping time ranges.',
           );

@@ -7,7 +7,12 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, QueryFailedError, Repository, type SelectQueryBuilder } from 'typeorm';
+import {
+  In,
+  QueryFailedError,
+  Repository,
+  type SelectQueryBuilder,
+} from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { CricketCourt } from '../arena/cricket-court/entities/cricket-court.entity';
 import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity';
@@ -550,9 +555,9 @@ export class BusinessesService {
       'platform-owner',
     ]);
     if (!isPlatformOwner) {
-      const allowedBusinessIds = (await this.listForRequester(requesterUserId)).map(
-        (b) => b.id,
-      );
+      const allowedBusinessIds = (
+        await this.listForRequester(requesterUserId)
+      ).map((b) => b.id);
       if (allowedBusinessIds.length === 0) {
         return { locations: [] };
       }
@@ -811,9 +816,7 @@ export class BusinessesService {
       push(row.businessLocationId, 'padel', row.id, row.name);
     }
     const dualTurfIds = new Set(
-      futsalCourt
-        .filter((r) => r.supportsCricket === true)
-        .map((r) => r.id),
+      futsalCourt.filter((r) => r.supportsCricket === true).map((r) => r.id),
     );
 
     for (const row of futsalCourt) {

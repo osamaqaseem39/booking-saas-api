@@ -19,7 +19,10 @@
     "strictBindCallApply": false,
     "noFallthroughCasesInSwitch": false,
     "paths": {
-      "@app/*": ["apps/api/src/*"]
+      "@app/*": ["apps/api/src/*"],
+      "@libs/common/*": ["libs/common/src/*"],
+      "@libs/database/*": ["libs/database/src/*"],
+      "@libs/auth/*": ["libs/auth/src/*"]
     }
   }
 }

@@ -234,7 +234,8 @@ export class ArenaTurfRowsService {
         }
       }
     }
-    if (dto.cricketFormat !== undefined) assign('cricketFormat', dto.cricketFormat);
+    if (dto.cricketFormat !== undefined)
+      assign('cricketFormat', dto.cricketFormat);
     if (dto.cricketStumpsAvailable !== undefined)
       assign('cricketStumpsAvailable', dto.cricketStumpsAvailable);
     if (dto.cricketBowlingMachine !== undefined)

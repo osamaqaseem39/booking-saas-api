@@ -1,7 +1,10 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
+import { ApiExceptionFilter } from './common/filters/api-exception.filter';
+import { DatabaseQueryExceptionFilter } from './common/filters/database-query-exception.filter';
 
 export function applyHttpGlobals(app: NestExpressApplication): void {
   const originsEnv = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '';
@@ -12,7 +15,7 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
 
   // Explicit CORS middleware to ensure preflight `OPTIONS` requests
   // never hit a 404/route-miss without `Access-Control-Allow-Origin`.
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin as string | undefined;
 
     if (origin) {
@@ -58,6 +61,10 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
         enableImplicitConversion: true,
       },
     }),
+  );
+  app.useGlobalFilters(
+    new DatabaseQueryExceptionFilter(),
+    new ApiExceptionFilter(),
   );
 }
 
