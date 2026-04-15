@@ -63,6 +63,9 @@ export class TurfCourt {
   @Column({ type: 'int', default: 0 })
   bufferTime!: number;
 
+  @Column({ type: 'uuid', nullable: true })
+  timeSlotTemplateId!: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 

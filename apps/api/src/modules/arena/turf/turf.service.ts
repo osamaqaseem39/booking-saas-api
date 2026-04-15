@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusinessesService } from '../../businesses/businesses.service';
+import { TenantTimeSlotTemplate } from '../../bookings/entities/tenant-time-slot-template.entity';
 import { TurfCourt } from './entities/turf-court.entity';
 import type { TurfSportType } from './turf.types';
 
@@ -10,6 +11,8 @@ export class TurfService {
   constructor(
     @InjectRepository(TurfCourt)
     private readonly turfRepo: Repository<TurfCourt>,
+    @InjectRepository(TenantTimeSlotTemplate)
+    private readonly timeSlotTemplateRepo: Repository<TenantTimeSlotTemplate>,
     private readonly businessesService: BusinessesService,
   ) {}
 
@@ -24,6 +27,29 @@ export class TurfService {
   private parseNum(value: unknown): string | undefined {
     if (typeof value !== 'number' || Number.isNaN(value)) return undefined;
     return String(value);
+  }
+
+  private async resolveTimeSlotTemplateId(
+    tenantId: string,
+    raw: unknown,
+  ): Promise<string | null | undefined> {
+    if (raw === undefined) return undefined;
+    if (raw === null || raw === '') return null;
+    if (typeof raw !== 'string') {
+      throw new BadRequestException('timeSlotTemplateId must be a UUID string');
+    }
+    const templateId = raw.trim();
+    if (!templateId) return null;
+    const row = await this.timeSlotTemplateRepo.findOne({
+      where: { id: templateId, tenantId },
+      select: { id: true },
+    });
+    if (!row) {
+      throw new BadRequestException(
+        'timeSlotTemplateId does not exist for this tenant',
+      );
+    }
+    return templateId;
   }
 
   async listBySport(
@@ -205,6 +231,9 @@ export class TurfService {
         typeof input.bufferBetweenSlotsMinutes === 'number'
           ? input.bufferBetweenSlotsMinutes
           : 0,
+      timeSlotTemplateId:
+        (await this.resolveTimeSlotTemplateId(tenantId, input.timeSlotTemplateId)) ??
+        null,
     });
     return this.turfRepo.save(row);
   }
@@ -277,6 +306,14 @@ export class TurfService {
       typeof input.bufferBetweenSlotsMinutes === 'number'
     ) {
       row.bufferTime = input.bufferBetweenSlotsMinutes;
+    }
+
+    const nextTemplateId = await this.resolveTimeSlotTemplateId(
+      tenantId,
+      input.timeSlotTemplateId,
+    );
+    if (nextTemplateId !== undefined) {
+      row.timeSlotTemplateId = nextTemplateId;
     }
 
     return this.turfRepo.save(row);
