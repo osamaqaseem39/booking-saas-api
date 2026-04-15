@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { IsIn, IsOptional, IsUUID } from 'class-validator';
 import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../../tenancy/tenant-context.interface';
@@ -38,5 +49,32 @@ export class TurfArenaController {
   @Roles('platform-owner', 'business-admin')
   create(@CurrentTenant() tenant: TenantContext, @Body() body: Record<string, unknown>) {
     return this.turfService.createByTenant(tenant.tenantId, body);
+  }
+
+  @Get(':id')
+  one(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.turfService.findOneByTenant(tenant.tenantId, id);
+  }
+
+  @Patch(':id')
+  @Roles('platform-owner', 'business-admin')
+  patch(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: Record<string, unknown>,
+  ) {
+    return this.turfService.updateByTenant(tenant.tenantId, id, body);
+  }
+
+  @Delete(':id')
+  @Roles('platform-owner', 'business-admin')
+  remove(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.turfService.removeByTenant(tenant.tenantId, id);
   }
 }

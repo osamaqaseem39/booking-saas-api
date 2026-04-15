@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusinessesService } from '../../businesses/businesses.service';
@@ -207,5 +207,87 @@ export class TurfService {
           : 0,
     });
     return this.turfRepo.save(row);
+  }
+
+  async findOneByTenant(tenantId: string, id: string): Promise<TurfCourt> {
+    this.requireTenant(tenantId);
+    const row = await this.turfRepo.findOne({ where: { id, tenantId } });
+    if (!row) {
+      throw new NotFoundException(`Turf court ${id} not found`);
+    }
+    return row;
+  }
+
+  async updateByTenant(
+    tenantId: string,
+    id: string,
+    input: Record<string, unknown>,
+  ): Promise<TurfCourt> {
+    const row = await this.findOneByTenant(tenantId, id);
+
+    if (typeof input.name === 'string' && input.name.trim()) {
+      row.name = input.name.trim();
+    }
+
+    if (typeof input.businessLocationId === 'string' && input.businessLocationId.trim()) {
+      const businessLocationId = input.businessLocationId.trim();
+      await this.businessesService.assertLocationBelongsToTenant(
+        businessLocationId,
+        tenantId,
+      );
+      row.branchId = businessLocationId;
+    }
+
+    if (typeof input.courtStatus === 'string') {
+      const courtStatus = input.courtStatus.trim();
+      if (courtStatus === 'active' || courtStatus === 'maintenance') {
+        row.status = courtStatus;
+      }
+    }
+    if (typeof input.status === 'string') {
+      const status = input.status.trim();
+      if (status === 'active' || status === 'maintenance') {
+        row.status = status;
+      }
+    }
+
+    if (input.lengthM !== undefined) row.length = this.parseNum(input.lengthM);
+    if (input.widthM !== undefined) row.width = this.parseNum(input.widthM);
+    if (input.ceilingHeightValue !== undefined) {
+      row.ceilingHeight = this.parseNum(input.ceilingHeightValue);
+    }
+
+    if (typeof input.coveredType === 'string') {
+      const ct = input.coveredType.trim();
+      if (ct === 'open' || ct === 'semi_covered' || ct === 'indoor') {
+        row.coveredType = ct;
+      } else if (ct === 'fully_indoor') {
+        row.coveredType = 'indoor';
+      }
+    }
+
+    if (typeof input.surfaceType === 'string') row.surfaceType = input.surfaceType;
+    if (typeof input.turfQuality === 'string') row.turfQuality = input.turfQuality;
+
+    if (input.slotDurationMinutes !== undefined && typeof input.slotDurationMinutes === 'number') {
+      row.slotDuration = input.slotDurationMinutes;
+    }
+    if (
+      input.bufferBetweenSlotsMinutes !== undefined &&
+      typeof input.bufferBetweenSlotsMinutes === 'number'
+    ) {
+      row.bufferTime = input.bufferBetweenSlotsMinutes;
+    }
+
+    return this.turfRepo.save(row);
+  }
+
+  async removeByTenant(
+    tenantId: string,
+    id: string,
+  ): Promise<{ deleted: true; id: string }> {
+    const row = await this.findOneByTenant(tenantId, id);
+    await this.turfRepo.remove(row);
+    return { deleted: true, id };
   }
 }
