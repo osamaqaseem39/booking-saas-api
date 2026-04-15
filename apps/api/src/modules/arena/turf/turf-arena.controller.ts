@@ -1,7 +1,8 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { IsIn, IsOptional, IsUUID } from 'class-validator';
 import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../../tenancy/tenant-context.interface';
+import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
 import { TurfService } from './turf.service';
 import { TURF_SPORT_TYPES, TurfSportType } from './turf.types';
@@ -31,5 +32,11 @@ export class TurfArenaController {
       query.businessLocationId,
       query.sportType,
     );
+  }
+
+  @Post()
+  @Roles('platform-owner', 'business-admin')
+  create(@CurrentTenant() tenant: TenantContext, @Body() body: Record<string, unknown>) {
+    return this.turfService.createByTenant(tenant.tenantId, body);
   }
 }
