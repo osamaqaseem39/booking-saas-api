@@ -93,6 +93,7 @@ export class IamService implements OnModuleInit {
     requesterUserId: string,
     isPlatformOwner: boolean,
     input?: {
+      tenantId?: string;
       search?: string;
       sortBy?: string;
       sortOrder?: string;
@@ -103,6 +104,21 @@ export class IamService implements OnModuleInit {
       where: { roleCode: In(businessRoles) },
     });
     let businessUserIds = [...new Set(businessRoleRows.map((r) => r.userId))];
+    const tenantId = (input?.tenantId ?? '').trim();
+    if (tenantId && tenantId !== 'public') {
+      const business = await this.businessesRepository.findOne({
+        where: { tenantId },
+      });
+      if (!business) return [];
+      const tenantMemberships = await this.membershipsRepository.find({
+        where: { businessId: business.id },
+      });
+      const tenantUserIds = new Set(tenantMemberships.map((m) => m.userId));
+      if (!isPlatformOwner && !tenantUserIds.has(requesterUserId)) {
+        throw new ForbiddenException('You can only view users in your business');
+      }
+      businessUserIds = businessUserIds.filter((id) => tenantUserIds.has(id));
+    }
     if (!isPlatformOwner) {
       const coworkers = new Set(await this.coworkerUserIdsFor(requesterUserId));
       businessUserIds = businessUserIds.filter((id) => coworkers.has(id));

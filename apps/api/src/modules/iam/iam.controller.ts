@@ -46,6 +46,7 @@ export class IamController {
   @Roles('platform-owner', 'business-admin')
   async listUsers(
     @Req() req: Request,
+    @CurrentTenant() tenant: TenantContext,
     @Query('search') search?: string,
     @Query('sortBy') sortBy?: string,
     @Query('sortOrder') sortOrder?: string,
@@ -55,6 +56,7 @@ export class IamController {
       'platform-owner',
     ]);
     return this.iamService.listUsers(requesterId, isPlatformOwner, {
+      tenantId: tenant.tenantId,
       search,
       sortBy,
       sortOrder,
