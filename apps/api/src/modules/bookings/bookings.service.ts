@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { DeepPartial, In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { User } from '../iam/entities/user.entity';
 import {
@@ -19,6 +19,7 @@ import { BusinessLocation } from '../businesses/entities/business-location.entit
 import { Business } from '../businesses/entities/business.entity';
 import type { PlacePadelBookingDto } from './dto/place-padel-booking.dto';
 import { CourtFacilitySlot } from './entities/court-facility-slot.entity';
+import { BookingItem } from './entities/booking-item.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { Booking } from './entities/booking.entity';
 import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
@@ -234,7 +235,18 @@ export class BookingsService {
       await this.assertNoOverlap(tenantId, dto.bookingDate, item);
     }
 
-    const booking = this.bookingRepo.create({
+    const itemsPayload: DeepPartial<BookingItem>[] = dto.items.map((i) => ({
+      courtKind: 'padel_court',
+      courtId: i.courtId,
+      slotId: i.slotId,
+      startTime: i.startTime,
+      endTime: i.endTime,
+      price: dec(i.price),
+      currency: i.currency ?? 'PKR',
+      itemStatus: i.status,
+    }));
+
+    const bookingPayload: DeepPartial<Booking> = {
       tenantId,
       userId: dto.userId,
       sportType: 'padel',
@@ -249,17 +261,9 @@ export class BookingsService {
       paidAt: dto.payment.paidAt ? new Date(dto.payment.paidAt) : undefined,
       bookingStatus: dto.bookingStatus ?? 'pending',
       notes: dto.notes,
-      items: dto.items.map((i) => ({
-        courtKind: 'padel_court',
-        courtId: i.courtId,
-        slotId: i.slotId,
-        startTime: i.startTime,
-        endTime: i.endTime,
-        price: dec(i.price),
-        currency: i.currency ?? 'PKR',
-        itemStatus: i.status,
-      })),
-    });
+      items: itemsPayload,
+    };
+    const booking = this.bookingRepo.create(bookingPayload);
 
     const saved = await this.bookingRepo.save(booking);
     const full = await this.bookingRepo.findOneOrFail({ where: { id: saved.id }, relations: ['items'] });

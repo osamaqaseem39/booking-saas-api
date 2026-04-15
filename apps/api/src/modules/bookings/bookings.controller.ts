@@ -232,7 +232,6 @@ export class BookingsController {
       date: query.date,
       startTime: query.startTime,
       endTime: query.endTime,
-      useWorkingHours: query.useWorkingHours === 'true',
       availableOnly: query.availableOnly === 'true',
     });
   }

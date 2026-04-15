@@ -1,6 +1,6 @@
 /**
  * Loads `.env` from repo root (if present) then runs TypeORM CLI migrations.
- * Uses the same DataSource as the API (`dist/apps/api/database/typeorm.config.js`).
+ * Resolves the compiled DataSource file from known Nest build output layouts.
  *
  * Spawns `node …/typeorm/cli.js` (not `npx` + shell) so `POSTGRES_*` from `.env`
  * reliably reaches the CLI on Windows.
@@ -15,8 +15,29 @@ if (existsSync(envPath)) {
   require('dotenv').config({ path: envPath });
 }
 
-const ds = path.join(root, 'dist', 'apps', 'api', 'database', 'typeorm.config.js');
 const typeormCli = path.join(root, 'node_modules', 'typeorm', 'cli.js');
+const dataSourceCandidates = [
+  path.join(root, 'dist', 'apps', 'api', 'database', 'typeorm.config.js'),
+  path.join(
+    root,
+    'dist',
+    'apps',
+    'api',
+    'apps',
+    'api',
+    'src',
+    'database',
+    'typeorm.config.js',
+  ),
+];
+const ds = dataSourceCandidates.find((p) => existsSync(p));
+
+if (!ds) {
+  console.error(
+    `Unable to find compiled TypeORM DataSource. Checked:\n- ${dataSourceCandidates.join('\n- ')}`,
+  );
+  process.exit(1);
+}
 
 const result = spawnSync(
   process.execPath,
