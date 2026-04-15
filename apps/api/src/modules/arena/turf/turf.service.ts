@@ -30,6 +30,7 @@ export class TurfService {
   async listByTenant(
     tenantId: string,
     branchId?: string,
+    sportType?: TurfSportType,
   ): Promise<TurfCourt[]> {
     if (!tenantId || tenantId === 'public') return [];
     const qb = this.turfRepo
@@ -38,6 +39,9 @@ export class TurfService {
       .orderBy('t.name', 'ASC');
     if (branchId) {
       qb.andWhere('t."branchId" = :branchId', { branchId });
+    }
+    if (sportType) {
+      qb.andWhere(':sportType = ANY(t."supportedSports")', { sportType });
     }
     return qb.getMany();
   }

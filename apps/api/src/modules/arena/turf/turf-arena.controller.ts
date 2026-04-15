@@ -1,10 +1,22 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
+import { IsIn, IsOptional, IsUUID } from 'class-validator';
 import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../../tenancy/tenant-context.interface';
 import { RolesGuard } from '../../iam/authz/roles.guard';
 import { TurfService } from './turf.service';
+import { TURF_SPORT_TYPES, TurfSportType } from './turf.types';
 
-@Controller('arena/turf-courts')
+class ListTurfCourtsQueryDto {
+  @IsOptional()
+  @IsUUID('4')
+  businessLocationId?: string;
+
+  @IsOptional()
+  @IsIn(TURF_SPORT_TYPES)
+  sportType?: TurfSportType;
+}
+
+@Controller(['arena/turf-courts', 'arena/turf-court'])
 @UseGuards(RolesGuard)
 export class TurfArenaController {
   constructor(private readonly turfService: TurfService) {}
@@ -12,8 +24,12 @@ export class TurfArenaController {
   @Get()
   list(
     @CurrentTenant() tenant: TenantContext,
-    @Query('businessLocationId') businessLocationId?: string,
+    @Query() query: ListTurfCourtsQueryDto,
   ) {
-    return this.turfService.listByTenant(tenant.tenantId, businessLocationId);
+    return this.turfService.listByTenant(
+      tenant.tenantId,
+      query.businessLocationId,
+      query.sportType,
+    );
   }
 }
