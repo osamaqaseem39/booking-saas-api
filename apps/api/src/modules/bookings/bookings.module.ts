@@ -43,6 +43,6 @@ import { IamModule } from '../iam/iam.module';
     PreviousBookingsController,
   ],
   providers: [BookingsService, TimeSlotTemplatesService],
-  exports: [TimeSlotTemplatesService],
+  exports: [BookingsService, TimeSlotTemplatesService],
 })
 export class BookingsModule {}
