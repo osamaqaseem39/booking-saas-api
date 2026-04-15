@@ -1,4 +1,4 @@
-export const BOOKING_SPORT_TYPES = ['futsal', 'cricket', 'padel'] as const;
+export const BOOKING_SPORT_TYPES = ['padel'] as const;
 export type BookingSportType = (typeof BOOKING_SPORT_TYPES)[number];
 
 export const BOOKING_ITEM_STATUSES = [
@@ -35,8 +35,6 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
 /** Which physical court table `courtId` refers to */
 export const COURT_KINDS = [
-  'futsal_court',
-  'cricket_court',
   'padel_court',
 ] as const;
 

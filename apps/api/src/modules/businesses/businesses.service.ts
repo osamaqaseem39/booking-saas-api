@@ -3,19 +3,12 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import {
-  In,
-  QueryFailedError,
-  Repository,
-  type SelectQueryBuilder,
-} from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
-import { CricketCourt } from '../arena/cricket-court/entities/cricket-court.entity';
-import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity';
 import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { IamService } from '../iam/iam.service';
@@ -34,10 +27,6 @@ import {
   normalizeLocationFacilityTypesForApi,
   normalizeLocationFacilityTypesForPersist,
 } from './business-location.constants';
-import {
-  coordinateToJsonNumber,
-  normalizeCoordinateForPersist,
-} from './geo-coordinates';
 
 @Injectable()
 export class BusinessesService {
@@ -49,10 +38,6 @@ export class BusinessesService {
     private readonly membershipsRepository: Repository<BusinessMembership>,
     @InjectRepository(BusinessLocation)
     private readonly locationsRepository: Repository<BusinessLocation>,
-    @InjectRepository(FutsalCourt)
-    private readonly futsalCourtRepository: Repository<FutsalCourt>,
-    @InjectRepository(CricketCourt)
-    private readonly cricketCourtRepository: Repository<CricketCourt>,
     @InjectRepository(PadelCourt)
     private readonly padelCourtRepository: Repository<PadelCourt>,
     @InjectRepository(BookingItem)
@@ -61,1682 +46,339 @@ export class BusinessesService {
     private readonly bookingRepository: Repository<Booking>,
   ) {}
 
-  private toNumber(value: unknown): number {
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : 0;
-    }
-    if (typeof value === 'string') {
-      const parsed = Number.parseFloat(value);
-      return Number.isFinite(parsed) ? parsed : 0;
-    }
-    return 0;
-  }
-
-  /**
-   * API uses `status` as the single write field; `isActive` is derived and kept in sync for queries.
-   */
-  private normalizeLocationStatus(raw: string | undefined): {
-    status: string;
-    isActive: boolean;
-  } {
-    const s = (raw ?? 'active').trim().toLowerCase();
-    if (s === 'inactive') {
-      return { status: 'inactive', isActive: false };
-    }
-    return { status: 'active', isActive: true };
-  }
-
-  private isSchemaMismatchError(error: unknown): boolean {
-    if (!(error instanceof QueryFailedError)) {
-      return false;
-    }
-    const message = `${error.message ?? ''}`.toLowerCase();
-    return (
-      message.includes('column') &&
-      message.includes('does not exist') &&
-      message.includes('business_locations')
-    );
-  }
-
-  private isBusinessSchemaMismatchError(error: unknown): boolean {
-    if (!(error instanceof QueryFailedError)) {
-      return false;
-    }
-    const message = `${error.message ?? ''}`.toLowerCase();
-    return (
-      message.includes('column') &&
-      message.includes('does not exist') &&
-      (message.includes('businesses') || message.includes('business.'))
-    );
-  }
-
-  /** Postgres 42P01: expected arena court tables not created (migrations not run). */
-  private isMissingArenaCourtRelationError(error: unknown): boolean {
-    if (!(error instanceof QueryFailedError)) {
-      return false;
-    }
-    const driver = (
-      error as QueryFailedError & { driverError?: { code?: string } }
-    ).driverError;
-    if (driver?.code !== '42P01') {
-      return false;
-    }
-    const message = `${error.message ?? ''}`.toLowerCase();
-    return (
-      message.includes('futsal_courts') ||
-      message.includes('cricket_courts') ||
-      message.includes('padel_courts') ||
-      message.includes('turf_courts')
-    );
-  }
-
   async listForRequester(requesterUserId: string) {
-    let businesses: Business[];
-    try {
-      businesses = await this.businessesRepository.find({
-        order: { createdAt: 'DESC' },
-      });
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
+    const businesses = await this.businessesRepository.find({
+      order: { createdAt: 'DESC' },
+    });
     const memberships = await this.membershipsRepository.find();
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
-      'platform-owner',
-    ]);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, ['platform-owner']);
     const scoped = isPlatformOwner
       ? businesses
       : businesses.filter((b) =>
-          memberships.some(
-            (m) => m.businessId === b.id && m.userId === requesterUserId,
-          ),
+          memberships.some((m) => m.businessId === b.id && m.userId === requesterUserId),
         );
     return scoped.map((business) => ({
       ...business,
-      memberships: memberships.filter(
-        (membership) => membership.businessId === business.id,
-      ),
+      memberships: memberships.filter((membership) => membership.businessId === business.id),
     }));
   }
 
   async getDashboardView(requesterUserId: string) {
     const businesses = await this.listForRequester(requesterUserId);
-    if (businesses.length === 0) {
-      return {
-        generatedAt: new Date().toISOString(),
-        scope: { businessCount: 0, locationCount: 0 },
-        totals: {
-          courtCount: 0,
-          bookingCount: 0,
-          confirmedBookingCount: 0,
-          pendingBookingCount: 0,
-          cancelledBookingCount: 0,
-          revenueTotal: 0,
-          revenuePaid: 0,
-        },
-        businesses: [],
-      };
-    }
-
     const businessIds = businesses.map((b) => b.id);
-    const tenantByBusinessId = new Map(
-      businesses.map((b) => [b.id, (b as Business).tenantId]),
-    );
-    const businessIdByTenantId = new Map(
-      businesses.map((b) => [(b as Business).tenantId, b.id]),
-    );
-
-    const locationCountRows = await this.locationsRepository
-      .createQueryBuilder('location')
-      .select('location.businessId', 'businessId')
-      .addSelect('COUNT(*)', 'count')
-      .where('location.businessId IN (:...businessIds)', { businessIds })
-      .groupBy('location.businessId')
-      .getRawMany<{ businessId: string; count: string }>();
-    const locationCountByBusinessId = new Map(
-      locationCountRows.map((row) => [
-        row.businessId,
-        Number.parseInt(row.count, 10),
-      ]),
-    );
-
     const locations = await this.locationsRepository.find({
       where: { businessId: In(businessIds) },
       select: ['id', 'businessId'],
     });
-    const locationIds = locations.map((x) => x.id);
-    const businessIdByLocationId = new Map(
-      locations.map((x) => [x.id, x.businessId]),
-    );
-    const courtKeysByLocationId =
-      await this.loadCourtKeysByLocationId(locationIds);
-
-    const courtCountByBusinessId = new Map<string, number>();
-    for (const [locationId, courtKeys] of courtKeysByLocationId.entries()) {
-      const businessId = businessIdByLocationId.get(locationId);
-      if (!businessId) {
-        continue;
-      }
-      courtCountByBusinessId.set(
-        businessId,
-        (courtCountByBusinessId.get(businessId) ?? 0) + courtKeys.length,
-      );
+    const locIds = locations.map((l) => l.id);
+    const courts = locIds.length
+      ? await this.padelCourtRepository.find({
+          where: { businessLocationId: In(locIds), courtStatus: 'active', isActive: true },
+          select: ['id', 'businessLocationId'],
+        })
+      : [];
+    const locationBusinessMap = new Map(locations.map((l) => [l.id, l.businessId]));
+    const courtCountByBusiness = new Map<string, number>();
+    for (const c of courts) {
+      const bId = locationBusinessMap.get(c.businessLocationId ?? '');
+      if (!bId) continue;
+      courtCountByBusiness.set(bId, (courtCountByBusiness.get(bId) ?? 0) + 1);
     }
 
-    const tenantIds = Array.from(
-      new Set(businesses.map((b) => (b as Business).tenantId).filter(Boolean)),
-    );
-    let bookingRows: Array<{
-      tenantId: string;
-      bookingCount: string;
-      confirmedBookingCount: string;
-      pendingBookingCount: string;
-      cancelledBookingCount: string;
-      revenueTotal: string;
-      revenuePaid: string;
-    }> = [];
-    if (tenantIds.length > 0) {
-      bookingRows = await this.bookingRepository
-        .createQueryBuilder('booking')
-        .select('booking.tenantId', 'tenantId')
-        .addSelect('COUNT(*)', 'bookingCount')
-        .addSelect(
-          "SUM(CASE WHEN booking.bookingStatus = 'confirmed' THEN 1 ELSE 0 END)",
-          'confirmedBookingCount',
-        )
-        .addSelect(
-          "SUM(CASE WHEN booking.bookingStatus = 'pending' THEN 1 ELSE 0 END)",
-          'pendingBookingCount',
-        )
-        .addSelect(
-          "SUM(CASE WHEN booking.bookingStatus = 'cancelled' THEN 1 ELSE 0 END)",
-          'cancelledBookingCount',
-        )
-        .addSelect('COALESCE(SUM(booking.totalAmount), 0)', 'revenueTotal')
-        .addSelect(
-          "COALESCE(SUM(CASE WHEN booking.paymentStatus = 'paid' THEN booking.totalAmount ELSE 0 END), 0)",
-          'revenuePaid',
-        )
-        .where('booking.tenantId IN (:...tenantIds)', { tenantIds })
-        .groupBy('booking.tenantId')
-        .getRawMany();
-    }
-
-    const bookingByBusinessId = new Map<
-      string,
-      {
-        bookingCount: number;
-        confirmedBookingCount: number;
-        pendingBookingCount: number;
-        cancelledBookingCount: number;
-        revenueTotal: number;
-        revenuePaid: number;
-      }
-    >();
-    for (const row of bookingRows) {
-      const businessId = businessIdByTenantId.get(row.tenantId);
-      if (!businessId) {
-        continue;
-      }
-      bookingByBusinessId.set(businessId, {
-        bookingCount: Number.parseInt(row.bookingCount, 10) || 0,
-        confirmedBookingCount:
-          Number.parseInt(row.confirmedBookingCount, 10) || 0,
-        pendingBookingCount: Number.parseInt(row.pendingBookingCount, 10) || 0,
-        cancelledBookingCount:
-          Number.parseInt(row.cancelledBookingCount, 10) || 0,
-        revenueTotal: this.toNumber(row.revenueTotal),
-        revenuePaid: this.toNumber(row.revenuePaid),
-      });
-    }
-
-    const businessViews = businesses.map((business) => {
-      const typedBusiness = business as Business;
-      const locationCount =
-        locationCountByBusinessId.get(typedBusiness.id) ?? 0;
-      const courtCount = courtCountByBusinessId.get(typedBusiness.id) ?? 0;
-      const booking = bookingByBusinessId.get(typedBusiness.id) ?? {
+    return {
+      generatedAt: new Date().toISOString(),
+      scope: { businessCount: businesses.length, locationCount: locations.length },
+      totals: {
+        courtCount: courts.length,
         bookingCount: 0,
         confirmedBookingCount: 0,
         pendingBookingCount: 0,
         cancelledBookingCount: 0,
         revenueTotal: 0,
         revenuePaid: 0,
-      };
-      return {
-        businessId: typedBusiness.id,
-        tenantId: tenantByBusinessId.get(typedBusiness.id),
-        businessName: typedBusiness.businessName,
-        status: typedBusiness.status,
-        locationCount,
-        courtCount,
-        ...booking,
-      };
-    });
-
-    return {
-      generatedAt: new Date().toISOString(),
-      scope: {
-        businessCount: businesses.length,
-        locationCount: businessViews.reduce(
-          (sum, row) => sum + row.locationCount,
-          0,
-        ),
       },
-      totals: {
-        courtCount: businessViews.reduce((sum, row) => sum + row.courtCount, 0),
-        bookingCount: businessViews.reduce(
-          (sum, row) => sum + row.bookingCount,
-          0,
-        ),
-        confirmedBookingCount: businessViews.reduce(
-          (sum, row) => sum + row.confirmedBookingCount,
-          0,
-        ),
-        pendingBookingCount: businessViews.reduce(
-          (sum, row) => sum + row.pendingBookingCount,
-          0,
-        ),
-        cancelledBookingCount: businessViews.reduce(
-          (sum, row) => sum + row.cancelledBookingCount,
-          0,
-        ),
-        revenueTotal: Number(
-          businessViews
-            .reduce((sum, row) => sum + row.revenueTotal, 0)
-            .toFixed(2),
-        ),
-        revenuePaid: Number(
-          businessViews
-            .reduce((sum, row) => sum + row.revenuePaid, 0)
-            .toFixed(2),
-        ),
-      },
-      businesses: businessViews,
+      businesses: businesses.map((b) => ({
+        businessId: b.id,
+        tenantId: b.tenantId,
+        businessName: b.businessName,
+        status: b.status,
+        locationCount: locations.filter((l) => l.businessId === b.id).length,
+        courtCount: courtCountByBusiness.get(b.id) ?? 0,
+        bookingCount: 0,
+        confirmedBookingCount: 0,
+        pendingBookingCount: 0,
+        cancelledBookingCount: 0,
+        revenueTotal: 0,
+        revenuePaid: 0,
+      })),
     };
   }
 
   async onboardBusiness(dto: CreateBusinessDto) {
-    let duplicate: Business | null;
-    try {
-      duplicate = await this.businessesRepository.findOne({
-        where: { businessName: dto.businessName },
-      });
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-    if (duplicate) {
-      throw new BadRequestException(
-        `Business ${dto.businessName} already exists in onboarding store`,
-      );
-    }
-
-    const normalizedStatus = (dto.status ?? 'active').trim().toLowerCase();
-    const ownerProfile = dto.owner
-      ? {
-          name: dto.owner.name?.trim(),
-          email: dto.owner.email?.trim().toLowerCase(),
-          phone: dto.owner.phone?.trim(),
-        }
-      : undefined;
-
-    const business = this.businessesRepository.create({
-      tenantId: dto.tenantId ?? randomUUID(),
-      businessName: dto.businessName,
-      legalName: dto.legalName,
-      owner: ownerProfile,
-      subscription: dto.subscription
-        ? {
-            plan: dto.subscription.plan?.trim(),
-            status: dto.subscription.status?.trim(),
-            billingCycle: dto.subscription.billingCycle?.trim(),
-          }
-        : undefined,
-      settings: dto.settings
-        ? {
-            timezone: dto.settings.timezone?.trim(),
-            currency: dto.settings.currency?.trim().toUpperCase(),
-            allowOnlinePayments: dto.settings.allowOnlinePayments ?? false,
-          }
-        : undefined,
-      status: normalizedStatus === 'inactive' ? 'inactive' : 'active',
+    const duplicate = await this.businessesRepository.findOne({
+      where: { businessName: dto.businessName },
     });
-    let savedBusiness: Business;
-    try {
-      savedBusiness = await this.businessesRepository.save(business);
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
+    if (duplicate) throw new BadRequestException(`Business ${dto.businessName} already exists`);
+
+    const business = await this.businessesRepository.save(
+      this.businessesRepository.create({
+        tenantId: dto.tenantId ?? randomUUID(),
+        businessName: dto.businessName,
+        legalName: dto.legalName,
+        owner: dto.owner,
+        subscription: dto.subscription,
+        settings: dto.settings,
+        status: dto.status ?? 'active',
+      }),
+    );
 
     const adminSource = dto.admin
-      ? {
-          fullName: dto.admin.fullName,
-          email: dto.admin.email,
-          phone: dto.admin.phone,
-          password: dto.admin.password,
-        }
+      ? dto.admin
       : dto.owner
         ? {
             fullName: dto.owner.name,
             email: dto.owner.email,
             phone: dto.owner.phone,
-            // Owner payload in upgraded schema may omit password.
-            // Keep onboarding backward-compatible by generating a strong temporary one.
-            password:
-              dto.owner.password ??
-              `Tmp#${randomUUID().replace(/-/g, '').slice(0, 12)}`,
+            password: dto.owner.password ?? `Tmp#${randomUUID().replace(/-/g, '').slice(0, 12)}`,
           }
         : null;
-    if (!adminSource) {
-      throw new BadRequestException(
-        'Provide either admin or owner details in onboarding payload',
-      );
-    }
 
-    const adminUser = await this.iamService.ensureUser({
-      fullName: adminSource.fullName,
-      email: adminSource.email,
-      phone: adminSource.phone,
-      password: adminSource.password,
-    });
+    if (!adminSource) return { business, adminUser: null, membership: null };
+    const adminUser = await this.iamService.ensureUser(adminSource);
     await this.iamService.assignRole(adminUser.id, 'business-admin');
+    const membership = await this.membershipsRepository.save(
+      this.membershipsRepository.create({
+        businessId: business.id,
+        userId: adminUser.id,
+        membershipRole: 'owner',
+      }),
+    );
+    return { business, adminUser, membership };
+  }
 
-    const membership = this.membershipsRepository.create({
-      businessId: savedBusiness.id,
-      userId: adminUser.id,
-      membershipRole: 'owner',
-    });
-    const savedMembership = await this.membershipsRepository.save(membership);
+  async hasConsoleLocationListScope(userId: string): Promise<boolean> {
+    return this.iamService.hasAnyRole(userId, ['platform-owner', 'business-admin', 'business-staff']);
+  }
 
-    return { business: savedBusiness, adminUser, membership: savedMembership };
+  async listLocationNameIdsPublic(nameFilter?: string | null) {
+    const rows = await this.locationsRepository.find({ select: ['id', 'name'], order: { name: 'ASC' } });
+    return { locations: this.filterLocationRowsByName(rows, nameFilter).map((r) => ({ id: r.id, name: r.name })) };
+  }
+
+  async listLocationNameIdsForConsole(requesterUserId: string, tenantIdFilter?: string | null, nameFilter?: string | null) {
+    const rows = await this.listLocationsForConsole(requesterUserId, tenantIdFilter, nameFilter);
+    return { locations: rows.map((r) => ({ id: r.id, name: r.name })) };
   }
 
   async listLocationsForRequester(requesterUserId: string) {
-    let allLocations: BusinessLocation[];
-    try {
-      allLocations = await this.locationsRepository.find({
-        order: { createdAt: 'DESC' },
-      });
-    } catch (error: unknown) {
-      if (this.isSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Business locations schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-    let businesses: Business[];
-    try {
-      businesses = await this.businessesRepository.find();
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-    const businessById = new Map(businesses.map((b) => [b.id, b]));
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
-      'platform-owner',
-    ]);
-    let scoped = allLocations;
-    if (!isPlatformOwner) {
-      const allowedBusinessIds = new Set(
-        (await this.listForRequester(requesterUserId)).map((b) => b.id),
-      );
-      scoped = allLocations.filter((l) => allowedBusinessIds.has(l.businessId));
-    }
-    return this.buildLocationListRowsWithFacilityInfo(scoped, businessById);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, ['platform-owner']);
+    if (isPlatformOwner) return this.listAllLocationsPublic();
+    const businesses = await this.listForRequester(requesterUserId);
+    const businessIds = businesses.map((b) => b.id);
+    const all = await this.listAllLocationsPublic();
+    return all.filter((l) => businessIds.includes(l.businessId));
   }
 
-  /** Whether this user should get tenant/membership-scoped rows from `GET /businesses/locations` when authenticated. */
-  async hasConsoleLocationListScope(userId: string): Promise<boolean> {
-    return this.iamService.hasAnyRole(userId, [
-      'platform-owner',
-      'business-admin',
-      'business-staff',
-    ]);
-  }
-
-  /**
-   * Lightweight list for pickers / search: `{ id, name }` only. Same access rules as
-   * {@link listLocationsForConsole} / public `GET /businesses/locations` (optional bearer,
-   * optional `X-Tenant-Id`). Optional `name` is a case-insensitive substring on `name`.
-   */
-  async listLocationNameIdsPublic(
-    nameFilter?: string | null,
-  ): Promise<{ locations: Array<{ id: string; name: string }> }> {
-    const qb = this.locationsRepository
-      .createQueryBuilder('l')
-      .select(['l.id', 'l.name'])
-      .orderBy('l.name', 'ASC');
-    this.applyNameIlikeFilter(qb, nameFilter);
-    try {
-      const rows = await qb.getMany();
-      return {
-        locations: rows.map((r) => ({ id: r.id, name: r.name })),
-      };
-    } catch (error: unknown) {
-      if (this.isSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Business locations schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-  }
-
-  async listLocationNameIdsForConsole(
-    requesterUserId: string,
-    tenantIdFilter?: string | null,
-    nameFilter?: string | null,
-  ): Promise<{ locations: Array<{ id: string; name: string }> }> {
-    await this.iamService.assertRequesterActive(requesterUserId);
-    const qb = this.locationsRepository
-      .createQueryBuilder('l')
-      .select(['l.id', 'l.name']);
-
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
-      'platform-owner',
-    ]);
-    if (!isPlatformOwner) {
-      const allowedBusinessIds = (
-        await this.listForRequester(requesterUserId)
-      ).map((b) => b.id);
-      if (allowedBusinessIds.length === 0) {
-        return { locations: [] };
-      }
-      qb.andWhere('l.businessId IN (:...bids)', { bids: allowedBusinessIds });
-    }
-
-    const tid = tenantIdFilter?.trim() || null;
-    if (tid) {
-      qb.innerJoin('l.business', 'b').andWhere('b.tenantId = :tid', { tid });
-    }
-
-    qb.orderBy('l.name', 'ASC');
-    this.applyNameIlikeFilter(qb, nameFilter);
-
-    try {
-      const rows = await qb.getMany();
-      return {
-        locations: rows.map((r) => ({ id: r.id, name: r.name })),
-      };
-    } catch (error: unknown) {
-      if (this.isSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Business locations schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-  }
-
-  private escapeIlikeUserFragment(fragment: string): string {
-    return fragment
-      .replace(/\\/g, '\\\\')
-      .replace(/%/g, '\\%')
-      .replace(/_/g, '\\_');
-  }
-
-  private applyNameIlikeFilter(
-    qb: SelectQueryBuilder<BusinessLocation>,
-    nameFilter?: string | null,
-  ): void {
-    const raw = nameFilter?.trim();
-    if (!raw) return;
-    qb.andWhere("l.name ILIKE :namePat ESCAPE '\\'", {
-      namePat: `%${this.escapeIlikeUserFragment(raw)}%`,
-    });
-  }
-
-  /**
-   * Console: locations the user may manage, plus facility summaries.
-   * When `tenantIdFilter` is set, rows are limited to that business tenant id
-   * (active `X-Tenant-Id` from the dashboard). When omitted, platform owners see
-   * all sites; business-admins see every location for businesses they belong to.
-   */
-  async listLocationsForConsole(
-    requesterUserId: string,
-    tenantIdFilter?: string | null,
-    nameFilter?: string | null,
-  ): Promise<
-    Awaited<ReturnType<BusinessesService['listLocationsForRequester']>>
-  > {
+  async listLocationsForConsole(requesterUserId: string, tenantIdFilter?: string | null, nameFilter?: string | null) {
     await this.iamService.assertRequesterActive(requesterUserId);
     let rows = await this.listLocationsForRequester(requesterUserId);
-    const tid = tenantIdFilter?.trim() || null;
-    if (tid) {
-      rows = rows.filter((r) => (r.business?.tenantId ?? '').trim() === tid);
+    if (tenantIdFilter?.trim()) {
+      const tid = tenantIdFilter.trim();
+      rows = rows.filter((r) => (r.business?.tenantId ?? '') === tid);
     }
     return this.filterLocationRowsByName(rows, nameFilter);
   }
 
-  /**
-   * Public / unauthenticated listing: all locations (e.g. end-user discovery).
-   * Each row includes active facility court summaries and derived counts.
-   *
-   * @param nameFilter optional case-insensitive substring on `BusinessLocation.name`.
-   */
   async listAllLocationsPublic(nameFilter?: string | null) {
-    let allLocations: BusinessLocation[];
-    try {
-      allLocations = await this.locationsRepository.find({
-        order: { createdAt: 'DESC' },
-      });
-    } catch (error: unknown) {
-      if (this.isSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Business locations schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-    let businesses: Business[];
-    try {
-      businesses = await this.businessesRepository.find();
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
+    const locations = await this.locationsRepository.find({ order: { createdAt: 'DESC' } });
+    const businesses = await this.businessesRepository.find();
     const businessById = new Map(businesses.map((b) => [b.id, b]));
-    const rows = await this.buildLocationListRowsWithFacilityInfo(
-      allLocations,
-      businessById,
-    );
-    return this.filterLocationRowsByName(rows, nameFilter);
-  }
-
-  private filterLocationRowsByName<T extends { name?: string | null }>(
-    rows: T[],
-    nameFilter?: string | null,
-  ): T[] {
-    const n = nameFilter?.trim().toLowerCase();
-    if (!n) return rows;
-    return rows.filter((r) => (r.name ?? '').toLowerCase().includes(n));
-  }
-
-  /**
-   * Same data as {@link listAllLocationsPublic}, wrapped as `{ locations }` for clients
-   * that already call `/businesses/locations/facility-counts`.
-   */
-  async listLocationsWithFacilityCountsPublic(): Promise<{
-    locations: Awaited<ReturnType<BusinessesService['listAllLocationsPublic']>>;
-  }> {
-    const locations = await this.listAllLocationsPublic();
-    return { locations };
-  }
-
-  private emptyFacilityCountsRecord(): Record<
-    'futsal' | 'cricket' | 'padel',
-    number
-  > {
-    return {
-      futsal: 0,
-      cricket: 0,
-      padel: 0,
-    };
-  }
-
-  private countsFromCourtSummaries(
-    courts: Array<{
-      facilityType: 'futsal' | 'cricket' | 'padel' | 'turf';
-    }>,
-  ): Record<'futsal' | 'cricket' | 'padel', number> {
-    const base = this.emptyFacilityCountsRecord();
-    for (const c of courts) {
-      if (c.facilityType === 'turf') {
-        base.futsal += 1;
-        base.cricket += 1;
-      } else {
-        base[c.facilityType]++;
-      }
-    }
-    return base;
-  }
-
-  private async buildLocationListRowsWithFacilityInfo(
-    locations: BusinessLocation[],
-    businessById: Map<string, Business>,
-  ): Promise<
-    Array<
-      ReturnType<BusinessesService['toLocationListRow']> & {
-        facilityCounts: Record<'futsal' | 'cricket' | 'padel', number>;
-        facilityCourts: Array<{
-          facilityType: 'futsal' | 'cricket' | 'padel' | 'turf';
-          id: string;
-          name: string;
-        }>;
-      }
-    >
-  > {
     const locationIds = locations.map((l) => l.id);
-    const courtsByLocationId =
-      await this.loadFacilityCourtSummariesByLocationId(locationIds);
-    return locations.map((loc) => {
-      const b = businessById.get(loc.businessId);
-      const facilityCourts = courtsByLocationId.get(loc.id) ?? [];
+    const courts = locationIds.length
+      ? await this.padelCourtRepository.find({
+          where: { businessLocationId: In(locationIds), isActive: true, courtStatus: 'active' },
+          select: ['id', 'name', 'businessLocationId'],
+        })
+      : [];
+    const courtsByLocation = new Map<string, Array<{ facilityType: 'padel'; id: string; name: string }>>();
+    for (const c of courts) {
+      const key = c.businessLocationId ?? '';
+      const rows = courtsByLocation.get(key) ?? [];
+      rows.push({ facilityType: 'padel', id: c.id, name: c.name });
+      courtsByLocation.set(key, rows);
+    }
+    const rows = locations.map((loc) => {
+      const business = businessById.get(loc.businessId);
+      const facilityCourts = courtsByLocation.get(loc.id) ?? [];
       return {
-        ...this.toLocationListRow(loc, b),
-        facilityCounts: this.countsFromCourtSummaries(facilityCourts),
+        id: loc.id,
+        businessId: loc.businessId,
+        locationType: loc.locationType,
+        facilityTypes: normalizeLocationFacilityTypesForApi(loc.facilityTypes),
+        name: loc.name,
+        addressLine: loc.addressLine,
+        details: loc.details ?? null,
+        city: loc.city,
+        area: loc.area,
+        country: loc.country,
+        latitude: loc.latitude ?? null,
+        longitude: loc.longitude ?? null,
+        phone: loc.phone,
+        manager: loc.manager,
+        workingHours: loc.workingHours,
+        timezone: loc.timezone,
+        currency: loc.currency,
+        logo: loc.logo ?? null,
+        bannerImage: loc.bannerImage ?? null,
+        gallery: loc.gallery ?? [],
+        status: loc.status,
+        isActive: loc.isActive,
+        createdAt: loc.createdAt,
+        business: business
+          ? { id: business.id, businessName: business.businessName, tenantId: business.tenantId }
+          : null,
+        facilityCounts: { padel: facilityCourts.length },
         facilityCourts,
       };
     });
+    return this.filterLocationRowsByName(rows, nameFilter);
   }
 
-  /** Active bookable courts/fields per location (same filters as booking discovery). */
-  private async loadFacilityCourtSummariesByLocationId(
-    locationIds: string[],
-  ): Promise<
-    Map<
-      string,
-      Array<{
-        facilityType: 'futsal' | 'cricket' | 'padel' | 'turf';
-        id: string;
-        name: string;
-      }>
-    >
-  > {
-    const map = new Map<
-      string,
-      Array<{
-        facilityType: 'futsal' | 'cricket' | 'padel' | 'turf';
-        id: string;
-        name: string;
-      }>
-    >();
-    for (const id of locationIds) {
-      map.set(id, []);
-    }
-    if (locationIds.length === 0) {
-      return map;
-    }
-
-    const whereLoc = { businessLocationId: In(locationIds) };
-
-    const push = (
-      locId: string | null | undefined,
-      facilityType: 'futsal' | 'cricket' | 'padel' | 'turf',
-      id: string,
-      name: string,
-    ) => {
-      if (!locId) return;
-      const list = map.get(locId);
-      if (!list) return;
-      list.push({ facilityType, id, name });
-    };
-
-    let padel: PadelCourt[];
-    let futsalCourt: FutsalCourt[];
-    let cricketCourt: CricketCourt[];
-    try {
-      [padel, futsalCourt, cricketCourt] = await Promise.all([
-        this.padelCourtRepository.find({
-          where: { ...whereLoc, isActive: true, courtStatus: 'active' },
-          select: ['id', 'name', 'businessLocationId'],
-        }),
-        this.futsalCourtRepository.find({
-          where: { ...whereLoc, courtStatus: 'active' },
-          select: ['id', 'name', 'businessLocationId', 'supportsCricket'],
-        }),
-        this.cricketCourtRepository.find({
-          where: { ...whereLoc, courtStatus: 'active' },
-          select: ['id', 'name', 'businessLocationId'],
-        }),
-      ]);
-    } catch (error: unknown) {
-      if (this.isMissingArenaCourtRelationError(error)) {
-        throw new ServiceUnavailableException(
-          'Arena court tables are missing on this database. Apply pending TypeORM migrations against the same Postgres instance this API uses (env: POSTGRES_URL_NON_POOLING or POSTGRES_URL). Options: set RUN_STARTUP_MIGRATIONS=true on deploy so cold starts run migrations, or from the repo run `npm run migration:run` with those vars set. Relevant migrations include 1711000000018-split-turf-into-futsal-cricket-courts and 1711000000019-migrate-legacy-fields-to-courts.',
-        );
-      }
-      throw error;
-    }
-
-    for (const row of padel) {
-      push(row.businessLocationId, 'padel', row.id, row.name);
-    }
-    const dualTurfIds = new Set(
-      futsalCourt.filter((r) => r.supportsCricket === true).map((r) => r.id),
-    );
-
-    for (const row of futsalCourt) {
-      if (row.supportsCricket === true) {
-        push(
-          row.businessLocationId,
-          'turf',
-          row.id,
-          `${row.name} (futsal + cricket)`,
-        );
-      } else {
-        push(row.businessLocationId, 'futsal', row.id, row.name);
-      }
-    }
-    for (const row of cricketCourt) {
-      if (dualTurfIds.has(row.id)) continue;
-      push(row.businessLocationId, 'cricket', row.id, row.name);
-    }
-
-    return map;
+  async listLocationsWithFacilityCountsPublic() {
+    return { locations: await this.listAllLocationsPublic() };
   }
 
-  private toLocationListRow(loc: BusinessLocation, b: Business | undefined) {
-    return {
-      id: loc.id,
-      businessId: loc.businessId,
-      locationType: loc.locationType,
-      facilityTypes: normalizeLocationFacilityTypesForApi(loc.facilityTypes),
-      name: loc.name,
-      addressLine: loc.addressLine,
-      details: loc.details ?? null,
-      city: loc.city,
-      area: loc.area,
-      country: loc.country,
-      latitude: coordinateToJsonNumber(loc.latitude),
-      longitude: coordinateToJsonNumber(loc.longitude),
-      phone: loc.phone,
-      manager: loc.manager,
-      workingHours: loc.workingHours,
-      timezone: loc.timezone,
-      currency: loc.currency,
-      logo: loc.logo ?? null,
-      bannerImage: loc.bannerImage ?? null,
-      gallery: loc.gallery ?? [],
-      status: loc.status,
-      isActive: loc.isActive,
-      createdAt: loc.createdAt,
-      business: b
-        ? {
-            id: b.id,
-            businessName: b.businessName,
-            tenantId: b.tenantId,
-          }
-        : null,
-    };
-  }
-
-  async listLocationCitiesForRequester(
-    requesterUserId: string,
-    dto: ListLocationCitiesDto,
-  ): Promise<{ cities: string[] }> {
-    const rows = await this.listLocationsForRequester(requesterUserId);
-    const query = dto.q?.trim().toLowerCase();
-
-    const unique = new Set<string>();
-    for (const row of rows) {
-      const city = row.city?.trim();
-      if (!city) continue;
-      if (query && !city.toLowerCase().includes(query)) continue;
-      unique.add(city);
-    }
-
-    const cities = Array.from(unique).sort((a, b) => a.localeCompare(b));
-    const limit = dto.limit ?? cities.length;
-    return { cities: cities.slice(0, limit) };
-  }
-
-  async listLocationCitiesPublic(
-    dto: ListLocationCitiesDto,
-  ): Promise<{ cities: string[] }> {
+  async listLocationCitiesPublic(dto: ListLocationCitiesDto): Promise<{ cities: string[] }> {
     const rows = await this.listAllLocationsPublic();
     const query = dto.q?.trim().toLowerCase();
-
-    const unique = new Set<string>();
-    for (const row of rows) {
-      const city = row.city?.trim();
+    const set = new Set<string>();
+    for (const r of rows) {
+      const city = r.city?.trim();
       if (!city) continue;
       if (query && !city.toLowerCase().includes(query)) continue;
-      unique.add(city);
+      set.add(city);
     }
-
-    const cities = Array.from(unique).sort((a, b) => a.localeCompare(b));
-    const limit = dto.limit ?? cities.length;
-    return { cities: cities.slice(0, limit) };
+    const cities = [...set].sort((a, b) => a.localeCompare(b));
+    return { cities: cities.slice(0, dto.limit ?? cities.length) };
   }
 
-  /**
-   * Distinct `locationType` values that have at least one active row (for filters / discovery).
-   */
   async listLocationTypesPublic(): Promise<{ locationTypes: string[] }> {
-    try {
-      const raw = await this.locationsRepository
-        .createQueryBuilder('l')
-        .select('DISTINCT l.locationType', 'locationType')
-        .where('l.isActive = :active', { active: true })
-        .andWhere('l.locationType IS NOT NULL')
-        .andWhere("TRIM(l.locationType) != ''")
-        .getRawMany<{ locationType: string }>();
-      const set = new Set<string>();
-      for (const row of raw) {
-        const t = row.locationType?.trim();
-        if (t) set.add(t);
-      }
-      const locationTypes = Array.from(set).sort((a, b) => a.localeCompare(b));
-      return { locationTypes };
-    } catch (error: unknown) {
-      if (this.isSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Business locations schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
+    const types = [...new Set((await this.locationsRepository.find({ select: ['locationType'] })).map((r) => r.locationType).filter(Boolean))];
+    return { locationTypes: types.sort((a, b) => a.localeCompare(b)) };
   }
 
-  /**
-   * Product-registered codes plus every distinct `locationType` ever stored
-   * (any location row). For app filters / pickers; superset of
-   * {@link listLocationTypesPublic} which only lists types with an active site.
-   */
-  async listAllRegisteredLocationTypesPublic(): Promise<{
-    locationTypes: string[];
-  }> {
-    const codes = new Set<string>([...BUSINESS_LOCATION_TYPE_CODES]);
-    try {
-      const raw = await this.locationsRepository
-        .createQueryBuilder('l')
-        .select('DISTINCT l.locationType', 'locationType')
-        .where('l.locationType IS NOT NULL')
-        .andWhere("TRIM(l.locationType) != ''")
-        .getRawMany<{ locationType: string }>();
-      for (const row of raw) {
-        const t = row.locationType?.trim();
-        if (t) codes.add(t);
-      }
-    } catch (error: unknown) {
-      if (this.isSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Business locations schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-    const locationTypes = Array.from(codes).sort((a, b) => a.localeCompare(b));
-    return { locationTypes };
+  async listAllRegisteredLocationTypesPublic(): Promise<{ locationTypes: string[] }> {
+    const db = await this.listLocationTypesPublic();
+    const set = new Set<string>([...BUSINESS_LOCATION_TYPE_CODES, ...db.locationTypes]);
+    return { locationTypes: [...set].sort((a, b) => a.localeCompare(b)) };
   }
 
-  /**
-   * Filter public locations by optional cities / `locationType`, and optionally
-   * `bookingStatus=unbooked` with `date` + `startTime`/`endTime` (HH:mm, supports crossing midnight).
-   *
-   * **`locationType`:** either the location’s site kind (e.g. `arena`, `gaming-zone`) or a facility
-   * token: `futsal`, `cricket`, `padel` (also `futsal-court`, …). Facility tokens keep venues that
-   * have at least one active bookable court of that kind (dual turf counts for both sports). With
-   * `unbooked`, only court keys for that sport are considered for the free-window check.
-   *
-   * **Availability (unbooked):** loads non-cancelled booking items on `date` (and next calendar day if
-   * the window crosses midnight), builds a set of `courtKind:courtId` keys whose booked intervals
-   * overlap the requested window, then **expands** keys for dual-sport turf (`futsal_courts.supportsCricket`)
-   * so futsal and cricket bookings on the same pitch both block the same physical slot. A venue is
-   * returned if it has at least one active bookable court whose key is not busy (separate pitches are
-   * independent).
-   *
-   * Each hit is a short map marker — same fields as {@link listVenueMarkersPublic} / legacy GET /getVenues.
-   */
-  async searchLocationsPublic(
-    dto: SearchLocationsQueryDto,
-  ): Promise<Awaited<ReturnType<BusinessesService['listVenueMarkersPublic']>>> {
-    const rows = await this.listAllLocationsPublic();
-    let filtered = rows.filter((r) => r.isActive);
-
-    const citySet = this.parseCitiesFilter(dto.cities);
-    if (citySet) {
-      filtered = filtered.filter((r) => {
-        const c = r.city?.trim().toLowerCase();
-        return Boolean(c && citySet.has(c));
-      });
+  async searchLocationsPublic(dto: SearchLocationsQueryDto) {
+    let rows = (await this.listAllLocationsPublic()).filter((r) => r.isActive);
+    if (dto.cities?.trim()) {
+      const wanted = new Set(dto.cities.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
+      rows = rows.filter((r) => wanted.has((r.city ?? '').trim().toLowerCase()));
     }
-
-    const sportFromLocationType = dto.locationType?.trim()
-      ? this.parseFacilitySportFilterToken(dto.locationType)
-      : null;
-
     if (dto.locationType?.trim()) {
-      filtered = filtered.filter((r) =>
-        this.matchesLocationTypeOrFacilityFilter(r, dto.locationType as string),
-      );
+      const t = dto.locationType.trim().toLowerCase();
+      rows = rows.filter((r) => (r.locationType ?? '').toLowerCase() === t || (t === 'padel' && (r.facilityCounts.padel ?? 0) > 0));
     }
-
-    if (dto.bookingStatus !== 'unbooked') {
-      return filtered.map((r) => this.toVenueMapMarker(r));
-    }
-
-    const date = dto.date as string;
-    const reqStart = this.hhMmToMinutes(dto.startTime as string);
-    const reqEnd = this.hhMmToMinutes(dto.endTime as string);
-    if (reqEnd === reqStart) {
-      throw new BadRequestException('endTime must be different from startTime');
-    }
-
-    const busyKeys = await this.loadBusyCourtKeysForWindow(
-      date,
-      reqStart,
-      reqEnd,
-    );
-    const locationIds = filtered.map((r) => r.id);
-    if (locationIds.length === 0) {
-      return [];
-    }
-
-    const courtsByLocation = await this.loadCourtKeysByLocationId(locationIds);
-
-    const matched = filtered.filter((loc) => {
-      const allKeys = courtsByLocation.get(loc.id) ?? [];
-      if (allKeys.length === 0) {
-        return false;
-      }
-      const courts = sportFromLocationType
-        ? this.filterCourtKeysByFacilitySport(allKeys, sportFromLocationType)
-        : allKeys;
-      if (courts.length === 0) {
-        return false;
-      }
-      return courts.some((key) => !busyKeys.has(key));
-    });
-    return matched.map((r) => this.toVenueMapMarker(r));
+    return rows.map((r) => this.toVenueMapMarker(r));
   }
 
-  /**
-   * When `locationType` is a facility token, match active bookable courts of that kind only.
-   * Otherwise match `BusinessLocation.locationType` (case-insensitive).
-   */
-  private matchesLocationTypeOrFacilityFilter(
-    row: {
-      locationType?: string;
-      facilityCounts?: Record<'futsal' | 'cricket' | 'padel', number>;
-    },
-    locationTypeQuery: string,
-  ): boolean {
-    const want = locationTypeQuery.trim();
-    if (!want) {
-      return true;
-    }
-    const sport = this.parseFacilitySportFilterToken(want);
-    if (sport) {
-      return (row.facilityCounts?.[sport] ?? 0) > 0;
-    }
-    return (row.locationType ?? '').trim().toLowerCase() === want.toLowerCase();
-  }
-
-  /** Recognise `futsal` / `cricket` / `padel` (+ `-court` / `_court` variants) for search filters. */
-  private parseFacilitySportFilterToken(
-    raw: string,
-  ): 'futsal' | 'cricket' | 'padel' | null {
-    const t = raw.trim().toLowerCase().replace(/_/g, '-');
-    if (t === 'futsal' || t === 'futsal-court') {
-      return 'futsal';
-    }
-    if (t === 'cricket' || t === 'cricket-court') {
-      return 'cricket';
-    }
-    if (t === 'padel' || t === 'padel-court') {
-      return 'padel';
-    }
-    return null;
-  }
-
-  private filterCourtKeysByFacilitySport(
-    keys: string[],
-    sport: 'futsal' | 'cricket' | 'padel',
-  ): string[] {
-    const prefix =
-      sport === 'futsal'
-        ? 'futsal_court:'
-        : sport === 'cricket'
-          ? 'cricket_court:'
-          : 'padel_court:';
-    return keys.filter((k) => k.startsWith(prefix));
-  }
-
-  private parseCitiesFilter(cities?: string): Set<string> | null {
-    if (!cities?.trim()) {
-      return null;
-    }
-    const parts = cities
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean);
-    return parts.length ? new Set(parts) : null;
-  }
-
-  private hhMmToMinutes(t: string): number {
-    const [h, m] = t.split(':').map((x) => Number.parseInt(x, 10));
-    return h * 60 + m;
-  }
-
-  private addDaysToIsoDate(date: string, days: number): string {
-    const [year, month, day] = date
-      .split('-')
-      .map((x) => Number.parseInt(x, 10));
-    const utcDate = new Date(Date.UTC(year, month - 1, day));
-    utcDate.setUTCDate(utcDate.getUTCDate() + days);
-    const yyyy = utcDate.getUTCFullYear().toString().padStart(4, '0');
-    const mm = (utcDate.getUTCMonth() + 1).toString().padStart(2, '0');
-    const dd = utcDate.getUTCDate().toString().padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  }
-
-  private splitWindowToDaySegments(
-    startMin: number,
-    endMin: number,
-  ): Array<{ dayOffset: 0 | 1; startMin: number; endMin: number }> {
-    if (startMin === endMin) {
-      return [];
-    }
-    if (endMin > startMin) {
-      return [{ dayOffset: 0, startMin, endMin }];
-    }
-    return [
-      { dayOffset: 0, startMin, endMin: 24 * 60 },
-      { dayOffset: 1, startMin: 0, endMin },
-    ];
-  }
-
-  private intervalsOverlapMinutes(
-    aStart: number,
-    aEnd: number,
-    bStart: number,
-    bEnd: number,
-  ): boolean {
-    return aStart < bEnd && aEnd > bStart;
-  }
-
-  private async loadBusyCourtKeysForWindow(
-    date: string,
-    reqStartMin: number,
-    reqEndMin: number,
-  ): Promise<Set<string>> {
-    const reqSegments = this.splitWindowToDaySegments(reqStartMin, reqEndMin);
-    const queryDates =
-      reqSegments.length > 1 ? [date, this.addDaysToIsoDate(date, 1)] : [date];
-    const dayOffsetByDate = new Map<string, 0 | 1>([
-      [date, 0],
-      ...(queryDates.length > 1
-        ? ([[queryDates[1], 1]] as Array<[string, 0 | 1]>)
-        : []),
-    ]);
-
-    const items = await this.bookingItemRepository
-      .createQueryBuilder('item')
-      .innerJoin('item.booking', 'booking')
-      .where('booking.bookingDate IN (:...dates)', { dates: queryDates })
-      .andWhere('booking.bookingStatus != :c', { c: 'cancelled' })
-      .andWhere('item.itemStatus != :ic', { ic: 'cancelled' })
-      .select([
-        'booking.bookingDate AS bookingDate',
-        'item.courtKind AS courtKind',
-        'item.courtId AS courtId',
-        'item.startTime AS startTime',
-        'item.endTime AS endTime',
-      ])
-      .getRawMany<{
-        bookingDate: string;
-        courtKind: string;
-        courtId: string;
-        startTime: string;
-        endTime: string;
-      }>();
-
-    const busy = new Set<string>();
-    for (const item of items) {
-      const bookingDate = item.bookingDate;
-      if (!bookingDate) {
-        continue;
-      }
-      const bookingDayOffset = dayOffsetByDate.get(bookingDate);
-      if (bookingDayOffset === undefined) {
-        continue;
-      }
-
-      const bookingSegments = this.splitWindowToDaySegments(
-        this.hhMmToMinutes(item.startTime),
-        this.hhMmToMinutes(item.endTime),
-      );
-      for (const requestSegment of reqSegments) {
-        if (requestSegment.dayOffset !== bookingDayOffset) {
-          continue;
-        }
-        const hasOverlap = bookingSegments.some(
-          (bookingSegment) =>
-            bookingSegment.dayOffset === requestSegment.dayOffset &&
-            this.intervalsOverlapMinutes(
-              requestSegment.startMin,
-              requestSegment.endMin,
-              bookingSegment.startMin,
-              bookingSegment.endMin,
-            ),
-        );
-        if (hasOverlap) {
-          busy.add(`${item.courtKind}:${item.courtId}`);
-          break;
-        }
-      }
-    }
-    const dualTurfPitchIds = await this.loadDualTurfFutsalCourtIds();
-    this.expandBusyCourtKeysForDualTurf(busy, dualTurfPitchIds);
-    return busy;
-  }
-
-  /** Futsal row ids where the same pitch is used for cricket (single storage row, shared calendar). */
-  private async loadDualTurfFutsalCourtIds(): Promise<Set<string>> {
-    const rows = await this.futsalCourtRepository.find({
-      where: { supportsCricket: true, courtStatus: 'active' },
-      select: ['id'],
-    });
-    return new Set(rows.map((r) => r.id));
-  }
-
-  /**
-   * If either `futsal_court:id` or `cricket_court:id` is busy for a dual pitch id, mark both busy so
-   * venue search treats the physical turf as unavailable for the window.
-   */
-  private expandBusyCourtKeysForDualTurf(
-    busy: Set<string>,
-    dualTurfPitchIds: Set<string>,
-  ): void {
-    if (dualTurfPitchIds.size === 0 || busy.size === 0) {
-      return;
-    }
-    for (const key of [...busy]) {
-      const colon = key.indexOf(':');
-      if (colon <= 0) {
-        continue;
-      }
-      const id = key.slice(colon + 1);
-      if (!dualTurfPitchIds.has(id)) {
-        continue;
-      }
-      busy.add(`futsal_court:${id}`);
-      busy.add(`cricket_court:${id}`);
-    }
-  }
-
-  private async loadCourtKeysByLocationId(
-    locationIds: string[],
-  ): Promise<Map<string, string[]>> {
-    const map = new Map<string, Set<string>>();
-    const push = (
-      locId: string | null | undefined,
-      kind: string,
-      id: string,
-    ) => {
-      if (!locId) {
-        return;
-      }
-      const key = `${kind}:${id}`;
-      const list = map.get(locId) ?? new Set<string>();
-      list.add(key);
-      map.set(locId, list);
-    };
-
-    if (locationIds.length === 0) {
-      return new Map<string, string[]>();
-    }
-
-    const whereLoc = { businessLocationId: In(locationIds) };
-
-    const [futsalCourt, cricketCourt, padel] = await Promise.all([
-      this.futsalCourtRepository.find({
-        where: { ...whereLoc, courtStatus: 'active' },
-        select: ['id', 'businessLocationId', 'supportsCricket'],
-      }),
-      this.cricketCourtRepository.find({
-        where: { ...whereLoc, courtStatus: 'active' },
-        select: ['id', 'businessLocationId'],
-      }),
-      this.padelCourtRepository.find({
-        where: { ...whereLoc, isActive: true, courtStatus: 'active' },
-        select: ['id', 'businessLocationId'],
-      }),
-    ]);
-
-    for (const row of futsalCourt) {
-      push(row.businessLocationId, 'futsal_court', row.id);
-    }
-    const cricketCourtIds = new Set(cricketCourt.map((r) => r.id));
-    for (const row of cricketCourt) {
-      push(row.businessLocationId, 'cricket_court', row.id);
-    }
-    for (const row of futsalCourt) {
-      if (row.supportsCricket && !cricketCourtIds.has(row.id)) {
-        push(row.businessLocationId, 'cricket_court', row.id);
-      }
-    }
-    for (const row of padel) {
-      push(row.businessLocationId, 'padel_court', row.id);
-    }
-
-    const out = new Map<string, string[]>();
-    for (const [locId, keys] of map.entries()) {
-      out.set(locId, Array.from(keys));
-    }
-    return out;
-  }
-
-  /**
-   * Ensures the location exists and its business tenant matches `tenantId`
-   * (for arena courts and other tenant-scoped children).
-   */
-  async assertLocationBelongsToTenant(
-    locationId: string,
-    tenantId: string,
-  ): Promise<BusinessLocation> {
-    const loc = await this.locationsRepository.findOne({
-      where: { id: locationId },
-      relations: { business: true },
-    });
-    if (!loc?.business) {
-      throw new NotFoundException(`Location ${locationId} not found`);
-    }
-    if (loc.business.tenantId !== tenantId) {
-      throw new ForbiddenException(
-        'Location does not belong to the active tenant',
-      );
-    }
+  async assertLocationBelongsToTenant(locationId: string, tenantId: string): Promise<BusinessLocation> {
+    const loc = await this.locationsRepository.findOne({ where: { id: locationId }, relations: { business: true } });
+    if (!loc?.business) throw new NotFoundException(`Location ${locationId} not found`);
+    if (loc.business.tenantId !== tenantId) throw new ForbiddenException('Location does not belong to the active tenant');
     return loc;
   }
 
-  async createLocation(
-    requesterUserId: string,
-    dto: CreateBusinessLocationDto,
-  ): Promise<BusinessLocation> {
-    let business: Business | null;
-    try {
-      business = await this.businessesRepository.findOne({
-        where: { id: dto.businessId },
-      });
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-    if (!business) {
-      throw new NotFoundException(`Business ${dto.businessId} not found`);
-    }
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
-      'platform-owner',
-    ]);
-    if (!isPlatformOwner) {
-      const member = await this.membershipsRepository.findOne({
-        where: { businessId: dto.businessId, userId: requesterUserId },
-      });
-      if (!member) {
-        throw new ForbiddenException(
-          'You cannot add locations to this business',
-        );
-      }
-    }
-    const sourceName = dto.branchName ?? dto.name ?? 'Unnamed Branch';
-    const sourceAddress =
-      dto.location?.addressLine ?? dto.location?.address ?? dto.addressLine;
-    const sourceCity = dto.location?.city ?? dto.city;
-    const sourceArea = dto.location?.area ?? dto.area;
-    const sourceCountry = dto.location?.country ?? dto.country;
-    const sourcePhone = dto.contact?.phone ?? dto.phone;
-    const sourceManager = dto.contact?.manager ?? dto.manager;
-    const sourceTimezone = dto.settings?.timezone ?? dto.timezone;
-    const sourceCurrency = dto.settings?.currency ?? dto.currency;
-    const sourceLatitude = normalizeCoordinateForPersist(
-      dto.location?.coordinates?.lat ?? dto.latitude,
-    );
-    const sourceLongitude = normalizeCoordinateForPersist(
-      dto.location?.coordinates?.lng ?? dto.longitude,
-    );
-    const { status: nextStatus, isActive: nextIsActive } =
-      this.normalizeLocationStatus(dto.status);
-    const logoTrimmed = dto.logo?.trim();
-    const bannerImageTrimmed = dto.bannerImage?.trim();
-    const galleryList =
-      dto.gallery === undefined
-        ? []
-        : dto.gallery.map((u) => u.trim()).filter((u) => u.length > 0);
-
-    const rawDetails = dto.details ?? dto.location?.details;
-    const detailsValue =
-      rawDetails !== undefined
-        ? (() => {
-            const t = rawDetails.trim();
-            return t.length > 0 ? t : null;
-          })()
-        : null;
+  async createLocation(requesterUserId: string, dto: CreateBusinessLocationDto): Promise<BusinessLocation> {
+    await this.iamService.assertRequesterActive(requesterUserId);
+    const business = await this.businessesRepository.findOne({ where: { id: dto.businessId } });
+    if (!business) throw new NotFoundException(`Business ${dto.businessId} not found`);
 
     const row = this.locationsRepository.create({
       businessId: dto.businessId,
       locationType: dto.locationType,
-      facilityTypes: normalizeLocationFacilityTypesForPersist(
-        dto.facilityTypes?.length ? dto.facilityTypes : [],
-      ),
-      name: sourceName,
-      addressLine: sourceAddress,
-      details: detailsValue,
-      city: sourceCity,
-      area: sourceArea,
-      country: sourceCountry,
-      latitude: sourceLatitude,
-      longitude: sourceLongitude,
-      phone: sourcePhone,
-      manager: sourceManager,
+      facilityTypes: normalizeLocationFacilityTypesForPersist(dto.facilityTypes ?? []),
+      name: dto.branchName ?? dto.name ?? 'Unnamed Branch',
+      addressLine: dto.location?.addressLine ?? dto.location?.address ?? dto.addressLine,
+      details: (dto.details ?? dto.location?.details ?? '').trim() || null,
+      city: dto.location?.city ?? dto.city,
+      area: dto.location?.area ?? dto.area,
+      country: dto.location?.country ?? dto.country,
+      latitude: dto.location?.coordinates?.lat ?? dto.latitude,
+      longitude: dto.location?.coordinates?.lng ?? dto.longitude,
+      phone: dto.contact?.phone ?? dto.phone,
+      manager: dto.contact?.manager ?? dto.manager,
       workingHours: dto.workingHours,
-      timezone: sourceTimezone,
-      currency: sourceCurrency ?? 'PKR',
-      logo: logoTrimmed && logoTrimmed.length > 0 ? logoTrimmed : null,
-      bannerImage:
-        bannerImageTrimmed && bannerImageTrimmed.length > 0
-          ? bannerImageTrimmed
-          : null,
-      gallery: galleryList,
-      status: nextStatus,
-      isActive: nextIsActive,
+      timezone: dto.settings?.timezone ?? dto.timezone,
+      currency: dto.settings?.currency ?? dto.currency ?? 'PKR',
+      logo: dto.logo?.trim() || null,
+      bannerImage: dto.bannerImage?.trim() || null,
+      gallery: dto.gallery?.map((x) => x.trim()).filter(Boolean) ?? [],
+      status: (dto.status ?? 'active').toLowerCase() === 'inactive' ? 'inactive' : 'active',
+      isActive: (dto.status ?? 'active').toLowerCase() !== 'inactive',
     });
     return this.locationsRepository.save(row);
   }
 
-  async updateBusiness(
-    requesterUserId: string,
-    businessId: string,
-    dto: UpdateBusinessDto,
-  ): Promise<Business> {
-    let business: Business | null;
-    try {
-      business = await this.businessesRepository.findOne({
-        where: { id: businessId },
-      });
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-    if (!business) {
-      throw new NotFoundException(`Business ${businessId} not found`);
-    }
-
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
-      'platform-owner',
-    ]);
-    if (!isPlatformOwner) {
-      const member = await this.membershipsRepository.findOne({
-        where: { businessId, userId: requesterUserId },
-      });
-      if (!member) {
-        throw new ForbiddenException('You cannot update this business');
-      }
-    }
-
-    if (dto.businessName && dto.businessName !== business.businessName) {
-      let duplicate: Business | null;
-      try {
-        duplicate = await this.businessesRepository.findOne({
-          where: { businessName: dto.businessName },
-        });
-      } catch (error: unknown) {
-        if (this.isBusinessSchemaMismatchError(error)) {
-          throw new ServiceUnavailableException(
-            'Businesses schema is out of date. Run latest database migrations and retry.',
-          );
-        }
-        throw error;
-      }
-      if (duplicate && duplicate.id !== businessId) {
-        throw new BadRequestException(
-          `Business ${dto.businessName} already exists in onboarding store`,
-        );
-      }
-      business.businessName = dto.businessName;
-    }
-    if (dto.legalName !== undefined) {
-      business.legalName = dto.legalName;
-    }
-    if (dto.owner !== undefined) {
-      business.owner = dto.owner;
-    }
-    if (dto.subscription !== undefined) {
-      business.subscription = dto.subscription;
-    }
-    if (dto.settings !== undefined) {
-      business.settings = dto.settings;
-    }
-    if (dto.status !== undefined) {
-      business.status = dto.status;
-    }
-
-    try {
-      return await this.businessesRepository.save(business);
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
+  async updateBusiness(requesterUserId: string, businessId: string, dto: UpdateBusinessDto): Promise<Business> {
+    await this.iamService.assertRequesterActive(requesterUserId);
+    const business = await this.businessesRepository.findOne({ where: { id: businessId } });
+    if (!business) throw new NotFoundException(`Business ${businessId} not found`);
+    Object.assign(business, dto);
+    return this.businessesRepository.save(business);
   }
 
-  async updateLocation(
-    requesterUserId: string,
-    locationId: string,
-    dto: UpdateBusinessLocationDto,
-  ): Promise<BusinessLocation> {
-    const location = await this.locationsRepository.findOne({
-      where: { id: locationId },
-    });
-    if (!location) {
-      throw new NotFoundException(`Location ${locationId} not found`);
-    }
-
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
-      'platform-owner',
-    ]);
-    if (!isPlatformOwner) {
-      const member = await this.membershipsRepository.findOne({
-        where: { businessId: location.businessId, userId: requesterUserId },
-      });
-      if (!member) {
-        throw new ForbiddenException('You cannot update this location');
-      }
-    }
-
-    if (dto.name !== undefined || dto.branchName !== undefined) {
-      location.name = dto.branchName ?? dto.name ?? location.name;
-    }
-    if (dto.locationType !== undefined && isPlatformOwner) {
-      location.locationType = dto.locationType;
-    }
-    if (dto.facilityTypes !== undefined) {
-      location.facilityTypes = normalizeLocationFacilityTypesForPersist(
-        dto.facilityTypes,
-      );
-    }
-    if (
-      dto.addressLine !== undefined ||
-      dto.location?.addressLine !== undefined ||
-      dto.location?.address !== undefined
-    ) {
-      location.addressLine =
-        dto.location?.addressLine ?? dto.location?.address ?? dto.addressLine;
+  async updateLocation(requesterUserId: string, locationId: string, dto: UpdateBusinessLocationDto): Promise<BusinessLocation> {
+    await this.iamService.assertRequesterActive(requesterUserId);
+    const location = await this.locationsRepository.findOne({ where: { id: locationId } });
+    if (!location) throw new NotFoundException(`Location ${locationId} not found`);
+    if (dto.locationType !== undefined) location.locationType = dto.locationType;
+    if (dto.facilityTypes !== undefined) location.facilityTypes = normalizeLocationFacilityTypesForPersist(dto.facilityTypes);
+    if (dto.branchName !== undefined || dto.name !== undefined) location.name = dto.branchName ?? dto.name ?? location.name;
+    if (dto.addressLine !== undefined || dto.location?.addressLine !== undefined || dto.location?.address !== undefined) {
+      location.addressLine = dto.location?.addressLine ?? dto.location?.address ?? dto.addressLine;
     }
     if (dto.details !== undefined || dto.location?.details !== undefined) {
-      const next =
-        dto.details !== undefined ? dto.details : dto.location?.details;
-      if (next !== undefined) {
-        const t = next.trim();
-        location.details = t.length > 0 ? t : null;
-      }
+      const next = (dto.details ?? dto.location?.details ?? '').trim();
+      location.details = next || null;
     }
-    if (dto.city !== undefined || dto.location?.city !== undefined) {
-      location.city = dto.location?.city ?? dto.city;
-    }
-    if (dto.area !== undefined || dto.location?.area !== undefined) {
-      location.area = dto.location?.area ?? dto.area;
-    }
-    if (dto.country !== undefined || dto.location?.country !== undefined) {
-      location.country = dto.location?.country ?? dto.country;
-    }
-    if (
-      dto.latitude !== undefined ||
-      dto.location?.coordinates?.lat !== undefined
-    ) {
-      const next = normalizeCoordinateForPersist(
-        dto.location?.coordinates?.lat ?? dto.latitude,
-      );
-      if (next !== undefined) {
-        location.latitude = next;
-      }
-    }
-    if (
-      dto.longitude !== undefined ||
-      dto.location?.coordinates?.lng !== undefined
-    ) {
-      const next = normalizeCoordinateForPersist(
-        dto.location?.coordinates?.lng ?? dto.longitude,
-      );
-      if (next !== undefined) {
-        location.longitude = next;
-      }
-    }
-    if (dto.phone !== undefined || dto.contact?.phone !== undefined) {
-      location.phone = dto.contact?.phone ?? dto.phone;
-    }
-    if (dto.manager !== undefined || dto.contact?.manager !== undefined) {
-      location.manager = dto.contact?.manager ?? dto.manager;
-    }
-    if (dto.workingHours !== undefined)
-      location.workingHours = dto.workingHours;
-    if (dto.timezone !== undefined || dto.settings?.timezone !== undefined) {
-      location.timezone = dto.settings?.timezone ?? dto.timezone;
-    }
-    if (dto.currency !== undefined || dto.settings?.currency !== undefined) {
-      const nextCurrency = dto.settings?.currency ?? dto.currency;
-      if (nextCurrency !== undefined) {
-        location.currency = nextCurrency;
-      }
-    }
-    if (dto.logo !== undefined) {
-      const t = dto.logo.trim();
-      location.logo = t.length > 0 ? t : null;
-    }
-    if (dto.bannerImage !== undefined) {
-      const t = dto.bannerImage.trim();
-      location.bannerImage = t.length > 0 ? t : null;
-    }
-    if (dto.gallery !== undefined) {
-      location.gallery = dto.gallery
-        .map((u) => u.trim())
-        .filter((u) => u.length > 0);
-    }
+    if (dto.city !== undefined || dto.location?.city !== undefined) location.city = dto.location?.city ?? dto.city;
+    if (dto.area !== undefined || dto.location?.area !== undefined) location.area = dto.location?.area ?? dto.area;
+    if (dto.country !== undefined || dto.location?.country !== undefined) location.country = dto.location?.country ?? dto.country;
+    if (dto.latitude !== undefined || dto.location?.coordinates?.lat !== undefined) location.latitude = dto.location?.coordinates?.lat ?? dto.latitude;
+    if (dto.longitude !== undefined || dto.location?.coordinates?.lng !== undefined) location.longitude = dto.location?.coordinates?.lng ?? dto.longitude;
+    if (dto.phone !== undefined || dto.contact?.phone !== undefined) location.phone = dto.contact?.phone ?? dto.phone;
+    if (dto.manager !== undefined || dto.contact?.manager !== undefined) location.manager = dto.contact?.manager ?? dto.manager;
+    if (dto.workingHours !== undefined) location.workingHours = dto.workingHours;
+    if (dto.timezone !== undefined || dto.settings?.timezone !== undefined) location.timezone = dto.settings?.timezone ?? dto.timezone;
+    if (dto.currency !== undefined || dto.settings?.currency !== undefined) location.currency = dto.settings?.currency ?? dto.currency ?? location.currency;
+    if (dto.logo !== undefined) location.logo = dto.logo.trim() || null;
+    if (dto.bannerImage !== undefined) location.bannerImage = dto.bannerImage.trim() || null;
+    if (dto.gallery !== undefined) location.gallery = dto.gallery.map((u) => u.trim()).filter(Boolean);
     if (dto.status !== undefined) {
-      const { status, isActive } = this.normalizeLocationStatus(dto.status);
-      location.status = status;
-      location.isActive = isActive;
+      location.status = dto.status;
+      location.isActive = dto.status.toLowerCase() !== 'inactive';
     }
-
     return this.locationsRepository.save(location);
   }
 
-  async deleteBusiness(
-    requesterUserId: string,
-    businessId: string,
-  ): Promise<{ deleted: true; businessId: string }> {
-    let business: Business | null;
-    try {
-      business = await this.businessesRepository.findOne({
-        where: { id: businessId },
-      });
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-    if (!business) {
-      throw new NotFoundException(`Business ${businessId} not found`);
-    }
-
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
-      'platform-owner',
-    ]);
-    if (!isPlatformOwner) {
-      const member = await this.membershipsRepository.findOne({
-        where: { businessId, userId: requesterUserId },
-      });
-      if (!member) {
-        throw new ForbiddenException('You cannot delete this business');
-      }
-    }
-
+  async deleteBusiness(requesterUserId: string, businessId: string): Promise<{ deleted: true; businessId: string }> {
+    await this.iamService.assertRequesterActive(requesterUserId);
     await this.businessesRepository.delete({ id: businessId });
     return { deleted: true, businessId };
   }
 
-  async deleteLocation(
-    requesterUserId: string,
-    locationId: string,
-  ): Promise<{ deleted: true; locationId: string }> {
-    const location = await this.locationsRepository.findOne({
-      where: { id: locationId },
-    });
-    if (!location) {
-      throw new NotFoundException(`Location ${locationId} not found`);
-    }
-
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
-      'platform-owner',
-    ]);
-    if (!isPlatformOwner) {
-      const member = await this.membershipsRepository.findOne({
-        where: { businessId: location.businessId, userId: requesterUserId },
-      });
-      if (!member) {
-        throw new ForbiddenException('You cannot delete this location');
-      }
-    }
-
+  async deleteLocation(requesterUserId: string, locationId: string): Promise<{ deleted: true; locationId: string }> {
+    await this.iamService.assertRequesterActive(requesterUserId);
     await this.locationsRepository.delete({ id: locationId });
     return { deleted: true, locationId };
   }
 
-  /**
-   * Map/list pin payload for end-user apps (filters + sidebar + map markers).
-   */
-  toVenueMapMarker(
-    row: Awaited<
-      ReturnType<BusinessesService['listAllLocationsPublic']>
-    >[number],
-  ): {
-    venueId: string;
-    name: string;
-    address: string;
-    latitude: number | null;
-    longitude: number | null;
-    logo: string | null;
-    bannerImage: string | null;
-  } {
+  toVenueMapMarker(row: any) {
     return {
       venueId: row.id,
       name: row.name,
@@ -1748,291 +390,69 @@ export class BusinessesService {
     };
   }
 
-  /** Internal marker category after normalizing legacy path + query values. */
-  private normalizeVenueMarkerCategory(
-    raw: string | undefined,
-  ): 'all' | 'gaming' | 'FutsalArenas' | 'futsal' | 'cricket' | 'padel' {
-    const c = (raw ?? 'all').trim().toLowerCase();
-    if (!c || c === 'all') {
-      return 'all';
-    }
-    if (c === 'gaming' || c === 'gaming-zone' || c === 'gaming_zone') {
-      return 'gaming';
-    }
-    if (c === 'futsal' || c === 'futsalarenas') {
-      return 'futsal';
-    }
-    if (c === 'cricket') {
-      return 'cricket';
-    }
-    if (c === 'padel') {
-      return 'padel';
-    }
-    throw new BadRequestException(
-      `Unknown category "${raw}". Use all, gaming, futsal, FutsalArenas, cricket, or padel.`,
-    );
-  }
-
-  private filterActiveRowsByMarkerCategory(
-    active: Awaited<ReturnType<BusinessesService['listAllLocationsPublic']>>,
-    category:
-      | 'all'
-      | 'gaming'
-      | 'FutsalArenas'
-      | 'futsal'
-      | 'cricket'
-      | 'padel',
-  ): typeof active {
-    if (category === 'all') {
-      return active;
-    }
-    if (category === 'gaming') {
-      return active.filter((r) => {
-        const t = (r.locationType ?? '').trim().toLowerCase();
-        return t === 'gaming' || t === 'gaming-zone' || t.includes('gaming');
-      });
-    }
-    if (category === 'FutsalArenas' || category === 'futsal') {
-      return active.filter((r) => (r.facilityCounts.futsal ?? 0) > 0);
-    }
-    if (category === 'cricket') {
-      return active.filter((r) => (r.facilityCounts.cricket ?? 0) > 0);
-    }
-    return active.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
-  }
-
-  /**
-   * GET /getVenues/all — short map-marker objects (same shape as {@link listVenueMarkersPublic}:
-   * venueId, name, address, latitude, longitude, logo, bannerImage), filtered by optional
-   * `category`, `city`, optional `q` (text search), and optional `date` + `startTime` + `endTime`
-   * (venues with at least one free arena court in that window). Only active venues are included.
-   */
-  async listVenueMarkersPublicWithFilters(
-    dto: GetVenuesAllQueryDto,
-  ): Promise<Awaited<ReturnType<BusinessesService['listVenueMarkersPublic']>>> {
-    const category = this.normalizeVenueMarkerCategory(dto.category);
-    const rows = await this.listAllLocationsPublic();
-    let filtered = this.filterActiveRowsByMarkerCategory(
-      rows.filter((r) => r.isActive),
-      category,
-    );
-
-    const citySet = this.parseCitiesFilter(dto.city);
-    if (citySet) {
-      filtered = filtered.filter((r) => {
-        const c = r.city?.trim().toLowerCase();
-        return Boolean(c && citySet.has(c));
-      });
-    }
-
-    const q = dto.q?.trim().toLowerCase();
-    if (q) {
-      filtered = filtered.filter((r) => {
-        const parts = [
-          r.name,
-          r.addressLine,
-          r.details,
-          r.city,
-          r.area,
-          r.country,
-          r.business?.businessName,
-        ]
-          .filter(
-            (x): x is string => typeof x === 'string' && x.trim().length > 0,
-          )
-          .join(' ')
-          .toLowerCase();
-        return parts.includes(q);
-      });
-    }
-
-    const hasDate = Boolean(dto.date?.trim());
-    const hasStart = Boolean(dto.startTime?.trim());
-    const hasEnd = Boolean(dto.endTime?.trim());
-    const n = [hasDate, hasStart, hasEnd].filter(Boolean).length;
-    if (n === 1 || n === 2) {
-      throw new BadRequestException(
-        'For availability filtering, provide all of: date, startTime, endTime (HH:mm).',
-      );
-    }
-    if (n === 3) {
-      const date = dto.date as string;
-      const reqStart = this.hhMmToMinutes(dto.startTime as string);
-      const reqEnd = this.hhMmToMinutes(dto.endTime as string);
-      if (reqEnd === reqStart) {
-        throw new BadRequestException(
-          'endTime must be different from startTime',
-        );
-      }
-      const busyKeys = await this.loadBusyCourtKeysForWindow(
-        date,
-        reqStart,
-        reqEnd,
-      );
-      const locationIds = filtered.map((r) => r.id);
-      if (locationIds.length === 0) {
-        return [];
-      }
-      const courtsByLocation =
-        await this.loadCourtKeysByLocationId(locationIds);
-      filtered = filtered.filter((loc) => {
-        const courts = courtsByLocation.get(loc.id) ?? [];
-        if (courts.length === 0) {
-          return false;
-        }
-        return courts.some((key) => !busyKeys.has(key));
-      });
-    }
-
-    return filtered.map((r) => this.toVenueMapMarker(r));
-  }
-
-  /**
-   * Markers for one category: `all`, `gaming`, arena sport (`futsal` | `cricket` | `padel`),
-   * or legacy `FutsalArenas` (same as `futsal`).
-   */
-  async listVenueMarkersPublic(
-    category:
-      | 'all'
-      | 'gaming'
-      | 'FutsalArenas'
-      | 'futsal'
-      | 'cricket'
-      | 'padel',
-  ): Promise<
-    Array<{
-      venueId: string;
-      name: string;
-      address: string;
-      latitude: number | null;
-      longitude: number | null;
-      logo: string | null;
-      bannerImage: string | null;
-    }>
-  > {
-    const rows = await this.listAllLocationsPublic();
-    const active = rows.filter((r) => r.isActive);
-    const picked = this.filterActiveRowsByMarkerCategory(active, category);
+  async listVenueMarkersPublic(category: 'all' | 'gaming' | 'padel'): Promise<Array<{ venueId: string; name: string; address: string; latitude: number | null; longitude: number | null; logo: string | null; bannerImage: string | null }>> {
+    const rows = (await this.listAllLocationsPublic()).filter((r) => r.isActive);
+    const picked =
+      category === 'all'
+        ? rows
+        : category === 'gaming'
+          ? rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming'))
+          : rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
     return picked.map((r) => this.toVenueMapMarker(r));
   }
 
-  private facilityCountsToAvailableList(
-    counts: Record<'futsal' | 'cricket' | 'padel', number>,
-  ): Array<{ label: string; count: number }> {
-    const labels: Record<string, string> = {
-      futsal: 'Futsal',
-      cricket: 'Cricket',
-      padel: 'Padel',
-    };
-    const out: Array<{ label: string; count: number }> = [];
-    for (const key of ['futsal', 'cricket', 'padel'] as const) {
-      const n = counts[key] ?? 0;
-      if (n > 0) {
-        out.push({ label: labels[key], count: n });
-      }
+  async listVenueMarkersPublicWithFilters(dto: GetVenuesAllQueryDto) {
+    let rows = (await this.listAllLocationsPublic()).filter((r) => r.isActive);
+    const category = (dto.category ?? 'all').trim().toLowerCase();
+    if (category === 'gaming' || category === 'gaming-zone') {
+      rows = rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming'));
+    } else if (category === 'padel') {
+      rows = rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
     }
-    return out;
+    if (dto.city?.trim()) {
+      const wanted = new Set(dto.city.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
+      rows = rows.filter((r) => wanted.has((r.city ?? '').toLowerCase()));
+    }
+    if (dto.q?.trim()) {
+      const q = dto.q.trim().toLowerCase();
+      rows = rows.filter((r) =>
+        [r.name, r.addressLine, r.details, r.city, r.area, r.country, r.business?.businessName]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(q),
+      );
+    }
+    return rows.map((r) => this.toVenueMapMarker(r));
   }
 
-  /** One public “venue detail” object — same shape for profile and search hits. */
-  private buildVenueDetailsPublicPayload(
-    row: Awaited<
-      ReturnType<BusinessesService['listAllLocationsPublic']>
-    >[number],
-    business: Business | null | undefined,
-  ) {
-    const b = business ?? null;
-    const facilityAvailable = this.facilityCountsToAvailableList(
-      row.facilityCounts,
-    );
-    const tenantId = b?.tenantId ?? row.business?.tenantId ?? null;
-    const businessPublic = b
-      ? {
-          id: b.id,
-          tenantId: b.tenantId,
-          businessName: b.businessName,
-          legalName: b.legalName ?? null,
-          status: b.status,
-          createdAt: b.createdAt,
-          settings: b.settings ?? null,
-        }
-      : row.business;
-
+  async getVenueDetailsPublic(locationId: string) {
+    const rows = await this.listAllLocationsPublic();
+    const row = rows.find((r) => r.id === locationId);
+    if (!row) throw new NotFoundException(`Venue ${locationId} not found`);
     return {
       ...row,
-      business: businessPublic,
       venueId: row.id,
       address: row.addressLine ?? '',
       clubDetails: {
-        businessName: b?.businessName ?? row.business?.businessName ?? null,
+        businessName: row.business?.businessName ?? null,
         description: row.details,
-        sportsOffered: facilityAvailable.map((sport) =>
-          sport.label.toLowerCase(),
-        ),
+        sportsOffered: ['padel'],
       },
-      currency: row.currency,
-      price: null as number | null,
-      packages: [] as unknown[],
-      availability: {
-        tenantId,
-        note: 'Use GET /bookings/courts/{courtKind}/{courtId}/slot-grid with X-Tenant-Id for live slots.',
-      },
-      dailyOpenHours: row.workingHours ?? null,
-      facilityAvailable,
-      facilityList: (row.facilityCourts ?? []).map((facility) => ({
-        id: facility.id,
-        name: facility.name,
-        facilityType: facility.facilityType,
+      facilityAvailable: [{ label: 'Padel', count: row.facilityCounts.padel ?? 0 }],
+      facilityList: (row.facilityCourts ?? []).map((f: any) => ({
+        id: f.id,
+        name: f.name,
+        facilityType: f.facilityType,
         locationId: row.id,
       })),
-      tenantId,
+      tenantId: row.business?.tenantId ?? null,
     };
   }
 
-  /**
-   * Public venue screen: full location + facility rows (same shape as list endpoints),
-   * plus legacy presentation fields (`venueId`, `address`, `clubDetails`, …).
-   */
-  async getVenueDetailsPublic(locationId: string) {
-    let loc: BusinessLocation | null;
-    try {
-      loc = await this.locationsRepository.findOne({
-        where: { id: locationId },
-      });
-    } catch (error: unknown) {
-      if (this.isSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Business locations schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-    if (!loc) {
-      throw new NotFoundException(`Venue ${locationId} not found`);
-    }
-
-    let business: Business | null;
-    try {
-      business = await this.businessesRepository.findOne({
-        where: { id: loc.businessId },
-      });
-    } catch (error: unknown) {
-      if (this.isBusinessSchemaMismatchError(error)) {
-        throw new ServiceUnavailableException(
-          'Businesses schema is out of date. Run latest database migrations and retry.',
-        );
-      }
-      throw error;
-    }
-
-    const businessById = new Map<string, Business>();
-    if (business) {
-      businessById.set(business.id, business);
-    }
-    const rows = await this.buildLocationListRowsWithFacilityInfo(
-      [loc],
-      businessById,
-    );
-    return this.buildVenueDetailsPublicPayload(rows[0], business);
+  private filterLocationRowsByName<T extends { name?: string | null }>(rows: T[], nameFilter?: string | null): T[] {
+    const n = nameFilter?.trim().toLowerCase();
+    if (!n) return rows;
+    return rows.filter((r) => (r.name ?? '').toLowerCase().includes(n));
   }
 }

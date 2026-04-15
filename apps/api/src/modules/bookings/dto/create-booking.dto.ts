@@ -32,8 +32,6 @@ export class CreateBookingDto {
   /**
    * One row per booked window. Multiple slots are supported: e.g. two consecutive
    * hours on the same court as two items, or different courts in one checkout.
-   * Items that share the same physical pitch (including futsal/cricket twins)
-   * must not overlap in time.
    */
   @ValidateNested({ each: true })
   @Type(() => CreateBookingItemDto)

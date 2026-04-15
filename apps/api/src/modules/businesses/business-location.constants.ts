@@ -11,8 +11,6 @@ export type BusinessLocationTypeCode =
 
 /** Canonical arena sub-facility codes stored on locations (API + persist). */
 export const BUSINESS_LOCATION_FACILITY_TYPE_CODES = [
-  'futsal',
-  'cricket',
   'padel',
 ] as const;
 
@@ -35,11 +33,6 @@ export type GamingLocationFacilityTypeCode =
 
 /** Accepted on create/update; normalized to canonical codes before persist. */
 export const BUSINESS_LOCATION_FACILITY_LEGACY_TYPE_CODES = [
-  'turf-court',
-  'turf-court-futsal',
-  'turf-court-cricket',
-  'futsal-field',
-  'cricket-indoor',
   'padel-court',
 ] as const;
 
@@ -49,9 +42,7 @@ export const ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES = [
   ...GAMING_LOCATION_FACILITY_TYPE_CODES,
 ] as const;
 
-/**
- * Normalize location facility type tags to `futsal` | `cricket` | `padel`.
- */
+/** Normalize location facility type tags to `padel`. */
 export function normalizeLocationFacilityTypesForApi(
   raw: string[] | null | undefined,
 ): string[] {
@@ -62,23 +53,8 @@ export function normalizeLocationFacilityTypesForApi(
       (GAMING_LOCATION_FACILITY_TYPE_CODES as readonly string[]).includes(t)
     ) {
       out.add(t);
-    } else if (
-      t === 'futsal-field' ||
-      t === 'turf-court-futsal' ||
-      t === 'futsal'
-    ) {
-      out.add('futsal');
-    } else if (
-      t === 'cricket-indoor' ||
-      t === 'turf-court-cricket' ||
-      t === 'cricket'
-    ) {
-      out.add('cricket');
     } else if (t === 'padel-court' || t === 'padel') {
       out.add('padel');
-    } else if (t === 'turf-court') {
-      out.add('futsal');
-      out.add('cricket');
     }
   }
   return [...out].sort();

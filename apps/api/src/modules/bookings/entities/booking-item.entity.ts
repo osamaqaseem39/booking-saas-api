@@ -20,7 +20,7 @@ export class BookingItem {
   @JoinColumn({ name: 'bookingId' })
   booking!: Booking;
 
-  /** Which table `courtId` references (`futsal_courts`, `cricket_courts`, `padel_courts`) */
+  /** Which table `courtId` references (`padel_courts`). */
   @Column({ type: 'varchar', length: 32 })
   courtKind!: CourtKind;
 

@@ -7,7 +7,7 @@ export const FACILITY_VERTICALS = [
 
 export type FacilityVertical = (typeof FACILITY_VERTICALS)[number];
 
-export const ARENA_SUB_TYPES = ['futsal', 'cricket', 'padel'] as const;
+export const ARENA_SUB_TYPES = ['padel'] as const;
 
 export const GAMING_ZONE_SUB_TYPES = [
   'pc',

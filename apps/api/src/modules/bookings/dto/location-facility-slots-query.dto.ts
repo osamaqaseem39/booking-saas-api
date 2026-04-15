@@ -19,13 +19,11 @@ export class LocationFacilitySlotsQueryDto {
   endTime?: string;
 
   /**
-   * Limit to one facility kind. Accepts `futsal`, `cricket`, `padel`, or
-   * `futsal_court`, `cricket_court`, `padel_court`. Omit for all kinds.
+   * Limit to one facility kind. Accepts `padel` or `padel_court`.
    */
   @IsOptional()
-  @Matches(/^(futsal|cricket|padel|futsal_court|cricket_court|padel_court)$/i, {
-    message:
-      'courtType must be futsal, cricket, padel, or *_court variant (case-insensitive)',
+  @Matches(/^(padel|padel_court)$/i, {
+    message: 'courtType must be padel or padel_court',
   })
   courtType?: string;
 }

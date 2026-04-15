@@ -14,11 +14,7 @@ export class SearchLocationsQueryDto {
   @IsString()
   cities?: string;
 
-  /**
-   * Site kind (e.g. `arena`, `gaming-zone`) **or** bookable facility filter:
-   * `futsal`, `cricket`, `padel` (also accepts `futsal-court`, `cricket-court`, `padel-court`).
-   * Facility tokens use active court counts (dual turf counts for both futsal and cricket).
-   */
+  /** Site kind (e.g. `arena`, `gaming-zone`) or facility filter (`padel`). */
   @IsOptional()
   @IsString()
   locationType?: string;

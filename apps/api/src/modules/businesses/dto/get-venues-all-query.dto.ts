@@ -9,7 +9,7 @@ import {
 /** Query params for GET /getVenues/all (optional filters; response is short map markers: venueId, name, address, lat/lng, logo, bannerImage). */
 export class GetVenuesAllQueryDto {
   /**
-   * Venue bucket: all | gaming | gaming-zone | futsal | FutsalArenas | cricket | padel (case-insensitive).
+   * Venue bucket: all | gaming | gaming-zone | padel (case-insensitive).
    * Omit or empty for every active venue.
    */
   @IsOptional()
