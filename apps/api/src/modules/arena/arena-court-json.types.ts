@@ -1,4 +1,4 @@
-/** JSONB shapes on `futsal_courts` / `cricket_courts` (shared type-only definitions). */
+/** Shared JSONB shape definitions for arena facilities. */
 export type ArenaVentilation = 'natural' | 'fans' | 'ac';
 
 export interface ArenaPeakPricing {

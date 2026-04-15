@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { StringValue } from 'ms';
 
 export interface JwtPayload {
   sub: string;
@@ -15,7 +16,14 @@ export class AuthService {
     return this.jwtService.signAsync(payload);
   }
 
-  async signRefreshToken(payload: JwtPayload, secret: string, expiresIn: string): Promise<string> {
-    return this.jwtService.signAsync(payload, { secret, expiresIn });
+  async signRefreshToken(
+    payload: JwtPayload,
+    secret: string,
+    expiresIn: string,
+  ): Promise<string> {
+    return this.jwtService.signAsync(payload, {
+      secret,
+      expiresIn: expiresIn as StringValue,
+    });
   }
 }

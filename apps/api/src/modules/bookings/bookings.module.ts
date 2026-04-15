@@ -1,8 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
-import { CricketCourt } from '../arena/cricket-court/entities/cricket-court.entity';
-import { FutsalCourt } from '../arena/futsal-court/entities/futsal-court.entity';
 import { User } from '../iam/entities/user.entity';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
@@ -15,11 +13,7 @@ import { BookingItem } from './entities/booking-item.entity';
 import { Booking } from './entities/booking.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { Business } from '../businesses/entities/business.entity';
-import { PlaceCricketBookingController } from './place-cricket-booking.controller';
-import { PlaceFutsalBookingController } from './place-futsal-booking.controller';
 import { PlacePadelBookingController } from './place-padel-booking.controller';
-import { PublicCricketBookingController } from './public-cricket-booking.controller';
-import { PublicFutsalBookingController } from './public-futsal-booking.controller';
 import { PublicPadelBookingController } from './public-padel-booking.controller';
 import { PreviousBookingsController } from './previous-bookings.controller';
 import { IamModule } from '../iam/iam.module';
@@ -31,8 +25,6 @@ import { IamModule } from '../iam/iam.module';
       Booking,
       BookingItem,
       User,
-      FutsalCourt,
-      CricketCourt,
       PadelCourt,
       BusinessLocation,
       Business,
@@ -44,11 +36,7 @@ import { IamModule } from '../iam/iam.module';
   ],
   controllers: [
     BookingsController,
-    PlaceCricketBookingController,
-    PlaceFutsalBookingController,
     PlacePadelBookingController,
-    PublicCricketBookingController,
-    PublicFutsalBookingController,
     PublicPadelBookingController,
     PreviousBookingsController,
   ],

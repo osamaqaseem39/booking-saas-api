@@ -19,7 +19,7 @@ export type PadelCourtStatus = 'active' | 'maintenance' | 'draft';
 export type PadelCeilingUnit = 'ft' | 'm';
 export type PadelCoveredType = 'indoor' | 'semi_covered';
 export type PadelWallType = 'full_glass' | 'glass_mesh';
-export type PadelSurfaceType = 'synthetic_turf' | 'acrylic';
+export type PadelSurfaceType = 'synthetic' | 'acrylic';
 export type PadelMatchType = 'singles' | 'doubles';
 
 @Entity({ name: 'padel_courts' })

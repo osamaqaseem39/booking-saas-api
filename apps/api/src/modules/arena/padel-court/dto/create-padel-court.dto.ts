@@ -23,7 +23,7 @@ const COURT_STATUS = ['active', 'maintenance', 'draft'] as const;
 const CEILING_UNIT = ['ft', 'm'] as const;
 const COVERED = ['indoor', 'semi_covered'] as const;
 const WALL = ['full_glass', 'glass_mesh'] as const;
-const SURFACE = ['synthetic_turf', 'acrylic'] as const;
+const SURFACE = ['synthetic', 'acrylic'] as const;
 const MATCH = ['singles', 'doubles'] as const;
 
 export class CreatePadelCourtDto {
