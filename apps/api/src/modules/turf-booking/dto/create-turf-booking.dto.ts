@@ -9,7 +9,7 @@ import {
   Matches,
   ValidateNested,
 } from 'class-validator';
-import { TURF_SPORT_TYPES } from '../../turf/turf.types';
+import { TURF_SPORT_TYPES } from '../../arena/turf/turf.types';
 import {
   TURF_BOOKING_STATUSES,
   TURF_PAYMENT_STATUSES,

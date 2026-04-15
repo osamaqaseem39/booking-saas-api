@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
-import { TurfCourt } from '../turf/entities/turf-court.entity';
+import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
 import { User } from '../iam/entities/user.entity';
 import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';

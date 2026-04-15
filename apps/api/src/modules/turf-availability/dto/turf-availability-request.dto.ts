@@ -1,5 +1,5 @@
 import { IsDateString, IsIn, IsUUID } from 'class-validator';
-import { TURF_SPORT_TYPES } from '../../turf/turf.types';
+import { TURF_SPORT_TYPES } from '../../arena/turf/turf.types';
 
 export class TurfAvailabilityRequestDto {
   @IsUUID('4')

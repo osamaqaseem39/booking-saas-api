@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { Business } from '../businesses/entities/business.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { BookingsService } from '../bookings/bookings.service';
-import { TurfCourt } from '../turf/entities/turf-court.entity';
+import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
 import { TurfSlotGeneratorService } from '../turf-availability/turf-slot-generator.service';
 import { CreateTurfBookingDto } from './dto/create-turf-booking.dto';
 

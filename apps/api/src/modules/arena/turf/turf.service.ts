@@ -26,4 +26,19 @@ export class TurfService {
     }
     return qb.getMany();
   }
+
+  async listByTenant(
+    tenantId: string,
+    branchId?: string,
+  ): Promise<TurfCourt[]> {
+    if (!tenantId || tenantId === 'public') return [];
+    const qb = this.turfRepo
+      .createQueryBuilder('t')
+      .where('t."tenantId" = :tenantId', { tenantId })
+      .orderBy('t.name', 'ASC');
+    if (branchId) {
+      qb.andWhere('t."branchId" = :branchId', { branchId });
+    }
+    return qb.getMany();
+  }
 }

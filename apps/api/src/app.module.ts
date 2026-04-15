@@ -15,7 +15,6 @@ import { IamModule } from './modules/iam/iam.module';
 import { ProductCatalogModule } from './modules/product-catalog/product-catalog.module';
 import { TurfAvailabilityModule } from './modules/turf-availability/turf-availability.module';
 import { TurfBookingModule } from './modules/turf-booking/turf-booking.module';
-import { TurfModule } from './modules/turf/turf.module';
 import { TenancyModule } from './tenancy/tenancy.module';
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
@@ -163,7 +162,6 @@ function sslModeFromEnv() {
     ProductCatalogModule,
     FacilityCatalogModule,
     BookingsModule,
-    TurfModule,
     TurfBookingModule,
     TurfAvailabilityModule,
     BillingModule,

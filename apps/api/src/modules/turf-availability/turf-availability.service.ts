@@ -4,8 +4,8 @@ import { Repository } from 'typeorm';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { BookingItemStatus } from '../bookings/booking.types';
 import { Booking } from '../bookings/entities/booking.entity';
-import { TurfCourt } from '../turf/entities/turf-court.entity';
-import { TurfSportType } from '../turf/turf.types';
+import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
+import { TurfSportType } from '../arena/turf/turf.types';
 import { TurfSlotGeneratorService } from './turf-slot-generator.service';
 
 @Injectable()

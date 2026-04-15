@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
-import { TurfCourt } from '../turf/entities/turf-court.entity';
+import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
 import { User } from '../iam/entities/user.entity';
 import {
   COURT_SLOT_GRID_STEP_MINUTES,

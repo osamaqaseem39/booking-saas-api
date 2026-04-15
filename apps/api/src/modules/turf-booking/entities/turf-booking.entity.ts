@@ -6,7 +6,7 @@ import {
   Unique,
   UpdateDateColumn,
 } from 'typeorm';
-import type { TurfSportType } from '../../turf/turf.types';
+import type { TurfSportType } from '../../arena/turf/turf.types';
 
 export const TURF_BOOKING_STATUSES = ['pending', 'confirmed', 'cancelled'] as const;
 export type TurfBookingStatus = (typeof TURF_BOOKING_STATUSES)[number];
