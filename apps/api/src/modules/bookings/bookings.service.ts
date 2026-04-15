@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
+import { TurfCourt } from '../turf/entities/turf-court.entity';
 import { User } from '../iam/entities/user.entity';
 import {
   COURT_SLOT_GRID_STEP_MINUTES,
@@ -49,6 +50,12 @@ function formatDateOnly(d: Date | string): string {
   return String(d).slice(0, 10);
 }
 
+function addDays(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 export type BookingApiRow = {
   bookingId: string;
   arenaId: string;
@@ -89,6 +96,8 @@ export class BookingsService {
     private readonly userRepo: Repository<User>,
     @InjectRepository(PadelCourt)
     private readonly padelRepo: Repository<PadelCourt>,
+    @InjectRepository(TurfCourt)
+    private readonly turfRepo: Repository<TurfCourt>,
     @InjectRepository(BusinessLocation)
     private readonly locationRepo: Repository<BusinessLocation>,
     @InjectRepository(Business)
@@ -102,9 +111,21 @@ export class BookingsService {
   ) {}
 
   async resolveTenantIdByCourt(kind: CourtKind, courtId: string): Promise<string | null> {
-    if (kind !== 'padel_court') return null;
-    const row = await this.padelRepo.findOne({ where: { id: courtId }, select: ['tenantId'] });
-    return row?.tenantId ?? null;
+    if (kind === 'padel_court') {
+      const row = await this.padelRepo.findOne({
+        where: { id: courtId },
+        select: ['tenantId'],
+      });
+      return row?.tenantId ?? null;
+    }
+    if (kind === 'turf_court') {
+      const row = await this.turfRepo.findOne({
+        where: { id: courtId },
+        select: ['tenantId'],
+      });
+      return row?.tenantId ?? null;
+    }
+    return null;
   }
 
   async resolveTenantIdByBooking(bookingId: string): Promise<string | null> {
@@ -199,27 +220,46 @@ export class BookingsService {
     return court;
   }
 
-  private assertBookingItem(item: CreateBookingItemDto): void {
-    if (item.courtKind !== 'padel_court') {
-      throw new BadRequestException('Only padel_court is supported');
+  private async assertTurfCourtExists(tenantId: string, courtId: string): Promise<TurfCourt> {
+    const turf = await this.turfRepo.findOne({ where: { id: courtId, tenantId } });
+    if (!turf) throw new BadRequestException(`Turf ${courtId} not found for this tenant`);
+    if (turf.status !== 'active') {
+      throw new BadRequestException('Selected turf is not available');
     }
-    if (toMinutes(item.endTime) <= toMinutes(item.startTime)) {
-      throw new BadRequestException('endTime must be after startTime');
+    return turf;
+  }
+
+  private toSlotDateTimes(bookingDate: string, startTime: string, endTime: string) {
+    const date = formatDateOnly(bookingDate);
+    const overnight = toMinutes(endTime) <= toMinutes(startTime);
+    return {
+      startDatetime: new Date(`${date}T${startTime}:00Z`),
+      endDatetime: new Date(
+        `${overnight ? addDays(date, 1) : date}T${endTime}:00Z`,
+      ),
+    };
+  }
+
+  private assertBookingItem(item: CreateBookingItemDto): void {
+    if (item.courtKind !== 'padel_court' && item.courtKind !== 'turf_court') {
+      throw new BadRequestException('Only padel_court and turf_court are supported');
+    }
+    if (toMinutes(item.endTime) === toMinutes(item.startTime)) {
+      throw new BadRequestException('endTime must be different from startTime');
     }
   }
 
   private async assertNoOverlap(tenantId: string, date: string, item: CreateBookingItemDto) {
+    const { startDatetime } = this.toSlotDateTimes(date, item.startTime, item.endTime);
     const overlaps = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
-      .andWhere('b.bookingDate = :date', { date: formatDateOnly(date) })
-      .andWhere("b.bookingStatus = 'confirmed'")
-      .andWhere("i.itemStatus = 'confirmed'")
-      .andWhere('i.courtKind = :kind', { kind: 'padel_court' })
+      .andWhere("b.bookingStatus IN ('pending','confirmed')")
+      .andWhere("i.itemStatus IN ('reserved','confirmed')")
+      .andWhere('i.courtKind = :kind', { kind: item.courtKind })
       .andWhere('i.courtId = :courtId', { courtId: item.courtId })
-      .andWhere('i.startTime < :endTime', { endTime: item.endTime })
-      .andWhere('i.endTime > :startTime', { startTime: item.startTime })
+      .andWhere('i.startDatetime = :startDatetime', { startDatetime: startDatetime.toISOString() })
       .getCount();
     if (overlaps > 0) throw new BadRequestException('Selected slot is already booked');
   }
@@ -227,20 +267,34 @@ export class BookingsService {
   async create(tenantId: string, dto: CreateBookingDto): Promise<BookingApiRow> {
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new BadRequestException(`User ${dto.userId} not found`);
-    if (dto.sportType !== 'padel') throw new BadRequestException('Only padel bookings are supported');
 
     for (const item of dto.items) {
       this.assertBookingItem(item);
-      await this.assertPadelCourtExists(tenantId, item.courtId);
+      if (item.courtKind === 'padel_court') {
+        await this.assertPadelCourtExists(tenantId, item.courtId);
+        if (dto.sportType !== 'padel') {
+          throw new BadRequestException('padel_court requires sportType=padel');
+        }
+      }
+      if (item.courtKind === 'turf_court') {
+        const turf = await this.assertTurfCourtExists(tenantId, item.courtId);
+        if (dto.sportType !== 'futsal' && dto.sportType !== 'cricket') {
+          throw new BadRequestException('turf_court requires sportType=futsal or sportType=cricket');
+        }
+        if (!turf.supportedSports.includes(dto.sportType)) {
+          throw new BadRequestException(`Selected turf does not support ${dto.sportType}`);
+        }
+      }
       await this.assertNoOverlap(tenantId, dto.bookingDate, item);
     }
 
     const itemsPayload: DeepPartial<BookingItem>[] = dto.items.map((i) => ({
-      courtKind: 'padel_court',
+      courtKind: i.courtKind,
       courtId: i.courtId,
       slotId: i.slotId,
       startTime: i.startTime,
       endTime: i.endTime,
+      ...this.toSlotDateTimes(dto.bookingDate, i.startTime, i.endTime),
       price: dec(i.price),
       currency: i.currency ?? 'PKR',
       itemStatus: i.status,
@@ -249,7 +303,7 @@ export class BookingsService {
     const bookingPayload: DeepPartial<Booking> = {
       tenantId,
       userId: dto.userId,
-      sportType: 'padel',
+      sportType: dto.sportType,
       bookingDate: formatDateOnly(dto.bookingDate),
       subTotal: dec(dto.pricing.subTotal),
       discount: dec(dto.pricing.discount),

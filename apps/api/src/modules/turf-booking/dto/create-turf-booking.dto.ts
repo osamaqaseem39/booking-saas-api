@@ -25,6 +25,9 @@ class SlotDto {
 
 export class CreateTurfBookingDto {
   @IsUUID('4')
+  userId!: string;
+
+  @IsUUID('4')
   turfId!: string;
 
   @IsDateString()

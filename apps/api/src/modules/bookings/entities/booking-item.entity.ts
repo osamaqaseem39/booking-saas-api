@@ -36,6 +36,12 @@ export class BookingItem {
   @Column({ type: 'varchar', length: 5 })
   endTime!: string;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  startDatetime?: Date;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  endDatetime?: Date;
+
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   price!: string;
 

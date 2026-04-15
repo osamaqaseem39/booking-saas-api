@@ -1,12 +1,12 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Business } from '../businesses/entities/business.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
+import { BookingsService } from '../bookings/bookings.service';
 import { TurfCourt } from '../turf/entities/turf-court.entity';
 import { TurfSlotGeneratorService } from '../turf-availability/turf-slot-generator.service';
 import { CreateTurfBookingDto } from './dto/create-turf-booking.dto';
-import { TurfBooking } from './entities/turf-booking.entity';
 
 function addDays(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`);
@@ -14,15 +14,9 @@ function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function toDec(n: number): string {
-  return Number(n).toFixed(2);
-}
-
 @Injectable()
 export class TurfBookingService {
   constructor(
-    @InjectRepository(TurfBooking)
-    private readonly turfBookingRepo: Repository<TurfBooking>,
     @InjectRepository(TurfCourt)
     private readonly turfRepo: Repository<TurfCourt>,
     @InjectRepository(BusinessLocation)
@@ -30,6 +24,7 @@ export class TurfBookingService {
     @InjectRepository(Business)
     private readonly businessRepo: Repository<Business>,
     private readonly slotGenerator: TurfSlotGeneratorService,
+    private readonly bookingsService: BookingsService,
   ) {}
 
   async create(dto: CreateTurfBookingDto) {
@@ -65,49 +60,52 @@ export class TurfBookingService {
       );
     }
 
-    const startDate = addDays(dto.bookingDate.slice(0, 10), selected.startDayOffset);
+    const startDate = addDays(
+      dto.bookingDate.slice(0, 10),
+      selected.startDayOffset,
+    );
     const endDate = addDays(dto.bookingDate.slice(0, 10), selected.endDayOffset);
-    const payload = this.turfBookingRepo.create({
-      tenantId: business.tenantId,
-      branchId: turf.branchId,
-      turfId: turf.id,
-      bookingDate: dto.bookingDate.slice(0, 10),
+    const booking = await this.bookingsService.create(business.tenantId, {
+      userId: dto.userId,
       sportType: dto.sportType,
-      slotStartTime: selected.startTime,
-      slotEndTime: selected.endTime,
-      startDatetime: new Date(`${startDate}T${selected.startTime}:00Z`),
-      endDatetime: new Date(`${endDate}T${selected.endTime}:00Z`),
-      totalAmount: toDec(dto.totalAmount),
-      bookingStatus: dto.bookingStatus ?? 'pending',
-      paymentStatus: dto.paymentStatus ?? 'pending',
-    });
-
-    try {
-      const saved = await this.turfBookingRepo.save(payload);
-      return {
-        id: saved.id,
-        turfId: saved.turfId,
-        bookingDate: saved.bookingDate,
-        sportType: saved.sportType,
-        slot: {
-          startTime: saved.slotStartTime,
-          endTime: saved.slotEndTime,
+      bookingDate: dto.bookingDate.slice(0, 10),
+      items: [
+        {
+          courtKind: 'turf_court',
+          courtId: turf.id,
+          startTime: selected.startTime,
+          endTime: selected.endTime,
+          price: dto.totalAmount,
+          currency: branch.currency ?? 'PKR',
+          status: 'reserved',
         },
-        startDateTime: saved.startDatetime.toISOString(),
-        endDateTime: saved.endDatetime.toISOString(),
-        totalAmount: Number(saved.totalAmount),
-        bookingStatus: saved.bookingStatus,
-        paymentStatus: saved.paymentStatus,
-      };
-    } catch (error) {
-      if (
-        error instanceof QueryFailedError &&
-        typeof (error as any).driverError?.code === 'string' &&
-        (error as any).driverError.code === '23505'
-      ) {
-        throw new BadRequestException('Selected slot is already booked');
-      }
-      throw error;
-    }
+      ],
+      pricing: {
+        subTotal: dto.totalAmount,
+        discount: 0,
+        tax: 0,
+        totalAmount: dto.totalAmount,
+      },
+      payment: {
+        paymentStatus: dto.paymentStatus ?? 'pending',
+        paymentMethod: 'cash',
+      },
+      bookingStatus: dto.bookingStatus ?? 'pending',
+    });
+    return {
+      id: booking.bookingId,
+      turfId: turf.id,
+      bookingDate: booking.bookingDate,
+      sportType: booking.sportType,
+      slot: {
+        startTime: selected.startTime,
+        endTime: selected.endTime,
+      },
+      startDateTime: `${startDate}T${selected.startTime}:00.000Z`,
+      endDateTime: `${endDate}T${selected.endTime}:00.000Z`,
+      totalAmount: dto.totalAmount,
+      bookingStatus: booking.bookingStatus,
+      paymentStatus: booking.payment.paymentStatus,
+    };
   }
 }

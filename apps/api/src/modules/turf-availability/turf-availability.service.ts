@@ -1,10 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
+import { BookingItemStatus } from '../bookings/booking.types';
+import { Booking } from '../bookings/entities/booking.entity';
 import { TurfCourt } from '../turf/entities/turf-court.entity';
 import { TurfSportType } from '../turf/turf.types';
-import { TurfBooking } from '../turf-booking/entities/turf-booking.entity';
 import { TurfSlotGeneratorService } from './turf-slot-generator.service';
 
 @Injectable()
@@ -14,8 +15,8 @@ export class TurfAvailabilityService {
     private readonly turfRepo: Repository<TurfCourt>,
     @InjectRepository(BusinessLocation)
     private readonly locationRepo: Repository<BusinessLocation>,
-    @InjectRepository(TurfBooking)
-    private readonly bookingRepo: Repository<TurfBooking>,
+    @InjectRepository(Booking)
+    private readonly bookingRepo: Repository<Booking>,
     private readonly slotGenerator: TurfSlotGeneratorService,
   ) {}
 
@@ -42,21 +43,33 @@ export class TurfAvailabilityService {
 
     if (turfs.length === 0) return { date, turfs: [] };
 
-    const bookings = await this.bookingRepo.find({
-      where: {
-        turfId: In(turfs.map((t) => t.id)),
-        bookingDate: date,
-        bookingStatus: In(['pending', 'confirmed']),
-      },
-      select: ['turfId', 'slotStartTime', 'slotEndTime'],
-    });
+    const bookings = await this.bookingRepo
+      .createQueryBuilder('b')
+      .innerJoin('b.items', 'i')
+      .where('b.bookingDate = :date', { date })
+      .andWhere("b.bookingStatus IN ('pending','confirmed')")
+      .andWhere("i.itemStatus IN ('reserved','confirmed')")
+      .andWhere('i.courtKind = :courtKind', { courtKind: 'turf_court' })
+      .andWhere('i.courtId IN (:...turfIds)', { turfIds: turfs.map((t) => t.id) })
+      .select([
+        'i.courtId AS courtId',
+        'i.startTime AS startTime',
+        'i.endTime AS endTime',
+        'i.itemStatus AS itemStatus',
+      ])
+      .getRawMany<{
+        courtId: string;
+        startTime: string;
+        endTime: string;
+        itemStatus: BookingItemStatus;
+      }>();
 
     const bookedMap = new Map<string, Set<string>>();
     for (const row of bookings) {
-      const key = `${row.slotStartTime}-${row.slotEndTime}`;
-      const turfSet = bookedMap.get(row.turfId) ?? new Set<string>();
+      const key = `${row.startTime}-${row.endTime}`;
+      const turfSet = bookedMap.get(row.courtId) ?? new Set<string>();
       turfSet.add(key);
-      bookedMap.set(row.turfId, turfSet);
+      bookedMap.set(row.courtId, turfSet);
     }
 
     return {
