@@ -7,7 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { isUUID } from 'class-validator';
 import { Repository } from 'typeorm';
 import { BusinessesService } from '../../businesses/businesses.service';
-import { assertFacilityTypeAllowedForLocation } from '../location-facility.util';
+import { assertFacilityTypeAllowedForLocation } from '../utils/location-facility.util';
 import { CreateGamingStationDto } from './dto/create-gaming-station.dto';
 import { UpdateGamingStationDto } from './dto/update-gaming-station.dto';
 import { GamingStation } from './entities/gaming-station.entity';

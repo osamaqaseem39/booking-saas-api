@@ -9,11 +9,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { RolesGuard } from '../iam/authz/roles.guard';
-import { Roles } from '../iam/authz/roles.decorator';
-import { SYSTEM_ROLES } from '../iam/iam.constants';
-import { IamService } from '../iam/iam.service';
-import { BookingsService } from './bookings.service';
+import { RolesGuard } from '../../iam/authz/roles.guard';
+import { Roles } from '../../iam/authz/roles.decorator';
+import { SYSTEM_ROLES } from '../../iam/iam.constants';
+import { IamService } from '../../iam/iam.service';
+import { BookingsService } from '../bookings.service';
 
 /** Profile / orders: list bookings for a user (cross-tenant). */
 @Controller('PreviousBookings')

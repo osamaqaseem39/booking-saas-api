@@ -159,5 +159,7 @@ function sslModeFromEnv() {
     FacilityCatalogModule,
     BookingsModule,
     BillingModule,
+    BusinessesModule,
+  ],
 })
 export class AppModule {}

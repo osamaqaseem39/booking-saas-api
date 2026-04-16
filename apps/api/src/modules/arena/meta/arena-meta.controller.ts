@@ -1,5 +1,5 @@
 import { Controller, Get } from '@nestjs/common';
-import { ARENA_SUB_TYPE_CODES, ARENA_VERTICAL_CODE } from './arena.constants';
+import { ARENA_SUB_TYPE_CODES, ARENA_VERTICAL_CODE } from '../constants/arena.constants';
 
 @Controller('arena')
 export class ArenaMetaController {
