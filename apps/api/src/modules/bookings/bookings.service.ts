@@ -897,21 +897,30 @@ export class BookingsService {
     courtType?: string;
   }) {
     const date = formatDateOnly(params.date);
-    const courts = await this.padelRepo.find({
-      where: {
-        businessLocationId: params.locationId,
-        isActive: true,
-        courtStatus: In(['active', 'draft']) as any,
-      },
-      select: ['id', 'name', 'tenantId'],
-    });
+    const kinds = this.normalizeKindForAvail(params.courtType);
+
+    const padelBatch = kinds.includes('padel_court')
+      ? await this.padelRepo.find({
+          where: { businessLocationId: params.locationId, isActive: true, courtStatus: In(['active', 'draft']) as any },
+          select: ['id', 'name', 'tenantId'],
+        })
+      : [];
+
+    const turfBatch = kinds.includes('turf_court')
+      ? await this.turfRepo.find({
+          where: { branchId: params.locationId, status: 'active' },
+          select: ['id', 'name', 'tenantId'],
+        })
+      : [];
+
     const facilities: Array<{
       kind: CourtKind;
       courtId: string;
       name: string;
       slots: Array<{ startTime: string; endTime: string }>;
     }> = [];
-    for (const court of courts) {
+
+    for (const court of padelBatch) {
       const grid = await this.getCourtSlotGrid(court.tenantId, {
         kind: 'padel_court',
         courtId: court.id,
@@ -924,24 +933,38 @@ export class BookingsService {
         kind: 'padel_court',
         courtId: court.id,
         name: court.name,
-        slots: grid.segments.map((s: any) => ({
-          startTime: s.startTime,
-          endTime: s.endTime,
-        })),
+        slots: grid.segments.map((s: any) => ({ startTime: s.startTime, endTime: s.endTime })),
       });
     }
+
+    for (const court of turfBatch) {
+      const grid = await this.getCourtSlotGrid(court.tenantId, {
+        kind: 'turf_court',
+        courtId: court.id,
+        date,
+        startTime: params.startTime,
+        endTime: params.endTime,
+        availableOnly: true,
+      });
+      facilities.push({
+        kind: 'turf_court',
+        courtId: court.id,
+        name: court.name,
+        slots: grid.segments.map((s: any) => ({ startTime: s.startTime, endTime: s.endTime })),
+      });
+    }
+
     const unionMap = new Map<string, { startTime: string; endTime: string }>();
     for (const f of facilities) {
       for (const s of f.slots) unionMap.set(`${s.startTime}\t${s.endTime}`, s);
     }
+
     return {
       date,
       locationId: params.locationId,
-      courtType: 'padel_court' as const,
+      courtType: params.courtType ?? 'all',
       facilities,
-      unionSlots: [...unionMap.values()].sort((a, b) =>
-        a.startTime.localeCompare(b.startTime),
-      ),
+      unionSlots: [...unionMap.values()].sort((a, b) => a.startTime.localeCompare(b.startTime)),
     };
   }
 
@@ -1001,7 +1024,18 @@ export class BookingsService {
   private normalizePadelFacilityToCourtKind(raw: string): CourtKind {
     const s = raw.trim().toLowerCase().replace(/-/g, '_');
     if (s === 'padel' || s === 'padel_court') return 'padel_court';
-    throw new BadRequestException('facilitySelected must be padel_court');
+    if (s === 'futsal' || s === 'cricket' || s === 'turf' || s === 'turf_court')
+      return 'turf_court';
+    throw new BadRequestException('Invalid facilitySelected type');
+  }
+
+  private normalizeKindForAvail(raw?: string): CourtKind[] {
+    if (!raw) return ['padel_court', 'turf_court'];
+    const s = raw.toLowerCase().trim();
+    if (s === 'padel' || s === 'padel_court') return ['padel_court'];
+    if (s === 'futsal' || s === 'cricket' || s === 'turf' || s === 'turf_court')
+      return ['turf_court'];
+    return ['padel_court', 'turf_court'];
   }
 
   async placePadelBooking(
