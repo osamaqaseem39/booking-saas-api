@@ -5,11 +5,14 @@ import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { IamModule } from '../iam/iam.module';
 import { BusinessesController } from './businesses.controller';
-import { PublicDiscoveryController } from './public/public-discovery.controller';
+import { PublicDiscoveryController, PublicRootDiscoveryController } from './public/public-discovery.controller';
 import { BusinessLocation } from './entities/business-location.entity';
 import { BusinessMembership } from './entities/business-membership.entity';
 import { Business } from './entities/business.entity';
 import { BusinessesService } from './businesses.service';
+
+import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
+import { GamingStation } from '../arena/gaming-station/entities/gaming-station.entity';
 
 @Module({
   imports: [
@@ -19,6 +22,8 @@ import { BusinessesService } from './businesses.service';
       BusinessMembership,
       BusinessLocation,
       PadelCourt,
+      TurfCourt,
+      GamingStation,
       Booking,
       BookingItem,
     ]),
@@ -26,6 +31,7 @@ import { BusinessesService } from './businesses.service';
   controllers: [
     BusinessesController,
     PublicDiscoveryController,
+    PublicRootDiscoveryController,
   ],
   providers: [BusinessesService],
   exports: [BusinessesService],

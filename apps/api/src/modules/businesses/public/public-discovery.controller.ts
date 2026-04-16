@@ -47,3 +47,49 @@ export class PublicDiscoveryController {
     return this.businessesService.listVenueMarkersPublic('all');
   }
 }
+
+/** Legacy root-level aliases for public discovery. */
+@Controller()
+export class PublicRootDiscoveryController {
+  constructor(private readonly businessesService: BusinessesService) {}
+
+  @Get(['getAllCities'])
+  listCities(@Query() dto: ListLocationCitiesDto) {
+    return this.businessesService.listLocationCitiesPublic(dto);
+  }
+
+  @Get(['getAllLocationTypes'])
+  listLocationTypes() {
+    return this.businessesService.listAllRegisteredLocationTypesPublic();
+  }
+
+  @Get(['getVenues/gaming'])
+  markersGaming() {
+    return this.businessesService.listVenueMarkersPublic('gaming');
+  }
+
+  @Get(['getVenues/padel'])
+  markersPadel() {
+    return this.businessesService.listVenueMarkersPublic('padel');
+  }
+
+  @Get(['getVenues/turf'])
+  markersTurf() {
+    return this.businessesService.listVenueMarkersPublic('turf');
+  }
+
+  @Get(['getVenues'])
+  markersAll() {
+    return this.businessesService.listVenueMarkersPublic('all');
+  }
+
+  @Get(['getVenues/all'])
+  searchVenues(@Query() query: GetVenuesAllQueryDto) {
+    return this.businessesService.listVenueMarkersPublicWithFilters(query);
+  }
+
+  @Get(['getVenueDetails/:venueId'])
+  venueProfile(@Param('venueId', ParseUUIDPipe) venueId: string) {
+    return this.businessesService.getVenueDetailsPublic(venueId);
+  }
+}

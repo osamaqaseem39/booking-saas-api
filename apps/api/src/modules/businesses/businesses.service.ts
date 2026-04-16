@@ -9,6 +9,8 @@ import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
+import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
+import { GamingStation } from '../arena/gaming-station/entities/gaming-station.entity';
 import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { IamService } from '../iam/iam.service';
@@ -40,6 +42,10 @@ export class BusinessesService {
     private readonly locationsRepository: Repository<BusinessLocation>,
     @InjectRepository(PadelCourt)
     private readonly padelCourtRepository: Repository<PadelCourt>,
+    @InjectRepository(TurfCourt)
+    private readonly turfCourtRepository: Repository<TurfCourt>,
+    @InjectRepository(GamingStation)
+    private readonly gamingStationRepository: Repository<GamingStation>,
     @InjectRepository(BookingItem)
     private readonly bookingItemRepository: Repository<BookingItem>,
     @InjectRepository(Booking)
@@ -194,22 +200,51 @@ export class BusinessesService {
     const businesses = await this.businessesRepository.find();
     const businessById = new Map(businesses.map((b) => [b.id, b]));
     const locationIds = locations.map((l) => l.id);
-    const courts = locationIds.length
-      ? await this.padelCourtRepository.find({
-          where: { businessLocationId: In(locationIds), isActive: true, courtStatus: 'active' },
-          select: ['id', 'name', 'businessLocationId'],
-        })
-      : [];
-    const courtsByLocation = new Map<string, Array<{ facilityType: 'padel'; id: string; name: string }>>();
-    for (const c of courts) {
+    const [padelCourts, turfCourts, gamingStations] = locationIds.length
+      ? await Promise.all([
+          this.padelCourtRepository.find({
+            where: { businessLocationId: In(locationIds), isActive: true, courtStatus: 'active' },
+            select: ['id', 'name', 'businessLocationId'],
+          }),
+          this.turfCourtRepository.find({
+            where: { branchId: In(locationIds), status: 'active' },
+            select: ['id', 'name', 'branchId'],
+          }),
+          this.gamingStationRepository.find({
+            where: { businessLocationId: In(locationIds), isActive: true, unitStatus: 'active' },
+            select: ['id', 'name', 'businessLocationId'],
+          }),
+        ])
+      : [[], [], []];
+
+    const facilityCourtsByLocation = new Map<string, Array<{ facilityType: 'padel' | 'turf' | 'gaming'; id: string; name: string }>>();
+
+    for (const c of padelCourts) {
       const key = c.businessLocationId ?? '';
-      const rows = courtsByLocation.get(key) ?? [];
+      const rows = facilityCourtsByLocation.get(key) ?? [];
       rows.push({ facilityType: 'padel', id: c.id, name: c.name });
-      courtsByLocation.set(key, rows);
+      facilityCourtsByLocation.set(key, rows);
     }
+    for (const c of turfCourts) {
+      const key = c.branchId ?? '';
+      const rows = facilityCourtsByLocation.get(key) ?? [];
+      rows.push({ facilityType: 'turf', id: c.id, name: c.name });
+      facilityCourtsByLocation.set(key, rows);
+    }
+    for (const c of gamingStations) {
+      const key = c.businessLocationId ?? '';
+      const rows = facilityCourtsByLocation.get(key) ?? [];
+      rows.push({ facilityType: 'gaming', id: c.id, name: c.name });
+      facilityCourtsByLocation.set(key, rows);
+    }
+
     const rows = locations.map((loc) => {
       const business = businessById.get(loc.businessId);
-      const facilityCourts = courtsByLocation.get(loc.id) ?? [];
+      const facilityCourts = facilityCourtsByLocation.get(loc.id) ?? [];
+      const padelCount = facilityCourts.filter((f) => f.facilityType === 'padel').length;
+      const turfCount = facilityCourts.filter((f) => f.facilityType === 'turf').length;
+      const gamingCount = facilityCourts.filter((f) => f.facilityType === 'gaming').length;
+
       return {
         id: loc.id,
         businessId: loc.businessId,
@@ -237,7 +272,7 @@ export class BusinessesService {
         business: business
           ? { id: business.id, businessName: business.businessName, tenantId: business.tenantId }
           : null,
-        facilityCounts: { padel: facilityCourts.length },
+        facilityCounts: { padel: padelCount, turf: turfCount, gaming: gamingCount },
         facilityCourts,
       };
     });
@@ -390,14 +425,16 @@ export class BusinessesService {
     };
   }
 
-  async listVenueMarkersPublic(category: 'all' | 'gaming' | 'padel'): Promise<Array<{ venueId: string; name: string; address: string; latitude: number | null; longitude: number | null; logo: string | null; bannerImage: string | null }>> {
+  async listVenueMarkersPublic(category: 'all' | 'gaming' | 'padel' | 'turf'): Promise<Array<{ venueId: string; name: string; address: string; latitude: number | null; longitude: number | null; logo: string | null; bannerImage: string | null }>> {
     const rows = (await this.listAllLocationsPublic()).filter((r) => r.isActive);
     const picked =
       category === 'all'
         ? rows
         : category === 'gaming'
-          ? rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming'))
-          : rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
+          ? rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming') || (r.facilityCounts.gaming ?? 0) > 0)
+          : category === 'turf'
+            ? rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0)
+            : rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
     return picked.map((r) => this.toVenueMapMarker(r));
   }
 
@@ -405,9 +442,11 @@ export class BusinessesService {
     let rows = (await this.listAllLocationsPublic()).filter((r) => r.isActive);
     const category = (dto.category ?? 'all').trim().toLowerCase();
     if (category === 'gaming' || category === 'gaming-zone') {
-      rows = rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming'));
+      rows = rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming') || (r.facilityCounts.gaming ?? 0) > 0);
     } else if (category === 'padel') {
       rows = rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
+    } else if (category === 'turf') {
+      rows = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
     }
     if (dto.city?.trim()) {
       const wanted = new Set(dto.city.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
@@ -437,9 +476,17 @@ export class BusinessesService {
       clubDetails: {
         businessName: row.business?.businessName ?? null,
         description: row.details,
-        sportsOffered: ['padel'],
+        sportsOffered: [
+          ...(row.facilityCounts.padel > 0 ? ['padel'] : []),
+          ...(row.facilityCounts.turf > 0 ? ['turf'] : []),
+          ...(row.facilityCounts.gaming > 0 ? ['gaming'] : []),
+        ],
       },
-      facilityAvailable: [{ label: 'Padel', count: row.facilityCounts.padel ?? 0 }],
+      facilityAvailable: [
+        { label: 'Padel', count: row.facilityCounts.padel ?? 0 },
+        { label: 'Turf', count: row.facilityCounts.turf ?? 0 },
+        { label: 'Gaming', count: row.facilityCounts.gaming ?? 0 },
+      ],
       facilityList: (row.facilityCourts ?? []).map((f: any) => ({
         id: f.id,
         name: f.name,

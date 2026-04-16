@@ -531,13 +531,34 @@ export class BookingsService {
       }>();
 
     const busyIds = new Set(busy.map((x) => x.courtId));
+
+    // --- Also check for slots explicitly marked as "blocked" (e.g. via templates) ---
+    const blocked = await this.facilitySlotRepo.find({
+      where: {
+        tenantId,
+        courtKind: courtKindFilter,
+        slotDate: date,
+        status: 'blocked',
+      },
+      select: ['courtId', 'startTime', 'endTime'],
+    });
+
+    const blockedIds = new Set<string>();
+    for (const fs of blocked) {
+      if (
+        toMinutes(fs.startTime) < toMinutes(params.endTime) &&
+        toMinutes(fs.endTime) > toMinutes(params.startTime)
+      ) {
+        blockedIds.add(fs.courtId);
+      }
+    }
     return {
       date,
       startTime: params.startTime,
       endTime: params.endTime,
       sportType: sport,
       availableCourts: allCourts
-        .filter((c) => !busyIds.has(c.id))
+        .filter((c) => !busyIds.has(c.id) && !blockedIds.has(c.id))
         .map((c) => ({
           kind: c.courtKind,
           id: c.id,
