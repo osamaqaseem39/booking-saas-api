@@ -27,6 +27,16 @@ export class PublicDiscoveryController {
     return this.businessesService.listVenueMarkersPublic('padel');
   }
 
+  @Get(['venues/markers/futsal', '/getVenues/futsal'])
+  markersFutsal() {
+    return this.businessesService.listVenueMarkersPublic('futsal');
+  }
+
+  @Get(['venues/markers/cricket', '/getVenues/cricket'])
+  markersCricket() {
+    return this.businessesService.listVenueMarkersPublic('cricket');
+  }
+
   @Get(['venues/markers', '/getVenues'])
   markersAll() {
     return this.businessesService.listVenueMarkersPublic('all');
@@ -71,6 +81,16 @@ export class PublicRootDiscoveryController {
   @Get(['getVenues/padel'])
   markersPadel() {
     return this.businessesService.listVenueMarkersPublic('padel');
+  }
+
+  @Get(['getVenues/futsal'])
+  markersFutsal() {
+    return this.businessesService.listVenueMarkersPublic('futsal');
+  }
+
+  @Get(['getVenues/cricket'])
+  markersCricket() {
+    return this.businessesService.listVenueMarkersPublic('cricket');
   }
 
   @Get(['getVenues/turf'])

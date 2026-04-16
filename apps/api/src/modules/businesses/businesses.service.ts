@@ -421,20 +421,24 @@ export class BusinessesService {
       latitude: row.latitude,
       longitude: row.longitude,
       logo: row.logo,
-      bannerImage: row.bannerImage,
     };
   }
 
-  async listVenueMarkersPublic(category: 'all' | 'gaming' | 'padel' | 'turf'): Promise<Array<{ venueId: string; name: string; address: string; latitude: number | null; longitude: number | null; logo: string | null; bannerImage: string | null }>> {
+  async listVenueMarkersPublic(category: string): Promise<any[]> {
     const rows = (await this.listAllLocationsPublic()).filter((r) => r.isActive);
-    const picked =
-      category === 'all'
-        ? rows
-        : category === 'gaming'
-          ? rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming') || (r.facilityCounts.gaming ?? 0) > 0)
-          : category === 'turf'
-            ? rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0)
-            : rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
+    const cat = category.toLowerCase().trim();
+    let picked = rows;
+    if (cat === 'gaming' || cat === 'gaming-zone') {
+      picked = rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming') || (r.facilityCounts.gaming ?? 0) > 0);
+    } else if (cat === 'padel') {
+      picked = rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
+    } else if (cat === 'futsal' || cat === 'futsalarenas') {
+      picked = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
+    } else if (cat === 'cricket') {
+      picked = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
+    } else if (cat === 'turf') {
+      picked = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
+    }
     return picked.map((r) => this.toVenueMapMarker(r));
   }
 
@@ -469,6 +473,25 @@ export class BusinessesService {
     const rows = await this.listAllLocationsPublic();
     const row = rows.find((r) => r.id === locationId);
     if (!row) throw new NotFoundException(`Venue ${locationId} not found`);
+
+    const sportsOffered: string[] = [];
+    const facilityAvailable: Array<{ label: string; count: number }> = [];
+    if (row.facilityCounts.padel > 0) {
+      sportsOffered.push('padel');
+      facilityAvailable.push({ label: 'Padel', count: row.facilityCounts.padel });
+    }
+    if (row.facilityCounts.turf > 0) {
+      sportsOffered.push('futsal', 'cricket');
+      facilityAvailable.push(
+        { label: 'Futsal', count: row.facilityCounts.turf },
+        { label: 'Cricket', count: row.facilityCounts.turf },
+      );
+    }
+    if (row.facilityCounts.gaming > 0) {
+      sportsOffered.push('gaming');
+      facilityAvailable.push({ label: 'Gaming', count: row.facilityCounts.gaming });
+    }
+
     return {
       ...row,
       venueId: row.id,
@@ -476,17 +499,16 @@ export class BusinessesService {
       clubDetails: {
         businessName: row.business?.businessName ?? null,
         description: row.details,
-        sportsOffered: [
-          ...(row.facilityCounts.padel > 0 ? ['padel'] : []),
-          ...(row.facilityCounts.turf > 0 ? ['turf'] : []),
-          ...(row.facilityCounts.gaming > 0 ? ['gaming'] : []),
-        ],
+        sportsOffered,
       },
-      facilityAvailable: [
-        { label: 'Padel', count: row.facilityCounts.padel ?? 0 },
-        { label: 'Turf', count: row.facilityCounts.turf ?? 0 },
-        { label: 'Gaming', count: row.facilityCounts.gaming ?? 0 },
-      ],
+      currency: row.currency,
+      price: null as number | null,
+      packages: [] as unknown[],
+      availability: {
+        tenantId: row.business?.tenantId ?? null,
+        note: 'Use GET /bookings/availability for live slots.',
+      },
+      facilityAvailable,
       facilityList: (row.facilityCourts ?? []).map((f: any) => ({
         id: f.id,
         name: f.name,
