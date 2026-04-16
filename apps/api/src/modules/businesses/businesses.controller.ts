@@ -76,7 +76,8 @@ export class BusinessesController {
         name,
       );
     }
-    return this.businessesService.listAllLocationsPublic(name);
+    const all = await this.businessesService.listAllLocationsPublic(name);
+    return all.map((r) => this.businessesService.toVenueMapMarker(r));
   }
 
   /**
