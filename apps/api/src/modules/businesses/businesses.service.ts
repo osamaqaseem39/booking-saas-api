@@ -274,7 +274,12 @@ export class BusinessesService {
           : null,
         facilityCounts: { padel: padelCount, turf: turfCount, gaming: gamingCount },
         facilityCourts,
-        price: facilityCourts.length > 0 ? Math.min(...facilityCourts.map(f => f.price || 0)) : 0,
+        price: (() => {
+          const prices = facilityCourts
+            .map((f) => f.price)
+            .filter((p): p is number => typeof p === 'number' && p > 0 && !isNaN(p));
+          return prices.length > 0 ? Math.min(...prices) : 0;
+        })(),
       };
     });
     return this.filterLocationRowsByName(rows, nameFilter);
@@ -450,6 +455,7 @@ export class BusinessesService {
       logo: row.logo,
       bannerImage: row.bannerImage,
       price: row.price ?? 0,
+      pricePerSlot: row.price ?? 0,
     };
   }
 
@@ -555,7 +561,8 @@ export class BusinessesService {
         sportsOffered,
       },
       currency: row.currency,
-      price: null as number | null,
+      price: row.price ?? 0,
+      pricePerSlot: row.price ?? 0,
       packages: [] as unknown[],
       availability: {
         tenantId: row.business?.tenantId ?? null,
@@ -567,6 +574,7 @@ export class BusinessesService {
         name: f.name,
         facilityType: f.facilityType,
         locationId: row.id,
+        pricePerSlot: f.price ?? 0,
       })),
       tenantId: row.business?.tenantId ?? null,
     };
