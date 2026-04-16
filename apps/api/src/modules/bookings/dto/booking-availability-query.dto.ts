@@ -1,5 +1,5 @@
 import { IsDateString, IsIn, IsOptional, Matches } from 'class-validator';
-import { BOOKING_SPORT_TYPES, type BookingSportType } from '../booking.types';
+import { BOOKING_SPORT_TYPES, type BookingSportType } from '../types/booking.types';
 
 export class BookingAvailabilityQueryDto {
   @IsDateString()
@@ -18,4 +18,8 @@ export class BookingAvailabilityQueryDto {
   @IsOptional()
   @IsIn([...BOOKING_SPORT_TYPES])
   sportType?: BookingSportType;
+
+  /** Cache-buster (timestamp) */
+  @IsOptional()
+  _t?: string;
 }

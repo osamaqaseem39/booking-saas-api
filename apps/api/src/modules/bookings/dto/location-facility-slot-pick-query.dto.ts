@@ -20,4 +20,8 @@ export class LocationFacilitySlotPickQueryDto {
     message: 'endTime must be HH:mm or 24:00',
   })
   endTime?: string;
+
+  /** Cache-buster (timestamp) */
+  @IsOptional()
+  _t?: string;
 }

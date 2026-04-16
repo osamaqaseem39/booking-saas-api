@@ -6,9 +6,8 @@ import { LoggerModule } from 'nestjs-pino';
 import { DatabaseModule } from '@libs/database/database.module';
 import { RedisModule } from '@libs/database/redis/redis.module';
 import { AuthModule } from '@libs/auth/auth.module';
-import { UsersModule } from './modules/users/users.module';
-import { QueueModule } from './modules/queue/queue.module';
-import { MetricsModule } from './modules/metrics/metrics.module';
+import { QueueModule } from './infrastructure/queue/queue.module';
+import { MetricsModule } from './infrastructure/metrics/metrics.module';
 import { envValidationSchema } from './infrastructure/config/env.validation';
 
 @Module({
@@ -32,7 +31,7 @@ import { envValidationSchema } from './infrastructure/config/env.validation';
     DatabaseModule,
     RedisModule,
     AuthModule,
-    UsersModule,
+
     QueueModule,
     MetricsModule,
   ],

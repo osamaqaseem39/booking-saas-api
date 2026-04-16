@@ -26,4 +26,8 @@ export class LocationFacilitySlotsQueryDto {
     message: 'courtType must be padel or padel_court',
   })
   courtType?: string;
+
+  /** Cache-buster (timestamp) */
+  @IsOptional()
+  _t?: string;
 }

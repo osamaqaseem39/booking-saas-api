@@ -34,4 +34,8 @@ export class CourtSlotGridQueryDto {
   @IsOptional()
   @IsIn(['true', 'false'])
   availableOnly?: string;
+
+  /** Cache-buster (timestamp) */
+  @IsOptional()
+  _t?: string;
 }

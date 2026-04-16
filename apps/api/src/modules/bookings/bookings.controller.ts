@@ -17,7 +17,7 @@ import {
   COURT_KINDS,
   COURT_SLOT_GRID_STEP_MINUTES,
   type CourtKind,
-} from './booking.types';
+} from './types/booking.types';
 import { BookingAvailabilityQueryDto } from './dto/booking-availability-query.dto';
 import { CourtSlotGridQueryDto } from './dto/court-slot-grid-query.dto';
 import { CourtSlotsQueryDto } from './dto/court-slots-query.dto';

@@ -6,7 +6,6 @@ import { TenantTimeSlotTemplate } from '../../bookings/entities/tenant-time-slot
 import { TenantTimeSlotTemplateLine } from '../../bookings/entities/tenant-time-slot-template-line.entity';
 import { CourtFacilitySlot } from '../../bookings/entities/court-facility-slot.entity';
 import { TurfCourt } from './entities/turf-court.entity';
-import { TurfArenaController } from './turf-arena.controller';
 import { TurfController } from './turf.controller';
 import { TurfService } from './turf.service';
 
@@ -21,7 +20,7 @@ import { TurfService } from './turf.service';
     BusinessesModule,
     IamModule,
   ],
-  controllers: [TurfController, TurfArenaController],
+  controllers: [TurfController],
   providers: [TurfService],
   exports: [TurfService, TypeOrmModule],
 })

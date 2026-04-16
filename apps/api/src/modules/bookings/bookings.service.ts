@@ -16,7 +16,7 @@ import {
   type CourtKind,
   type PaymentMethod,
   type PaymentStatus,
-} from './booking.types';
+} from './types/booking.types';
 import type { CreateBookingDto } from './dto/create-booking.dto';
 import type { CreateBookingItemDto } from './dto/create-booking-item.dto';
 import type { UpdateBookingDto } from './dto/update-booking.dto';

@@ -12,9 +12,7 @@ import { BookingsModule } from './modules/bookings/bookings.module';
 import { FacilityCatalogModule } from './modules/facility-catalog/facility-catalog.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { IamModule } from './modules/iam/iam.module';
-import { ProductCatalogModule } from './modules/product-catalog/product-catalog.module';
-import { TurfAvailabilityModule } from './modules/turf-availability/turf-availability.module';
-import { TurfBookingModule } from './modules/turf-booking/turf-booking.module';
+
 import { TenancyModule } from './tenancy/tenancy.module';
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
@@ -158,13 +156,8 @@ function sslModeFromEnv() {
     ArenaModule,
     AuthModule,
     IamModule,
-    BusinessesModule,
-    ProductCatalogModule,
     FacilityCatalogModule,
     BookingsModule,
-    TurfBookingModule,
-    TurfAvailabilityModule,
     BillingModule,
-  ],
 })
 export class AppModule {}
