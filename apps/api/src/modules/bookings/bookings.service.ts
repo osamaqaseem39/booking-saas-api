@@ -366,7 +366,7 @@ export class BookingsService {
       ...this.toSlotDateTimes(dto.bookingDate, i.startTime, i.endTime),
       price: dec(i.price),
       currency: i.currency ?? 'PKR',
-      itemStatus: i.status,
+      itemStatus: i.status ?? 'confirmed',
     }));
 
     const bookingPayload: DeepPartial<Booking> = {
@@ -382,7 +382,7 @@ export class BookingsService {
       paymentMethod: dto.payment.paymentMethod,
       transactionId: dto.payment.transactionId,
       paidAt: dto.payment.paidAt ? new Date(dto.payment.paidAt) : undefined,
-      bookingStatus: dto.bookingStatus ?? 'pending',
+      bookingStatus: dto.bookingStatus ?? 'confirmed',
       notes: dto.notes,
       items: itemsPayload,
     };
@@ -1040,12 +1040,12 @@ export class BookingsService {
           endTime: dto.endTime,
           price: 0,
           currency: loc.currency ?? 'PKR',
-          status: 'reserved',
+          status: 'confirmed',
         },
       ],
       pricing: { subTotal: 0, discount: 0, tax: 0, totalAmount: 0 },
       payment: { paymentStatus: 'pending', paymentMethod: 'cash' },
-      bookingStatus: 'pending',
+      bookingStatus: 'confirmed',
     });
     return {
       message: 'Booking placed successfully',

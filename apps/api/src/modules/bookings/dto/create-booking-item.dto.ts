@@ -66,6 +66,7 @@ export class CreateBookingItemDto {
   @IsString()
   currency?: string;
 
+  @IsOptional()
   @IsIn([...BOOKING_ITEM_STATUSES])
-  status!: BookingItemStatus;
+  status?: BookingItemStatus;
 }
