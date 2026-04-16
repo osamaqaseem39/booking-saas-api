@@ -421,6 +421,7 @@ export class BusinessesService {
       latitude: row.latitude,
       longitude: row.longitude,
       logo: row.logo,
+      bannerImage: row.bannerImage,
     };
   }
 

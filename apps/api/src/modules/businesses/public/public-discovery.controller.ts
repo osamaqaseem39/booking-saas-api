@@ -22,17 +22,17 @@ export class PublicDiscoveryController {
     return this.businessesService.listVenueMarkersPublic('gaming');
   }
 
-  @Get(['venues/markers/padel', '/getVenues/padel'])
+  @Get(['venues/markers/padel', '/getVenues/padel', '/getVenue/padel'])
   markersPadel() {
     return this.businessesService.listVenueMarkersPublic('padel');
   }
 
-  @Get(['venues/markers/futsal', '/getVenues/futsal'])
+  @Get(['venues/markers/futsal', '/getVenues/futsal', '/getVenue/futsal'])
   markersFutsal() {
     return this.businessesService.listVenueMarkersPublic('futsal');
   }
 
-  @Get(['venues/markers/cricket', '/getVenues/cricket'])
+  @Get(['venues/markers/cricket', '/getVenues/cricket', '/getVenue/cricket'])
   markersCricket() {
     return this.businessesService.listVenueMarkersPublic('cricket');
   }
@@ -47,7 +47,7 @@ export class PublicDiscoveryController {
     return this.businessesService.listVenueMarkersPublicWithFilters(query);
   }
 
-  @Get(['venues/:venueId', '/getVenueDetails/:venueId'])
+  @Get(['venues/:venueId', '/getVenueDetails/:venueId', '/getVenue/:venueId'])
   venueProfile(@Param('venueId', ParseUUIDPipe) venueId: string) {
     return this.businessesService.getVenueDetailsPublic(venueId);
   }
@@ -78,17 +78,17 @@ export class PublicRootDiscoveryController {
     return this.businessesService.listVenueMarkersPublic('gaming');
   }
 
-  @Get(['getVenues/padel'])
+  @Get(['getVenues/padel', 'getVenue/padel'])
   markersPadel() {
     return this.businessesService.listVenueMarkersPublic('padel');
   }
 
-  @Get(['getVenues/futsal'])
+  @Get(['getVenues/futsal', 'getVenue/futsal'])
   markersFutsal() {
     return this.businessesService.listVenueMarkersPublic('futsal');
   }
 
-  @Get(['getVenues/cricket'])
+  @Get(['getVenues/cricket', 'getVenue/cricket'])
   markersCricket() {
     return this.businessesService.listVenueMarkersPublic('cricket');
   }
@@ -108,7 +108,7 @@ export class PublicRootDiscoveryController {
     return this.businessesService.listVenueMarkersPublicWithFilters(query);
   }
 
-  @Get(['getVenueDetails/:venueId'])
+  @Get(['getVenueDetails/:venueId', 'getVenue/:venueId'])
   venueProfile(@Param('venueId', ParseUUIDPipe) venueId: string) {
     return this.businessesService.getVenueDetailsPublic(venueId);
   }
