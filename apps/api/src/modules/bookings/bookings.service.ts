@@ -902,14 +902,14 @@ export class BookingsService {
     const padelBatch = kinds.includes('padel_court')
       ? await this.padelRepo.find({
           where: { businessLocationId: params.locationId, isActive: true, courtStatus: In(['active', 'draft']) as any },
-          select: ['id', 'name', 'tenantId'],
+          select: ['id', 'name', 'tenantId', 'pricePerSlot'],
         })
       : [];
 
     const turfBatch = kinds.includes('turf_court')
       ? await this.turfRepo.find({
           where: { branchId: params.locationId, status: 'active' },
-          select: ['id', 'name', 'tenantId'],
+          select: ['id', 'name', 'tenantId', 'pricing', 'supportedSports'],
         })
       : [];
 
@@ -917,6 +917,7 @@ export class BookingsService {
       kind: CourtKind;
       courtId: string;
       name: string;
+      price?: number;
       slots: Array<{ startTime: string; endTime: string }>;
     }> = [];
 
@@ -933,6 +934,7 @@ export class BookingsService {
         kind: 'padel_court',
         courtId: court.id,
         name: court.name,
+        price: Number(court.pricePerSlot || 0),
         slots: grid.segments.map((s: any) => ({ startTime: s.startTime, endTime: s.endTime })),
       });
     }
@@ -950,6 +952,7 @@ export class BookingsService {
         kind: 'turf_court',
         courtId: court.id,
         name: court.name,
+        price: this.resolveTurfPrice(court, params.courtType),
         slots: grid.segments.map((s: any) => ({ startTime: s.startTime, endTime: s.endTime })),
       });
     }
@@ -966,6 +969,15 @@ export class BookingsService {
       facilities,
       unionSlots: [...unionMap.values()].sort((a, b) => a.startTime.localeCompare(b.startTime)),
     };
+  }
+
+  private resolveTurfPrice(turf: any, requestedType?: string): number {
+    const s = (requestedType || '').toLowerCase();
+    if (s.includes('futsal')) return Number(turf.pricing?.futsal?.basePrice ?? 0);
+    if (s.includes('cricket')) return Number(turf.pricing?.cricket?.basePrice ?? 0);
+    const firstSport = turf.supportedSports?.[0];
+    if (firstSport) return Number(turf.pricing?.[firstSport]?.basePrice ?? 0);
+    return 0;
   }
 
   async getLocationFacilitiesAvailableForSlot(params: {
@@ -992,14 +1004,14 @@ export class BookingsService {
             isActive: true,
             courtStatus: In(['active', 'draft']) as any,
           },
-          select: ['id', 'name', 'tenantId'],
+          select: ['id', 'name', 'tenantId', 'pricePerSlot'],
         })
       : [];
 
     const turfBatch = kinds.includes('turf_court')
       ? await this.turfRepo.find({
           where: { branchId: params.locationId, status: 'active' },
-          select: ['id', 'name', 'tenantId'],
+          select: ['id', 'name', 'tenantId', 'pricing', 'supportedSports'],
         })
       : [];
 
@@ -1025,12 +1037,20 @@ export class BookingsService {
               s.availability === 'available',
           );
           return isAvailable
-            ? { kind: c.kind, courtId: c.id, name: c.name }
+            ? {
+                kind: c.kind,
+                courtId: c.id,
+                name: c.name,
+                price:
+                  c.kind === 'padel_court'
+                    ? Number((c as any).pricePerSlot ?? 0)
+                    : this.resolveTurfPrice(c, params.courtType),
+              }
             : null;
         }),
       );
       return results.filter(
-        (f): f is { kind: CourtKind; courtId: string; name: string } =>
+        (f): f is { kind: CourtKind; courtId: string; name: string; price: number } =>
           f !== null,
       );
     };
@@ -1092,6 +1112,8 @@ export class BookingsService {
       );
     }
 
+    const price = Number(court.pricePerSlot || 0);
+
     const booking = await this.create(tenantId, {
       userId: dto.userId,
       sportType: 'padel',
@@ -1102,12 +1124,12 @@ export class BookingsService {
           courtId: dto.fieldSelected,
           startTime: dto.startTime,
           endTime: dto.endTime,
-          price: 0,
+          price,
           currency: loc.currency ?? 'PKR',
           status: 'confirmed',
         },
       ],
-      pricing: { subTotal: 0, discount: 0, tax: 0, totalAmount: 0 },
+      pricing: { subTotal: price, discount: 0, tax: 0, totalAmount: price },
       payment: { paymentStatus: 'pending', paymentMethod: 'cash' },
       bookingStatus: 'confirmed',
     });

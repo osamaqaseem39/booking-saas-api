@@ -18,6 +18,7 @@ import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
 import { GetVenuesAllQueryDto } from './dto/get-venues-all-query.dto';
+import { TurfPricingConfig } from '../arena/turf/turf.types';
 import { SearchLocationsQueryDto } from './dto/search-locations-query.dto';
 import { UpdateBusinessDto } from './dto/update-business.dto';
 import { UpdateBusinessLocationDto } from './dto/update-business-location.dto';
@@ -203,38 +204,73 @@ export class BusinessesService {
     const [padelCourts, turfCourts, gamingStations] = locationIds.length
       ? await Promise.all([
           this.padelCourtRepository.find({
-            where: { businessLocationId: In(locationIds), isActive: true, courtStatus: 'active' },
-            select: ['id', 'name', 'businessLocationId'],
+            where: {
+              businessLocationId: In(locationIds),
+              isActive: true,
+              courtStatus: 'active',
+            },
+            select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
           }),
           this.turfCourtRepository.find({
             where: { branchId: In(locationIds), status: 'active' },
-            select: ['id', 'name', 'branchId'],
+            select: ['id', 'name', 'branchId', 'pricing'],
           }),
           this.gamingStationRepository.find({
-            where: { businessLocationId: In(locationIds), isActive: true, unitStatus: 'active' },
-            select: ['id', 'name', 'businessLocationId'],
+            where: {
+              businessLocationId: In(locationIds),
+              isActive: true,
+              unitStatus: 'active',
+            },
+            select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
           }),
         ])
       : [[], [], []];
 
-    const facilityCourtsByLocation = new Map<string, Array<{ facilityType: 'padel' | 'turf' | 'gaming'; id: string; name: string; price?: number }>>();
+    const facilityCourtsByLocation = new Map<
+      string,
+      Array<{
+        facilityType: 'padel' | 'turf' | 'gaming';
+        id: string;
+        name: string;
+        price?: number;
+        pricing?: TurfPricingConfig;
+      }>
+    >();
+    
 
     for (const c of padelCourts) {
       const key = c.businessLocationId ?? '';
       const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({ facilityType: 'padel', id: c.id, name: c.name, price: parseFloat(c.pricePerSlot ?? '0') });
+      rows.push({
+        facilityType: 'padel',
+        id: c.id,
+        name: c.name,
+        price: parseFloat(c.pricePerSlot ?? '0'),
+      });
       facilityCourtsByLocation.set(key, rows);
     }
     for (const c of turfCourts) {
       const key = c.branchId ?? '';
       const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({ facilityType: 'turf', id: c.id, name: c.name, price: c.pricing?.futsal?.basePrice ?? c.pricing?.cricket?.basePrice ?? 0 });
+      rows.push({
+        facilityType: 'turf',
+        id: c.id,
+        name: c.name,
+        price:
+          c.pricing?.futsal?.basePrice ?? c.pricing?.cricket?.basePrice ?? 0,
+        pricing: c.pricing,
+      });
       facilityCourtsByLocation.set(key, rows);
     }
     for (const c of gamingStations) {
       const key = c.businessLocationId ?? '';
       const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({ facilityType: 'gaming', id: c.id, name: c.name });
+      rows.push({
+        facilityType: 'gaming',
+        id: c.id,
+        name: c.name,
+        price: parseFloat(c.pricePerSlot ?? '0'),
+      });
       facilityCourtsByLocation.set(key, rows);
     }
 
@@ -322,7 +358,13 @@ export class BusinessesService {
     }
     if (dto.locationType?.trim()) {
       const t = dto.locationType.trim().toLowerCase();
-      rows = rows.filter((r) => (r.locationType ?? '').toLowerCase() === t || (t === 'padel' && (r.facilityCounts.padel ?? 0) > 0));
+      rows = rows.filter(
+        (r) =>
+          (r.locationType ?? '').toLowerCase() === t ||
+          (t === 'padel' && (r.facilityCounts.padel ?? 0) > 0) ||
+          ((t === 'turf' || t === 'futsal' || t === 'cricket') && (r.facilityCounts.turf ?? 0) > 0) ||
+          ((t === 'gaming' || t === 'gaming-zone') && (r.facilityCounts.gaming ?? 0) > 0),
+      );
     }
 
     if (dto.bookingStatus === 'unbooked' && dto.date && dto.startTime && dto.endTime) {
@@ -350,7 +392,7 @@ export class BusinessesService {
       });
     }
 
-    return rows.map((r) => this.toVenueMapMarker(r));
+    return rows.map((r) => this.toVenueMapMarker(r, dto.locationType));
   }
 
   async assertLocationBelongsToTenant(locationId: string, tenantId: string): Promise<BusinessLocation> {
@@ -445,7 +487,51 @@ export class BusinessesService {
     return { deleted: true, locationId };
   }
 
-  toVenueMapMarker(row: any) {
+  toVenueMapMarker(row: any, category?: string) {
+    let price = row.price ?? 0;
+    const cat = category?.toLowerCase().trim();
+
+    if (cat && cat !== 'all') {
+      const specificPrices: number[] = [];
+      if (cat === 'padel') {
+        row.facilityCourts
+          ?.filter((f: any) => f.facilityType === 'padel')
+          .forEach((f: any) => {
+            if (f.price > 0) specificPrices.push(f.price);
+          });
+      } else if (cat === 'futsal' || cat === 'futsalarenas') {
+        row.facilityCourts
+          ?.filter((f: any) => f.facilityType === 'turf')
+          .forEach((f: any) => {
+            const p = f.pricing?.futsal?.basePrice;
+            if (p > 0) specificPrices.push(p);
+          });
+      } else if (cat === 'cricket') {
+        row.facilityCourts
+          ?.filter((f: any) => f.facilityType === 'turf')
+          .forEach((f: any) => {
+            const p = f.pricing?.cricket?.basePrice;
+            if (p > 0) specificPrices.push(p);
+          });
+      } else if (cat === 'turf') {
+        row.facilityCourts
+          ?.filter((f: any) => f.facilityType === 'turf')
+          .forEach((f: any) => {
+            if (f.price > 0) specificPrices.push(f.price);
+          });
+      } else if (cat === 'gaming' || cat === 'gaming-zone') {
+        row.facilityCourts
+          ?.filter((f: any) => f.facilityType === 'gaming')
+          .forEach((f: any) => {
+            if (f.price > 0) specificPrices.push(f.price);
+          });
+      }
+
+      if (specificPrices.length > 0) {
+        price = Math.min(...specificPrices);
+      }
+    }
+
     return {
       venueId: row.id,
       name: row.name,
@@ -454,8 +540,8 @@ export class BusinessesService {
       longitude: row.longitude,
       logo: row.logo,
       bannerImage: row.bannerImage,
-      price: row.price ?? 0,
-      pricePerSlot: row.price ?? 0,
+      price: price,
+      pricePerSlot: price,
     };
   }
 
@@ -474,7 +560,7 @@ export class BusinessesService {
     } else if (cat === 'turf') {
       picked = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
     }
-    return picked.map((r) => this.toVenueMapMarker(r));
+    return picked.map((r) => this.toVenueMapMarker(r, category));
   }
 
   async listVenueMarkersPublicWithFilters(dto: GetVenuesAllQueryDto) {
@@ -484,7 +570,7 @@ export class BusinessesService {
       rows = rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming') || (r.facilityCounts.gaming ?? 0) > 0);
     } else if (category === 'padel') {
       rows = rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
-    } else if (category === 'turf') {
+    } else if (category === 'turf' || category === 'futsal' || category === 'cricket' || category === 'futsalarenas') {
       rows = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
     }
     if (dto.city?.trim()) {
@@ -525,7 +611,7 @@ export class BusinessesService {
       });
     }
 
-    return rows.map((r) => this.toVenueMapMarker(r));
+    return rows.map((r) => this.toVenueMapMarker(r, dto.category));
   }
 
   async getVenueDetailsPublic(locationId: string) {

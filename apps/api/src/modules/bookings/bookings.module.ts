@@ -15,7 +15,7 @@ import { Booking } from './entities/booking.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { Business } from '../businesses/entities/business.entity';
 import { PlacePadelBookingController } from './public/place-padel-booking.controller';
-import { PublicPadelBookingController } from './public/public-padel-booking.controller';
+import { PublicBookingsController } from './public/public-bookings.controller';
 import { PreviousBookingsController } from './user/previous-bookings.controller';
 import { IamModule } from '../iam/iam.module';
 
@@ -39,7 +39,7 @@ import { IamModule } from '../iam/iam.module';
   controllers: [
     BookingsController,
     PlacePadelBookingController,
-    PublicPadelBookingController,
+    PublicBookingsController,
     PreviousBookingsController,
   ],
   providers: [BookingsService, TimeSlotTemplatesService],
