@@ -6,7 +6,7 @@ import {
   Unique,
   UpdateDateColumn,
 } from 'typeorm';
-import type { CourtKind } from '../booking.types';
+import type { CourtKind } from '../types/booking.types';
 
 export type CourtFacilitySlotStatus = 'available' | 'blocked';
 

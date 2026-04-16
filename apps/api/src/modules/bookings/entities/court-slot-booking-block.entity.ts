@@ -4,7 +4,7 @@ import {
   Entity,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import type { CourtKind } from '../booking.types';
+import type { CourtKind } from '../types/booking.types';
 
 /**
  * Admin-disabled hourly booking window for a court on a calendar date.

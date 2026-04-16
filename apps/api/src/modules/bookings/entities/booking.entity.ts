@@ -14,7 +14,7 @@ import type {
   BookingStatus,
   PaymentMethod,
   PaymentStatus,
-} from '../booking.types';
+} from '../types/booking.types';
 import { BookingItem } from './booking-item.entity';
 
 @Entity({ name: 'bookings' })

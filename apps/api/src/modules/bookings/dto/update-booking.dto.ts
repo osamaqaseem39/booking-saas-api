@@ -16,7 +16,7 @@ import {
   type BookingStatus,
   type PaymentMethod,
   type PaymentStatus,
-} from '../booking.types';
+} from '../types/booking.types';
 
 export class UpdateBookingPaymentDto {
   @IsOptional()

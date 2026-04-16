@@ -5,11 +5,11 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import type { CreateTimeSlotTemplateDto } from './dto/create-time-slot-template.dto';
-import type { UpdateTimeSlotTemplateDto } from './dto/update-time-slot-template.dto';
-import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
-import { TenantTimeSlotTemplateLine } from './entities/tenant-time-slot-template-line.entity';
-import { COURT_SLOT_GRID_STEP_MINUTES } from './booking.types';
+import type { CreateTimeSlotTemplateDto } from '../dto/create-time-slot-template.dto';
+import type { UpdateTimeSlotTemplateDto } from '../dto/update-time-slot-template.dto';
+import { TenantTimeSlotTemplate } from '../entities/tenant-time-slot-template.entity';
+import { TenantTimeSlotTemplateLine } from '../entities/tenant-time-slot-template-line.entity';
+import { COURT_SLOT_GRID_STEP_MINUTES } from '../types/booking.types';
 
 function toMinutes(time: string): number {
   if (time === '24:00') return 24 * 60;

@@ -36,7 +36,7 @@ import { CreateTimeSlotTemplateDto } from './dto/create-time-slot-template.dto';
 import { UpdateTimeSlotTemplateDto } from './dto/update-time-slot-template.dto';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
-import { TimeSlotTemplatesService } from './time-slot-templates.service';
+import { TimeSlotTemplatesService } from './time-slot-templates/time-slot-templates.service';
 
 function normalizeKind(kind: string): CourtKind | string {
   if (kind === 'futsal_court' || kind === 'cricket_court') return 'turf_court';

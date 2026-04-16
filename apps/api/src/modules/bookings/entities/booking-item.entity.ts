@@ -5,7 +5,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import type { BookingItemStatus, CourtKind } from '../booking.types';
+import type { BookingItemStatus, CourtKind } from '../types/booking.types';
 import { Booking } from './booking.entity';
 
 @Entity({ name: 'booking_items' })

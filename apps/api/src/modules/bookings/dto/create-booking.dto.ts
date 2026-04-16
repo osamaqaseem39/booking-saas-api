@@ -14,7 +14,7 @@ import {
   BOOKING_SPORT_TYPES,
   type BookingSportType,
   type BookingStatus,
-} from '../booking.types';
+} from '../types/booking.types';
 import { CreateBookingItemDto } from './create-booking-item.dto';
 import { CreateBookingPaymentDto } from './create-booking-payment.dto';
 import { CreateBookingPricingDto } from './create-booking-pricing.dto';

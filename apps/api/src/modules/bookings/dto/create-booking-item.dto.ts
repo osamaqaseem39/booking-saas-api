@@ -13,7 +13,7 @@ import {
   COURT_KINDS,
   type BookingItemStatus,
   type CourtKind,
-} from '../booking.types';
+} from '../types/booking.types';
 
 export class CreateBookingItemDto {
   @Transform(({ value }) => {
