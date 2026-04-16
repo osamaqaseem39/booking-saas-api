@@ -1,7 +1,7 @@
 import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
-import { BusinessLocation } from '../businesses/entities/business-location.entity';
-import { PadelCourt } from './padel-court/entities/padel-court.entity';
-import { PadelCourtService } from './padel-court/padel-court.service';
+import { BusinessLocation } from '../../businesses/entities/business-location.entity';
+import { PadelCourt } from '../padel-court/entities/padel-court.entity';
+import { PadelCourtService } from '../padel-court/padel-court.service';
 
 /**
  * Public facility detail by court id — no auth, no `X-Tenant-Id`.

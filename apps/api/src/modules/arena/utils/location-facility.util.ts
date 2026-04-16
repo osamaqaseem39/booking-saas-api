@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import type { BusinessLocation } from '../businesses/entities/business-location.entity';
+import type { BusinessLocation } from '../../businesses/entities/business-location.entity';
 
 const PADEL_FACILITY_CODES = new Set(['padel', 'padel-court']);
 

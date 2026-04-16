@@ -26,7 +26,7 @@ import {
   BUSINESS_LOCATION_TYPE_CODES,
   normalizeLocationFacilityTypesForApi,
   normalizeLocationFacilityTypesForPersist,
-} from './business-location.constants';
+} from './constants/business-location.constants';
 
 @Injectable()
 export class BusinessesService {

@@ -4,7 +4,7 @@ import {
   PAYMENT_STATUSES,
   type PaymentMethod,
   type PaymentStatus,
-} from '../booking.types';
+} from '../types/booking.types';
 
 export class CreateBookingPaymentDto {
   @IsIn([...PAYMENT_STATUSES])

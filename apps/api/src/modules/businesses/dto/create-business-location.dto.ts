@@ -14,7 +14,7 @@ import { Type } from 'class-transformer';
 import {
   ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES,
   BUSINESS_LOCATION_TYPE_CODES,
-} from '../business-location.constants';
+} from '../constants/business-location.constants';
 
 class CoordinatesDto {
   @IsLatitude()
