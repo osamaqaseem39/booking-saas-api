@@ -577,7 +577,11 @@ export class BusinessesService {
 
   private async loadBusyCourtKeysForWindow(date: string, reqStart: number, reqEnd: number): Promise<Set<string>> {
     const items = await this.bookingItemRepository.find({
-      where: { bookingDate: date, itemStatus: In(['reserved', 'confirmed']) },
+      where: {
+        booking: { bookingDate: date },
+        itemStatus: In(['reserved', 'confirmed']),
+      },
+      relations: ['booking'],
     });
     const busy = new Set<string>();
     for (const it of items) {
@@ -598,14 +602,16 @@ export class BusinessesService {
     ]);
     const map = new Map<string, string[]>();
     for (const c of padel) {
-      const list = map.get(c.businessLocationId) ?? [];
+      const key = c.businessLocationId ?? '';
+      const list = map.get(key) ?? [];
       list.push(`padel_court:${c.id}`);
-      map.set(c.businessLocationId, list);
+      map.set(key, list);
     }
     for (const c of turf) {
-      const list = map.get(c.branchId) ?? [];
+      const key = c.branchId ?? '';
+      const list = map.get(key) ?? [];
       list.push(`turf_court:${c.id}`);
-      map.set(c.branchId, list);
+      map.set(key, list);
     }
     return map;
   }
