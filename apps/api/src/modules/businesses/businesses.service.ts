@@ -228,7 +228,7 @@ export class BusinessesService {
     for (const c of turfCourts) {
       const key = c.branchId ?? '';
       const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({ facilityType: 'turf', id: c.id, name: c.name, price: c.pricing?.defaultPrice ?? 0 });
+      rows.push({ facilityType: 'turf', id: c.id, name: c.name, price: c.pricing?.futsal?.basePrice ?? c.pricing?.cricket?.basePrice ?? 0 });
       facilityCourtsByLocation.set(key, rows);
     }
     for (const c of gamingStations) {
