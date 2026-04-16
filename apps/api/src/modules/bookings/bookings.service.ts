@@ -453,10 +453,51 @@ export class BookingsService {
     },
   ) {
     const date = formatDateOnly(params.date);
-    const allCourts = await this.padelRepo.find({
-      where: { tenantId, isActive: true, courtStatus: 'active' },
-      select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
-    });
+    const sport = params.sportType ?? 'padel';
+    const isTurf = sport === 'futsal' || sport === 'cricket';
+
+    // --- Fetch the right courts based on sportType ---
+    type CourtRow = {
+      id: string;
+      name: string;
+      pricePerSlot: string | null;
+      slotDurationMinutes: number | null;
+      courtKind: 'padel_court' | 'turf_court';
+    };
+
+    let allCourts: CourtRow[];
+    if (isTurf) {
+      const turfRows = await this.turfRepo.find({
+        where: { tenantId, status: 'active' },
+        select: ['id', 'name', 'slotDuration', 'pricing', 'supportedSports'],
+      });
+      allCourts = turfRows
+        .filter((t) => t.supportedSports?.includes(sport))
+        .map((t) => ({
+          id: t.id,
+          name: t.name,
+          pricePerSlot: (t.pricing?.[sport as 'futsal' | 'cricket']?.basePrice) != null
+              ? String(t.pricing[sport as 'futsal' | 'cricket']!.basePrice)
+              : null,
+          slotDurationMinutes: t.slotDuration ?? null,
+          courtKind: 'turf_court' as const,
+        }));
+    } else {
+      const padelRows = await this.padelRepo.find({
+        where: { tenantId, isActive: true, courtStatus: 'active' },
+        select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
+      });
+      allCourts = padelRows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        pricePerSlot: c.pricePerSlot ?? null,
+        slotDurationMinutes: c.slotDurationMinutes ?? null,
+        courtKind: 'padel_court' as const,
+      }));
+    }
+
+    // --- Find booked slots that overlap the requested window ---
+    const courtKindFilter = isTurf ? 'turf_court' : 'padel_court';
     const busy = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
@@ -464,10 +505,12 @@ export class BookingsService {
       .andWhere('b.bookingDate = :date', { date })
       .andWhere("b.bookingStatus = 'confirmed'")
       .andWhere("i.itemStatus = 'confirmed'")
+      .andWhere('i.courtKind = :courtKind', { courtKind: courtKindFilter })
       .andWhere('i.startTime < :end', { end: params.endTime })
       .andWhere('i.endTime > :start', { start: params.startTime })
       .select([
         'i.courtId AS courtId',
+        'i.courtKind AS courtKind',
         'i.startTime AS startTime',
         'i.endTime AS endTime',
         'b.id AS bookingId',
@@ -476,6 +519,7 @@ export class BookingsService {
       ])
       .getRawMany<{
         courtId: string;
+        courtKind: string;
         startTime: string;
         endTime: string;
         bookingId: string;
@@ -488,18 +532,18 @@ export class BookingsService {
       date,
       startTime: params.startTime,
       endTime: params.endTime,
-      sportType: 'padel' as const,
+      sportType: sport,
       availableCourts: allCourts
         .filter((c) => !busyIds.has(c.id))
         .map((c) => ({
-          kind: 'padel_court' as const,
+          kind: c.courtKind,
           id: c.id,
           name: c.name,
           pricePerSlot: c.pricePerSlot ? Number(c.pricePerSlot) : null,
           slotDurationMinutes: c.slotDurationMinutes ?? null,
         })),
       bookedSlots: busy.map((x) => ({
-        kind: 'padel_court' as const,
+        kind: x.courtKind,
         courtId: x.courtId,
         startTime: x.startTime,
         endTime: x.endTime,
@@ -654,21 +698,13 @@ export class BookingsService {
           : { startTime: s.startTime, endTime: s.endTime, state: 'free' },
     );
 
-    const now = new Date();
-    // Use server-local time consistently for both date and current-time filtering.
-    // The client sends dates in local timezone, so compare in local timezone.
-    const y = now.getFullYear();
-    const mo = String(now.getMonth() + 1).padStart(2, '0');
-    const dy = String(now.getDate()).padStart(2, '0');
-    const todayStr = `${y}-${mo}-${dy}`;
-    const currentMins = now.getHours() * 60 + now.getMinutes();
-
-    if (params.date < todayStr) {
+    // NOTE: Past-slot filtering is intentionally handled on the client side,
+    // because the server runs in UTC and cannot know the client's local timezone.
+    // The dashboard filters out already-passed slots using browser local time.
+    // We only purge slots for dates that are strictly in the past (UTC date comparison).
+    const nowUtcDate = new Date().toISOString().slice(0, 10);
+    if (params.date < nowUtcDate) {
       segments = [];
-    } else if (params.date === todayStr) {
-      segments = segments.filter(
-        (s: any) => toMinutes(s.startTime) >= currentMins,
-      );
     }
 
     if (params.availableOnly) {
