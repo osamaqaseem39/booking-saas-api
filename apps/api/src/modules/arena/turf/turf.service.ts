@@ -267,36 +267,7 @@ export class TurfService {
     const saved = await this.turfRepo.save(row);
 
     if (saved.timeSlotTemplateId) {
-      const lines = await this.timeSlotTemplateLineRepo.find({
-        where: { templateId: saved.timeSlotTemplateId, tenantId },
-      });
-      if (lines.length > 0) {
-        const values: Partial<CourtFacilitySlot>[] = [];
-        const d = new Date();
-        for (let i = 0; i < 30; i++) {
-          const slotDate = new Date(d);
-          slotDate.setUTCDate(slotDate.getUTCDate() + i);
-          const dateStr = slotDate.toISOString().slice(0, 10);
-          for (const line of lines) {
-            values.push({
-              tenantId,
-              courtKind: 'turf_court',
-              courtId: saved.id,
-              slotDate: dateStr,
-              startTime: line.startTime,
-              endTime: line.endTime,
-              status: line.status,
-            });
-          }
-        }
-        await this.courtFacilitySlotRepo
-          .createQueryBuilder()
-          .insert()
-          .into(CourtFacilitySlot)
-          .values(values as CourtFacilitySlot[])
-          .orIgnore()
-          .execute();
-      }
+      await this.syncSlotsFromTemplate(tenantId, saved);
     }
 
     return saved;
@@ -388,7 +359,11 @@ export class TurfService {
       row.timeSlotTemplateId = nextTemplateId;
     }
 
-    return this.turfRepo.save(row);
+    const saved = await this.turfRepo.save(row);
+    if (input.timeSlotTemplateId !== undefined && saved.timeSlotTemplateId) {
+      await this.syncSlotsFromTemplate(tenantId, saved);
+    }
+    return saved;
   }
 
   async removeByTenant(
@@ -398,5 +373,42 @@ export class TurfService {
     const row = await this.findOneByTenant(tenantId, id);
     await this.turfRepo.remove(row);
     return { deleted: true, id };
+  }
+
+  private async syncSlotsFromTemplate(
+    tenantId: string,
+    court: TurfCourt,
+  ): Promise<void> {
+    if (!court.timeSlotTemplateId) return;
+    const lines = await this.timeSlotTemplateLineRepo.find({
+      where: { templateId: court.timeSlotTemplateId, tenantId },
+    });
+    if (!lines.length) return;
+
+    const values: Partial<CourtFacilitySlot>[] = [];
+    const d = new Date();
+    for (let i = 0; i < 30; i++) {
+      const slotDate = new Date(d);
+      slotDate.setUTCDate(slotDate.getUTCDate() + i);
+      const dateStr = slotDate.toISOString().slice(0, 10);
+      for (const line of lines) {
+        values.push({
+          tenantId,
+          courtKind: 'turf_court',
+          courtId: court.id,
+          slotDate: dateStr,
+          startTime: line.startTime,
+          endTime: line.endTime,
+          status: line.status as any,
+        });
+      }
+    }
+    await this.courtFacilitySlotRepo
+      .createQueryBuilder()
+      .insert()
+      .into(CourtFacilitySlot)
+      .values(values as CourtFacilitySlot[])
+      .orIgnore()
+      .execute();
   }
 }

@@ -12,6 +12,8 @@ import { assertFacilityTypeAllowedForLocation } from '../utils/location-facility
 import { CreatePadelCourtDto } from './dto/create-padel-court.dto';
 import { UpdatePadelCourtDto } from './dto/update-padel-court.dto';
 import { PadelCourt } from './entities/padel-court.entity';
+import { TenantTimeSlotTemplateLine } from '../../bookings/entities/tenant-time-slot-template-line.entity';
+import { CourtFacilitySlot } from '../../bookings/entities/court-facility-slot.entity';
 
 const PADEL_LOCATION_FACILITY_CODE = 'padel' as const;
 
@@ -25,6 +27,10 @@ export class PadelCourtService {
   constructor(
     @InjectRepository(PadelCourt)
     private readonly repo: Repository<PadelCourt>,
+    @InjectRepository(TenantTimeSlotTemplateLine)
+    private readonly lineRepo: Repository<TenantTimeSlotTemplateLine>,
+    @InjectRepository(CourtFacilitySlot)
+    private readonly slotRepo: Repository<CourtFacilitySlot>,
     private readonly businessesService: BusinessesService,
     private readonly timeSlotTemplates: TimeSlotTemplatesService,
   ) {}
@@ -117,7 +123,11 @@ export class PadelCourtService {
       isActive,
       timeSlotTemplateId,
     });
-    return this.repo.save(row);
+    const saved = await this.repo.save(row);
+    if (saved.timeSlotTemplateId) {
+      await this.syncSlotsFromTemplate(tenantId, saved);
+    }
+    return saved;
   }
 
   async findOne(tenantId: string, id: string): Promise<PadelCourt> {
@@ -201,11 +211,52 @@ export class PadelCourtService {
     }
     if (dto.isActive !== undefined) row.isActive = dto.isActive;
 
-    return this.repo.save(row);
+    const saved = await this.repo.save(row);
+    if (dto.timeSlotTemplateId !== undefined && saved.timeSlotTemplateId) {
+      await this.syncSlotsFromTemplate(tenantId, saved);
+    }
+    return saved;
   }
 
   async remove(tenantId: string, id: string): Promise<void> {
     const row = await this.findOne(tenantId, id);
     await this.repo.remove(row);
+  }
+
+  private async syncSlotsFromTemplate(
+    tenantId: string,
+    court: PadelCourt,
+  ): Promise<void> {
+    if (!court.timeSlotTemplateId) return;
+    const lines = await this.lineRepo.find({
+      where: { templateId: court.timeSlotTemplateId, tenantId },
+    });
+    if (!lines.length) return;
+
+    const values: Partial<CourtFacilitySlot>[] = [];
+    const d = new Date();
+    for (let i = 0; i < 30; i++) {
+      const slotDate = new Date(d);
+      slotDate.setUTCDate(slotDate.getUTCDate() + i);
+      const dateStr = slotDate.toISOString().slice(0, 10);
+      for (const line of lines) {
+        values.push({
+          tenantId,
+          courtKind: 'padel_court',
+          courtId: court.id,
+          slotDate: dateStr,
+          startTime: line.startTime,
+          endTime: line.endTime,
+          status: line.status as any,
+        });
+      }
+    }
+    await this.slotRepo
+      .createQueryBuilder()
+      .insert()
+      .into(CourtFacilitySlot)
+      .values(values as CourtFacilitySlot[])
+      .orIgnore()
+      .execute();
   }
 }

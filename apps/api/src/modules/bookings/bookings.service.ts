@@ -8,6 +8,7 @@ import { DeepPartial, In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
 import { User } from '../iam/entities/user.entity';
+import { TenantTimeSlotTemplateLine } from './entities/tenant-time-slot-template-line.entity';
 import {
   COURT_SLOT_GRID_STEP_MINUTES,
   type BookingItemStatus,
@@ -117,6 +118,8 @@ export class BookingsService {
     private readonly facilitySlotRepo: Repository<CourtFacilitySlot>,
     @InjectRepository(TenantTimeSlotTemplate)
     private readonly slotTemplateRepo: Repository<TenantTimeSlotTemplate>,
+    @InjectRepository(TenantTimeSlotTemplateLine)
+    private readonly slotTemplateLineRepo: Repository<TenantTimeSlotTemplateLine>,
   ) {}
 
   async resolveTenantIdByCourt(
@@ -731,26 +734,53 @@ export class BookingsService {
     tenantId: string,
     params: { kind: CourtKind; courtId: string; date: string },
   ): Promise<{ ok: true; upserted: number }> {
+    let templateId: string | null = null;
     if (params.kind === 'padel_court') {
-      await this.assertPadelCourtExists(tenantId, params.courtId);
+      const court = await this.assertPadelCourtExists(tenantId, params.courtId);
+      templateId = court.timeSlotTemplateId;
     } else if (params.kind === 'turf_court') {
-      await this.assertTurfCourtExists(tenantId, params.courtId);
+      const court = await this.assertTurfCourtExists(tenantId, params.courtId);
+      templateId = court.timeSlotTemplateId;
     } else {
       throw new BadRequestException('Unsupported court kind');
     }
+
     const date = formatDateOnly(params.date);
     const values: Partial<CourtFacilitySlot>[] = [];
-    for (let m = 0; m < 24 * 60; m += COURT_SLOT_GRID_STEP_MINUTES) {
-      values.push({
-        tenantId,
-        courtKind: params.kind,
-        courtId: params.courtId,
-        slotDate: date,
-        startTime: minutesToTimeString(m),
-        endTime: minutesToTimeString(m + COURT_SLOT_GRID_STEP_MINUTES),
-        status: 'available',
+
+    let templateLines: TenantTimeSlotTemplateLine[] = [];
+    if (templateId) {
+      templateLines = await this.slotTemplateLineRepo.find({
+        where: { templateId, tenantId },
       });
     }
+
+    if (templateLines.length > 0) {
+      for (const line of templateLines) {
+        values.push({
+          tenantId,
+          courtKind: params.kind,
+          courtId: params.courtId,
+          slotDate: date,
+          startTime: line.startTime,
+          endTime: line.endTime,
+          status: line.status as any,
+        });
+      }
+    } else {
+      for (let m = 0; m < 24 * 60; m += COURT_SLOT_GRID_STEP_MINUTES) {
+        values.push({
+          tenantId,
+          courtKind: params.kind,
+          courtId: params.courtId,
+          slotDate: date,
+          startTime: minutesToTimeString(m),
+          endTime: minutesToTimeString(m + COURT_SLOT_GRID_STEP_MINUTES),
+          status: 'available',
+        });
+      }
+    }
+
     await this.facilitySlotRepo
       .createQueryBuilder()
       .insert()
@@ -758,6 +788,7 @@ export class BookingsService {
       .values(values as CourtFacilitySlot[])
       .orIgnore()
       .execute();
+
     return { ok: true, upserted: values.length };
   }
 
