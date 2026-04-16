@@ -38,6 +38,11 @@ import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
 import { TimeSlotTemplatesService } from './time-slot-templates.service';
 
+function normalizeKind(kind: string): CourtKind | string {
+  if (kind === 'futsal_court' || kind === 'cricket_court') return 'turf_court';
+  return kind;
+}
+
 @Controller('bookings')
 export class BookingsController {
   constructor(
@@ -167,10 +172,11 @@ export class BookingsController {
   @Get('courts/:courtKind/:courtId/slots')
   async courtSlots(
     @CurrentTenant() tenant: TenantContext,
-    @Param('courtKind') courtKind: string,
+    @Param('courtKind') rawCourtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
     @Query() query: CourtSlotsQueryDto,
   ) {
+    const courtKind = normalizeKind(rawCourtKind);
     if (!COURT_KINDS.includes(courtKind as CourtKind)) {
       throw new BadRequestException(
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
@@ -201,10 +207,11 @@ export class BookingsController {
   @Get('courts/:courtKind/:courtId/slot-grid')
   async courtSlotGrid(
     @CurrentTenant() tenant: TenantContext,
-    @Param('courtKind') courtKind: string,
+    @Param('courtKind') rawCourtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
     @Query() query: CourtSlotGridQueryDto,
   ) {
+    const courtKind = normalizeKind(rawCourtKind);
     if (!COURT_KINDS.includes(courtKind as CourtKind)) {
       throw new BadRequestException(
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
@@ -266,10 +273,11 @@ export class BookingsController {
   @Put('courts/:courtKind/:courtId/slot-blocks')
   async setCourtSlotBlock(
     @CurrentTenant() tenant: TenantContext,
-    @Param('courtKind') courtKind: string,
+    @Param('courtKind') rawCourtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
     @Body() dto: SetCourtSlotBlockDto,
   ) {
+    const courtKind = normalizeKind(rawCourtKind);
     if (!COURT_KINDS.includes(courtKind as CourtKind)) {
       throw new BadRequestException(
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
@@ -295,10 +303,11 @@ export class BookingsController {
   @Post('courts/:courtKind/:courtId/facility-slots/generate')
   async generateFacilityDaySlots(
     @CurrentTenant() tenant: TenantContext,
-    @Param('courtKind') courtKind: string,
+    @Param('courtKind') rawCourtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
     @Body() dto: GenerateFacilitySlotsDto,
   ) {
+    const courtKind = normalizeKind(rawCourtKind);
     if (!COURT_KINDS.includes(courtKind as CourtKind)) {
       throw new BadRequestException(
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
@@ -322,10 +331,11 @@ export class BookingsController {
   @Patch('courts/:courtKind/:courtId/facility-slots')
   async patchFacilitySlot(
     @CurrentTenant() tenant: TenantContext,
-    @Param('courtKind') courtKind: string,
+    @Param('courtKind') rawCourtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
     @Body() dto: PatchFacilitySlotDto,
   ) {
+    const courtKind = normalizeKind(rawCourtKind);
     if (!COURT_KINDS.includes(courtKind as CourtKind)) {
       throw new BadRequestException(
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,

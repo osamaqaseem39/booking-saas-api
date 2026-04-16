@@ -16,6 +16,11 @@ import {
 } from '../booking.types';
 
 export class CreateBookingItemDto {
+  @Transform(({ value }) => {
+    if (value === 'futsal_court' || value === 'cricket_court')
+      return 'turf_court';
+    return value;
+  })
   @IsIn([...COURT_KINDS])
   courtKind!: CourtKind;
 
