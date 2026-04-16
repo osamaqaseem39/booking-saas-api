@@ -655,8 +655,12 @@ export class BookingsService {
     );
 
     const now = new Date();
-    // Offset for local vs UTC difference logic if needed, but going with raw server time
-    const todayStr = formatDateOnly(now);
+    // Use server-local time consistently for both date and current-time filtering.
+    // The client sends dates in local timezone, so compare in local timezone.
+    const y = now.getFullYear();
+    const mo = String(now.getMonth() + 1).padStart(2, '0');
+    const dy = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${y}-${mo}-${dy}`;
     const currentMins = now.getHours() * 60 + now.getMinutes();
 
     if (params.date < todayStr) {
