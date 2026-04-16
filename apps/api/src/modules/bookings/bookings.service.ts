@@ -1,4 +1,8 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
@@ -73,7 +77,12 @@ export type BookingApiRow = {
     currency: string;
     status: BookingItemStatus;
   }>;
-  pricing: { subTotal: number; discount: number; tax: number; totalAmount: number };
+  pricing: {
+    subTotal: number;
+    discount: number;
+    tax: number;
+    totalAmount: number;
+  };
   payment: {
     paymentStatus: PaymentStatus;
     paymentMethod: PaymentMethod;
@@ -110,7 +119,10 @@ export class BookingsService {
     private readonly slotTemplateRepo: Repository<TenantTimeSlotTemplate>,
   ) {}
 
-  async resolveTenantIdByCourt(kind: CourtKind, courtId: string): Promise<string | null> {
+  async resolveTenantIdByCourt(
+    kind: CourtKind,
+    courtId: string,
+  ): Promise<string | null> {
     if (kind === 'padel_court') {
       const row = await this.padelRepo.findOne({
         where: { id: courtId },
@@ -129,19 +141,33 @@ export class BookingsService {
   }
 
   async resolveTenantIdByBooking(bookingId: string): Promise<string | null> {
-    const row = await this.bookingRepo.findOne({ where: { id: bookingId }, select: ['tenantId'] });
+    const row = await this.bookingRepo.findOne({
+      where: { id: bookingId },
+      select: ['tenantId'],
+    });
     return row?.tenantId ?? null;
   }
 
-  async resolveTenantIdByTimeSlotTemplate(templateId: string): Promise<string | null> {
-    const row = await this.slotTemplateRepo.findOne({ where: { id: templateId }, select: ['tenantId'] });
+  async resolveTenantIdByTimeSlotTemplate(
+    templateId: string,
+  ): Promise<string | null> {
+    const row = await this.slotTemplateRepo.findOne({
+      where: { id: templateId },
+      select: ['tenantId'],
+    });
     return row?.tenantId ?? null;
   }
 
   async resolveTenantIdByLocation(locationId: string): Promise<string | null> {
-    const loc = await this.locationRepo.findOne({ where: { id: locationId }, select: ['businessId'] });
+    const loc = await this.locationRepo.findOne({
+      where: { id: locationId },
+      select: ['businessId'],
+    });
     if (!loc) return null;
-    const business = await this.businessRepo.findOne({ where: { id: loc.businessId }, select: ['tenantId'] });
+    const business = await this.businessRepo.findOne({
+      where: { id: loc.businessId },
+      select: ['tenantId'],
+    });
     return business?.tenantId ?? null;
   }
 
@@ -211,25 +237,45 @@ export class BookingsService {
     return this.toApi(row);
   }
 
-  private async assertPadelCourtExists(tenantId: string, courtId: string): Promise<PadelCourt> {
-    const court = await this.padelRepo.findOne({ where: { id: courtId, tenantId } });
-    if (!court) throw new BadRequestException(`Court ${courtId} not found for this tenant`);
+  private async assertPadelCourtExists(
+    tenantId: string,
+    courtId: string,
+  ): Promise<PadelCourt> {
+    const court = await this.padelRepo.findOne({
+      where: { id: courtId, tenantId },
+    });
+    if (!court)
+      throw new BadRequestException(
+        `Court ${courtId} not found for this tenant`,
+      );
     if (court.courtStatus !== 'active' || court.isActive === false) {
       throw new BadRequestException('Selected court is not available');
     }
     return court;
   }
 
-  private async assertTurfCourtExists(tenantId: string, courtId: string): Promise<TurfCourt> {
-    const turf = await this.turfRepo.findOne({ where: { id: courtId, tenantId } });
-    if (!turf) throw new BadRequestException(`Turf ${courtId} not found for this tenant`);
+  private async assertTurfCourtExists(
+    tenantId: string,
+    courtId: string,
+  ): Promise<TurfCourt> {
+    const turf = await this.turfRepo.findOne({
+      where: { id: courtId, tenantId },
+    });
+    if (!turf)
+      throw new BadRequestException(
+        `Turf ${courtId} not found for this tenant`,
+      );
     if (turf.status !== 'active') {
       throw new BadRequestException('Selected turf is not available');
     }
     return turf;
   }
 
-  private toSlotDateTimes(bookingDate: string, startTime: string, endTime: string) {
+  private toSlotDateTimes(
+    bookingDate: string,
+    startTime: string,
+    endTime: string,
+  ) {
     const date = formatDateOnly(bookingDate);
     const overnight = toMinutes(endTime) <= toMinutes(startTime);
     return {
@@ -242,15 +288,25 @@ export class BookingsService {
 
   private assertBookingItem(item: CreateBookingItemDto): void {
     if (item.courtKind !== 'padel_court' && item.courtKind !== 'turf_court') {
-      throw new BadRequestException('Only padel_court and turf_court are supported');
+      throw new BadRequestException(
+        'Only padel_court and turf_court are supported',
+      );
     }
     if (toMinutes(item.endTime) === toMinutes(item.startTime)) {
       throw new BadRequestException('endTime must be different from startTime');
     }
   }
 
-  private async assertNoOverlap(tenantId: string, date: string, item: CreateBookingItemDto) {
-    const { startDatetime } = this.toSlotDateTimes(date, item.startTime, item.endTime);
+  private async assertNoOverlap(
+    tenantId: string,
+    date: string,
+    item: CreateBookingItemDto,
+  ) {
+    const { startDatetime } = this.toSlotDateTimes(
+      date,
+      item.startTime,
+      item.endTime,
+    );
     const overlaps = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
@@ -259,12 +315,18 @@ export class BookingsService {
       .andWhere("i.itemStatus IN ('reserved','confirmed')")
       .andWhere('i.courtKind = :kind', { kind: item.courtKind })
       .andWhere('i.courtId = :courtId', { courtId: item.courtId })
-      .andWhere('i.startDatetime = :startDatetime', { startDatetime: startDatetime.toISOString() })
+      .andWhere('i.startDatetime = :startDatetime', {
+        startDatetime: startDatetime.toISOString(),
+      })
       .getCount();
-    if (overlaps > 0) throw new BadRequestException('Selected slot is already booked');
+    if (overlaps > 0)
+      throw new BadRequestException('Selected slot is already booked');
   }
 
-  async create(tenantId: string, dto: CreateBookingDto): Promise<BookingApiRow> {
+  async create(
+    tenantId: string,
+    dto: CreateBookingDto,
+  ): Promise<BookingApiRow> {
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new BadRequestException(`User ${dto.userId} not found`);
 
@@ -279,10 +341,14 @@ export class BookingsService {
       if (item.courtKind === 'turf_court') {
         const turf = await this.assertTurfCourtExists(tenantId, item.courtId);
         if (dto.sportType !== 'futsal' && dto.sportType !== 'cricket') {
-          throw new BadRequestException('turf_court requires sportType=futsal or sportType=cricket');
+          throw new BadRequestException(
+            'turf_court requires sportType=futsal or sportType=cricket',
+          );
         }
         if (!turf.supportedSports.includes(dto.sportType)) {
-          throw new BadRequestException(`Selected turf does not support ${dto.sportType}`);
+          throw new BadRequestException(
+            `Selected turf does not support ${dto.sportType}`,
+          );
         }
       }
       await this.assertNoOverlap(tenantId, dto.bookingDate, item);
@@ -320,31 +386,48 @@ export class BookingsService {
     const booking = this.bookingRepo.create(bookingPayload);
 
     const saved = await this.bookingRepo.save(booking);
-    const full = await this.bookingRepo.findOneOrFail({ where: { id: saved.id }, relations: ['items'] });
+    const full = await this.bookingRepo.findOneOrFail({
+      where: { id: saved.id },
+      relations: ['items'],
+    });
     return this.toApi(full);
   }
 
-  async update(tenantId: string, bookingId: string, dto: UpdateBookingDto): Promise<BookingApiRow> {
+  async update(
+    tenantId: string,
+    bookingId: string,
+    dto: UpdateBookingDto,
+  ): Promise<BookingApiRow> {
     const booking = await this.bookingRepo.findOne({
       where: { id: bookingId, tenantId },
       relations: ['items'],
     });
     if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
 
-    if (dto.bookingStatus !== undefined) booking.bookingStatus = dto.bookingStatus;
+    if (dto.bookingStatus !== undefined)
+      booking.bookingStatus = dto.bookingStatus;
     if (dto.notes !== undefined) booking.notes = dto.notes;
-    if (dto.cancellationReason !== undefined) booking.cancellationReason = dto.cancellationReason;
-    if (dto.payment?.paymentStatus !== undefined) booking.paymentStatus = dto.payment.paymentStatus;
-    if (dto.payment?.paymentMethod !== undefined) booking.paymentMethod = dto.payment.paymentMethod;
-    if (dto.payment?.transactionId !== undefined) booking.transactionId = dto.payment.transactionId;
+    if (dto.cancellationReason !== undefined)
+      booking.cancellationReason = dto.cancellationReason;
+    if (dto.payment?.paymentStatus !== undefined)
+      booking.paymentStatus = dto.payment.paymentStatus;
+    if (dto.payment?.paymentMethod !== undefined)
+      booking.paymentMethod = dto.payment.paymentMethod;
+    if (dto.payment?.transactionId !== undefined)
+      booking.transactionId = dto.payment.transactionId;
     if (dto.payment?.paidAt !== undefined) {
-      booking.paidAt = dto.payment.paidAt ? new Date(dto.payment.paidAt) : undefined;
+      booking.paidAt = dto.payment.paidAt
+        ? new Date(dto.payment.paidAt)
+        : undefined;
     }
     if (dto.itemStatuses?.length) {
       const byId = new Map(booking.items.map((i) => [i.id, i]));
       for (const row of dto.itemStatuses) {
         const item = byId.get(row.itemId);
-        if (!item) throw new BadRequestException(`Item ${row.itemId} not in this booking`);
+        if (!item)
+          throw new BadRequestException(
+            `Item ${row.itemId} not in this booking`,
+          );
         item.itemStatus = row.status;
       }
     }
@@ -362,7 +445,12 @@ export class BookingsService {
 
   async getAvailabilityByTime(
     tenantId: string,
-    params: { date: string; startTime: string; endTime: string; sportType?: BookingSportType },
+    params: {
+      date: string;
+      startTime: string;
+      endTime: string;
+      sportType?: BookingSportType;
+    },
   ) {
     const date = formatDateOnly(params.date);
     const allCourts = await this.padelRepo.find({
@@ -378,8 +466,22 @@ export class BookingsService {
       .andWhere("i.itemStatus = 'confirmed'")
       .andWhere('i.startTime < :end', { end: params.endTime })
       .andWhere('i.endTime > :start', { start: params.startTime })
-      .select(['i.courtId AS courtId', 'i.startTime AS startTime', 'i.endTime AS endTime', 'b.id AS bookingId', 'i.id AS id', 'i.itemStatus AS itemStatus'])
-      .getRawMany<{ courtId: string; startTime: string; endTime: string; bookingId: string; id: string; itemStatus: BookingItemStatus }>();
+      .select([
+        'i.courtId AS courtId',
+        'i.startTime AS startTime',
+        'i.endTime AS endTime',
+        'b.id AS bookingId',
+        'i.id AS id',
+        'i.itemStatus AS itemStatus',
+      ])
+      .getRawMany<{
+        courtId: string;
+        startTime: string;
+        endTime: string;
+        bookingId: string;
+        id: string;
+        itemStatus: BookingItemStatus;
+      }>();
 
     const busyIds = new Set(busy.map((x) => x.courtId));
     return {
@@ -410,13 +512,37 @@ export class BookingsService {
 
   async getCourtSlots(
     tenantId: string,
-    params: { kind: CourtKind; courtId: string; date: string; startTime?: string; endTime?: string },
+    params: {
+      kind: CourtKind;
+      courtId: string;
+      date: string;
+      startTime?: string;
+      endTime?: string;
+    },
   ) {
-    if (params.kind !== 'padel_court') throw new BadRequestException('Only padel_court is supported');
-    await this.assertPadelCourtExists(tenantId, params.courtId);
+    if (params.kind === 'padel_court') {
+      await this.assertPadelCourtExists(tenantId, params.courtId);
+    } else if (params.kind === 'turf_court') {
+      await this.assertTurfCourtExists(tenantId, params.courtId);
+    } else {
+      throw new BadRequestException('Unsupported court kind');
+    }
     const date = formatDateOnly(params.date);
     const start = toMinutes(params.startTime ?? '00:00');
     const end = toMinutes(params.endTime ?? '24:00');
+
+    // Instead of completely generating grid steps, we will read the real slots from court_facility_slots
+    // if they exist for this court and date, falling back to the 60 min loop if nothing exists.
+    const facilitySlots = await this.facilitySlotRepo.find({
+      where: {
+        tenantId,
+        courtKind: params.kind,
+        courtId: params.courtId,
+        slotDate: date,
+      },
+      order: { startTime: 'ASC' },
+    });
+
     const rows = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
@@ -424,35 +550,131 @@ export class BookingsService {
       .andWhere('b.bookingDate = :date', { date })
       .andWhere("b.bookingStatus = 'confirmed'")
       .andWhere("i.itemStatus = 'confirmed'")
-      .andWhere('i.courtKind = :kind', { kind: 'padel_court' })
+      .andWhere('i.courtKind = :kind', { kind: params.kind })
       .andWhere('i.courtId = :courtId', { courtId: params.courtId })
-      .select(['b.id AS bookingId', 'i.id AS id', 'i.startTime AS startTime', 'i.endTime AS endTime', 'i.itemStatus AS itemStatus'])
-      .getRawMany<{ bookingId: string; id: string; startTime: string; endTime: string; itemStatus: BookingItemStatus }>();
+      .select([
+        'b.id AS bookingId',
+        'i.id AS id',
+        'i.startTime AS startTime',
+        'i.endTime AS endTime',
+        'i.itemStatus AS itemStatus',
+      ])
+      .getRawMany<{
+        bookingId: string;
+        id: string;
+        startTime: string;
+        endTime: string;
+        itemStatus: BookingItemStatus;
+      }>();
 
     const slots: Array<any> = [];
-    for (let m = start; m < end; m += COURT_SLOT_GRID_STEP_MINUTES) {
-      const s = minutesToTimeString(m);
-      const e = minutesToTimeString(m + COURT_SLOT_GRID_STEP_MINUTES);
-      const hit = rows.find((r) => toMinutes(r.startTime) < toMinutes(e) && toMinutes(r.endTime) > toMinutes(s));
-      if (hit) {
-        slots.push({ startTime: s, endTime: e, availability: 'booked', bookingId: hit.bookingId, itemId: hit.id, status: hit.itemStatus });
-      } else {
-        slots.push({ startTime: s, endTime: e, availability: 'available' });
+    if (facilitySlots.length > 0) {
+      for (const fs of facilitySlots) {
+        if (toMinutes(fs.startTime) >= end || toMinutes(fs.endTime) <= start)
+          continue;
+        const hit = rows.find(
+          (r) =>
+            toMinutes(r.startTime) < toMinutes(fs.endTime) &&
+            toMinutes(r.endTime) > toMinutes(fs.startTime),
+        );
+        if (hit) {
+          slots.push({
+            startTime: fs.startTime,
+            endTime: fs.endTime,
+            availability: 'booked',
+            bookingId: hit.bookingId,
+            itemId: hit.id,
+            status: hit.itemStatus,
+          });
+        } else if (fs.status === 'blocked') {
+          slots.push({
+            startTime: fs.startTime,
+            endTime: fs.endTime,
+            availability: 'blocked',
+          });
+        } else {
+          slots.push({
+            startTime: fs.startTime,
+            endTime: fs.endTime,
+            availability: 'available',
+          });
+        }
+      }
+    } else {
+      // Fallback if no template slots were created
+      for (let m = start; m < end; m += COURT_SLOT_GRID_STEP_MINUTES) {
+        const s = minutesToTimeString(m);
+        const e = minutesToTimeString(m + COURT_SLOT_GRID_STEP_MINUTES);
+        const hit = rows.find(
+          (r) =>
+            toMinutes(r.startTime) < toMinutes(e) &&
+            toMinutes(r.endTime) > toMinutes(s),
+        );
+        if (hit) {
+          slots.push({
+            startTime: s,
+            endTime: e,
+            availability: 'booked',
+            bookingId: hit.bookingId,
+            itemId: hit.id,
+            status: hit.itemStatus,
+          });
+        } else {
+          slots.push({ startTime: s, endTime: e, availability: 'available' });
+        }
       }
     }
-    return { date, kind: 'padel_court' as const, courtId: params.courtId, slots };
+    return { date, kind: params.kind, courtId: params.courtId, slots };
   }
 
   async getCourtSlotGrid(
     tenantId: string,
-    params: { kind: CourtKind; courtId: string; date: string; startTime?: string; endTime?: string; availableOnly?: boolean },
+    params: {
+      kind: CourtKind;
+      courtId: string;
+      date: string;
+      startTime?: string;
+      endTime?: string;
+      availableOnly?: boolean;
+    },
   ) {
     const data = await this.getCourtSlots(tenantId, params);
-    const segments = data.slots.map((s: any) =>
+    let segments = data.slots.map((s: any) =>
       s.availability === 'booked'
-        ? { startTime: s.startTime, endTime: s.endTime, state: 'booked', bookingId: s.bookingId, itemId: s.itemId, status: s.status }
-        : { startTime: s.startTime, endTime: s.endTime, state: 'free' },
+        ? {
+            startTime: s.startTime,
+            endTime: s.endTime,
+            state: 'booked',
+            bookingId: s.bookingId,
+            itemId: s.itemId,
+            status: s.status,
+          }
+        : s.availability === 'blocked'
+          ? { startTime: s.startTime, endTime: s.endTime, state: 'blocked' }
+          : { startTime: s.startTime, endTime: s.endTime, state: 'free' },
     );
+
+    const now = new Date();
+    // Offset for local vs UTC difference logic if needed, but going with raw server time
+    const todayStr = formatDateOnly(now);
+    const currentMins = now.getHours() * 60 + now.getMinutes();
+
+    if (params.date < todayStr) {
+      segments = [];
+    } else if (params.date === todayStr) {
+      segments = segments.filter(
+        (s: any) => toMinutes(s.startTime) >= currentMins,
+      );
+    }
+
+    if (params.availableOnly) {
+      segments = segments.filter((s: any) => s.state === 'free');
+    } else {
+      // User specifically requested to not show booked slots as part of recent iteration,
+      // ensuring booked slots are purged across the board
+      segments = segments.filter((s: any) => s.state !== 'booked');
+    }
+
     return {
       date: data.date,
       kind: data.kind,
@@ -461,7 +683,7 @@ export class BookingsService {
       gridStartTime: params.startTime ?? '00:00',
       gridEndTime: params.endTime ?? '24:00',
       availableOnly: params.availableOnly || undefined,
-      segments: params.availableOnly ? segments.filter((s: any) => s.state === 'free') : segments,
+      segments,
     };
   }
 
@@ -469,14 +691,19 @@ export class BookingsService {
     tenantId: string,
     params: { kind: CourtKind; courtId: string; date: string },
   ): Promise<{ ok: true; upserted: number }> {
-    if (params.kind !== 'padel_court') throw new BadRequestException('Only padel_court is supported');
-    await this.assertPadelCourtExists(tenantId, params.courtId);
+    if (params.kind === 'padel_court') {
+      await this.assertPadelCourtExists(tenantId, params.courtId);
+    } else if (params.kind === 'turf_court') {
+      await this.assertTurfCourtExists(tenantId, params.courtId);
+    } else {
+      throw new BadRequestException('Unsupported court kind');
+    }
     const date = formatDateOnly(params.date);
     const values: Partial<CourtFacilitySlot>[] = [];
     for (let m = 0; m < 24 * 60; m += COURT_SLOT_GRID_STEP_MINUTES) {
       values.push({
         tenantId,
-        courtKind: 'padel_court',
+        courtKind: params.kind,
         courtId: params.courtId,
         slotDate: date,
         startTime: minutesToTimeString(m),
@@ -496,41 +723,74 @@ export class BookingsService {
 
   async patchFacilitySlot(
     tenantId: string,
-    params: { kind: CourtKind; courtId: string; date: string; startTime: string; status: 'available' | 'blocked' },
+    params: {
+      kind: CourtKind;
+      courtId: string;
+      date: string;
+      startTime: string;
+      status: 'available' | 'blocked';
+    },
   ) {
-    if (params.kind !== 'padel_court') throw new BadRequestException('Only padel_court is supported');
-    await this.assertPadelCourtExists(tenantId, params.courtId);
+    if (params.kind === 'padel_court') {
+      await this.assertPadelCourtExists(tenantId, params.courtId);
+    } else if (params.kind === 'turf_court') {
+      await this.assertTurfCourtExists(tenantId, params.courtId);
+    } else {
+      throw new BadRequestException('Unsupported court kind');
+    }
     await this.facilitySlotRepo.upsert(
       {
         tenantId,
-        courtKind: 'padel_court',
+        courtKind: params.kind,
         courtId: params.courtId,
         slotDate: formatDateOnly(params.date),
         startTime: params.startTime,
-        endTime: minutesToTimeString(toMinutes(params.startTime) + COURT_SLOT_GRID_STEP_MINUTES),
+        endTime: minutesToTimeString(
+          toMinutes(params.startTime) + COURT_SLOT_GRID_STEP_MINUTES,
+        ),
         status: params.status,
       },
-      { conflictPaths: ['tenantId', 'courtKind', 'courtId', 'slotDate', 'startTime'] },
+      {
+        conflictPaths: [
+          'tenantId',
+          'courtKind',
+          'courtId',
+          'slotDate',
+          'startTime',
+        ],
+      },
     );
     return { ok: true };
   }
 
   async setCourtSlotBlock(
     tenantId: string,
-    params: { kind: CourtKind; courtId: string; date: string; startTime: string; blocked: boolean },
+    params: {
+      kind: CourtKind;
+      courtId: string;
+      date: string;
+      startTime: string;
+      blocked: boolean;
+    },
   ) {
-    if (params.kind !== 'padel_court') throw new BadRequestException('Only padel_court is supported');
-    await this.assertPadelCourtExists(tenantId, params.courtId);
+    if (params.kind === 'padel_court') {
+      await this.assertPadelCourtExists(tenantId, params.courtId);
+    } else if (params.kind === 'turf_court') {
+      await this.assertTurfCourtExists(tenantId, params.courtId);
+    } else {
+      throw new BadRequestException('Unsupported court kind');
+    }
     const where = {
       tenantId,
-      courtKind: 'padel_court' as CourtKind,
+      courtKind: params.kind,
       courtId: params.courtId,
       blockDate: formatDateOnly(params.date),
       startTime: params.startTime,
     };
     if (params.blocked) {
       const existing = await this.slotBlockRepo.findOne({ where });
-      if (!existing) await this.slotBlockRepo.save(this.slotBlockRepo.create(where));
+      if (!existing)
+        await this.slotBlockRepo.save(this.slotBlockRepo.create(where));
     } else {
       await this.slotBlockRepo.delete(where);
     }
@@ -546,10 +806,19 @@ export class BookingsService {
   }) {
     const date = formatDateOnly(params.date);
     const courts = await this.padelRepo.find({
-      where: { businessLocationId: params.locationId, isActive: true, courtStatus: In(['active', 'draft']) as any },
+      where: {
+        businessLocationId: params.locationId,
+        isActive: true,
+        courtStatus: In(['active', 'draft']) as any,
+      },
       select: ['id', 'name', 'tenantId'],
     });
-    const facilities: Array<{ kind: CourtKind; courtId: string; name: string; slots: Array<{ startTime: string; endTime: string }> }> = [];
+    const facilities: Array<{
+      kind: CourtKind;
+      courtId: string;
+      name: string;
+      slots: Array<{ startTime: string; endTime: string }>;
+    }> = [];
     for (const court of courts) {
       const grid = await this.getCourtSlotGrid(court.tenantId, {
         kind: 'padel_court',
@@ -563,7 +832,10 @@ export class BookingsService {
         kind: 'padel_court',
         courtId: court.id,
         name: court.name,
-        slots: grid.segments.map((s: any) => ({ startTime: s.startTime, endTime: s.endTime })),
+        slots: grid.segments.map((s: any) => ({
+          startTime: s.startTime,
+          endTime: s.endTime,
+        })),
       });
     }
     const unionMap = new Map<string, { startTime: string; endTime: string }>();
@@ -575,7 +847,9 @@ export class BookingsService {
       locationId: params.locationId,
       courtType: 'padel_court' as const,
       facilities,
-      unionSlots: [...unionMap.values()].sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      unionSlots: [...unionMap.values()].sort((a, b) =>
+        a.startTime.localeCompare(b.startTime),
+      ),
     };
   }
 
@@ -586,12 +860,24 @@ export class BookingsService {
     endTime?: string;
   }) {
     const date = formatDateOnly(params.date);
-    const end = params.endTime ?? minutesToTimeString(toMinutes(params.startTime) + COURT_SLOT_GRID_STEP_MINUTES);
+    const end =
+      params.endTime ??
+      minutesToTimeString(
+        toMinutes(params.startTime) + COURT_SLOT_GRID_STEP_MINUTES,
+      );
     const courts = await this.padelRepo.find({
-      where: { businessLocationId: params.locationId, isActive: true, courtStatus: In(['active', 'draft']) as any },
+      where: {
+        businessLocationId: params.locationId,
+        isActive: true,
+        courtStatus: In(['active', 'draft']) as any,
+      },
       select: ['id', 'name', 'tenantId'],
     });
-    const facilities: Array<{ kind: CourtKind; courtId: string; name: string }> = [];
+    const facilities: Array<{
+      kind: CourtKind;
+      courtId: string;
+      name: string;
+    }> = [];
     for (const c of courts) {
       const slots = await this.getCourtSlots(c.tenantId, {
         kind: 'padel_court',
@@ -600,11 +886,24 @@ export class BookingsService {
         startTime: params.startTime,
         endTime: end,
       });
-      if (slots.slots.some((s: any) => s.startTime === params.startTime && s.endTime === end && s.availability === 'available')) {
+      if (
+        slots.slots.some(
+          (s: any) =>
+            s.startTime === params.startTime &&
+            s.endTime === end &&
+            s.availability === 'available',
+        )
+      ) {
         facilities.push({ kind: 'padel_court', courtId: c.id, name: c.name });
       }
     }
-    return { date, locationId: params.locationId, startTime: params.startTime, endTime: end, facilities };
+    return {
+      date,
+      locationId: params.locationId,
+      startTime: params.startTime,
+      endTime: end,
+      facilities,
+    };
   }
 
   private normalizePadelFacilityToCourtKind(raw: string): CourtKind {
@@ -613,16 +912,28 @@ export class BookingsService {
     throw new BadRequestException('facilitySelected must be padel_court');
   }
 
-  async placePadelBooking(dto: PlacePadelBookingDto): Promise<{ message: string; bookingId: string; placedAt: string }> {
+  async placePadelBooking(
+    dto: PlacePadelBookingDto,
+  ): Promise<{ message: string; bookingId: string; placedAt: string }> {
     const loc = await this.locationRepo.findOne({ where: { id: dto.venueId } });
     if (!loc) throw new NotFoundException(`Venue ${dto.venueId} not found`);
-    const business = await this.businessRepo.findOne({ where: { id: loc.businessId } });
-    if (!business) throw new BadRequestException('Venue has no business record');
+    const business = await this.businessRepo.findOne({
+      where: { id: loc.businessId },
+    });
+    if (!business)
+      throw new BadRequestException('Venue has no business record');
     const tenantId = business.tenantId;
-    const courtKind = this.normalizePadelFacilityToCourtKind(dto.facilitySelected);
-    const court = await this.assertPadelCourtExists(tenantId, dto.fieldSelected);
+    const courtKind = this.normalizePadelFacilityToCourtKind(
+      dto.facilitySelected,
+    );
+    const court = await this.assertPadelCourtExists(
+      tenantId,
+      dto.fieldSelected,
+    );
     if ((court.businessLocationId ?? '') !== dto.venueId) {
-      throw new BadRequestException('Selected court does not belong to this venue');
+      throw new BadRequestException(
+        'Selected court does not belong to this venue',
+      );
     }
 
     const booking = await this.create(tenantId, {
@@ -644,6 +955,10 @@ export class BookingsService {
       payment: { paymentStatus: 'pending', paymentMethod: 'cash' },
       bookingStatus: 'pending',
     });
-    return { message: 'Booking placed successfully', bookingId: booking.bookingId, placedAt: booking.createdAt };
+    return {
+      message: 'Booking placed successfully',
+      bookingId: booking.bookingId,
+      placedAt: booking.createdAt,
+    };
   }
 }
