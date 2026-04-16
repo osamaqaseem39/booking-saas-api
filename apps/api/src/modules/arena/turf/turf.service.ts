@@ -1,8 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusinessesService } from '../../businesses/businesses.service';
 import { TenantTimeSlotTemplate } from '../../bookings/entities/tenant-time-slot-template.entity';
+import { TenantTimeSlotTemplateLine } from '../../bookings/entities/tenant-time-slot-template-line.entity';
+import { CourtFacilitySlot } from '../../bookings/entities/court-facility-slot.entity';
 import { TurfCourt } from './entities/turf-court.entity';
 import type { TurfSportType } from './turf.types';
 
@@ -13,6 +19,10 @@ export class TurfService {
     private readonly turfRepo: Repository<TurfCourt>,
     @InjectRepository(TenantTimeSlotTemplate)
     private readonly timeSlotTemplateRepo: Repository<TenantTimeSlotTemplate>,
+    @InjectRepository(TenantTimeSlotTemplateLine)
+    private readonly timeSlotTemplateLineRepo: Repository<TenantTimeSlotTemplateLine>,
+    @InjectRepository(CourtFacilitySlot)
+    private readonly courtFacilitySlotRepo: Repository<CourtFacilitySlot>,
     private readonly businessesService: BusinessesService,
   ) {}
 
@@ -129,7 +139,9 @@ export class TurfService {
 
     const rawStatus = String(input.courtStatus ?? 'active').trim();
     const status =
-      rawStatus === 'active' || rawStatus === 'maintenance' ? rawStatus : 'active';
+      rawStatus === 'active' || rawStatus === 'maintenance'
+        ? rawStatus
+        : 'active';
 
     const rawCoveredType = String(input.coveredType ?? 'open').trim();
     const coveredType =
@@ -142,10 +154,14 @@ export class TurfService {
           : 'open';
 
     const pricing = (() => {
-      const base = typeof input.pricePerSlot === 'number' ? input.pricePerSlot : undefined;
+      const base =
+        typeof input.pricePerSlot === 'number' ? input.pricePerSlot : undefined;
       const peakPricing =
         input.peakPricing && typeof input.peakPricing === 'object'
-          ? (input.peakPricing as { weekdayEvening?: unknown; weekend?: unknown })
+          ? (input.peakPricing as {
+              weekdayEvening?: unknown;
+              weekend?: unknown;
+            })
           : undefined;
       if (base === undefined && !peakPricing) return undefined;
       return {
@@ -157,7 +173,9 @@ export class TurfService {
                   ? peakPricing.weekdayEvening
                   : undefined,
               weekendPrice:
-                typeof peakPricing?.weekend === 'number' ? peakPricing.weekend : undefined,
+                typeof peakPricing?.weekend === 'number'
+                  ? peakPricing.weekend
+                  : undefined,
             }
           : undefined,
         cricket: supportedSports.includes('cricket')
@@ -168,7 +186,9 @@ export class TurfService {
                   ? peakPricing.weekdayEvening
                   : undefined,
               weekendPrice:
-                typeof peakPricing?.weekend === 'number' ? peakPricing.weekend : undefined,
+                typeof peakPricing?.weekend === 'number'
+                  ? peakPricing.weekend
+                  : undefined,
             }
           : undefined,
       };
@@ -178,7 +198,9 @@ export class TurfService {
       futsal: supportedSports.includes('futsal')
         ? {
             format:
-              typeof input.futsalFormat === 'string' ? input.futsalFormat : undefined,
+              typeof input.futsalFormat === 'string'
+                ? input.futsalFormat
+                : undefined,
             goalPostAvailable:
               typeof input.futsalGoalPostsAvailable === 'boolean'
                 ? input.futsalGoalPostsAvailable
@@ -196,7 +218,9 @@ export class TurfService {
       cricket: supportedSports.includes('cricket')
         ? {
             type:
-              typeof input.cricketFormat === 'string' ? input.cricketFormat : undefined,
+              typeof input.cricketFormat === 'string'
+                ? input.cricketFormat
+                : undefined,
             stumpsAvailable:
               typeof input.cricketStumpsAvailable === 'boolean'
                 ? input.cricketStumpsAvailable
@@ -226,16 +250,56 @@ export class TurfService {
       sportConfig,
       pricing,
       slotDuration:
-        typeof input.slotDurationMinutes === 'number' ? input.slotDurationMinutes : 60,
+        typeof input.slotDurationMinutes === 'number'
+          ? input.slotDurationMinutes
+          : 60,
       bufferTime:
         typeof input.bufferBetweenSlotsMinutes === 'number'
           ? input.bufferBetweenSlotsMinutes
           : 0,
       timeSlotTemplateId:
-        (await this.resolveTimeSlotTemplateId(tenantId, input.timeSlotTemplateId)) ??
-        null,
+        (await this.resolveTimeSlotTemplateId(
+          tenantId,
+          input.timeSlotTemplateId,
+        )) ?? null,
     });
-    return this.turfRepo.save(row);
+
+    const saved = await this.turfRepo.save(row);
+
+    if (saved.timeSlotTemplateId) {
+      const lines = await this.timeSlotTemplateLineRepo.find({
+        where: { templateId: saved.timeSlotTemplateId, tenantId },
+      });
+      if (lines.length > 0) {
+        const values: Partial<CourtFacilitySlot>[] = [];
+        const d = new Date();
+        for (let i = 0; i < 30; i++) {
+          const slotDate = new Date(d);
+          slotDate.setUTCDate(slotDate.getUTCDate() + i);
+          const dateStr = slotDate.toISOString().slice(0, 10);
+          for (const line of lines) {
+            values.push({
+              tenantId,
+              courtKind: 'turf_court',
+              courtId: saved.id,
+              slotDate: dateStr,
+              startTime: line.startTime,
+              endTime: line.endTime,
+              status: line.status,
+            });
+          }
+        }
+        await this.courtFacilitySlotRepo
+          .createQueryBuilder()
+          .insert()
+          .into(CourtFacilitySlot)
+          .values(values as CourtFacilitySlot[])
+          .orIgnore()
+          .execute();
+      }
+    }
+
+    return saved;
   }
 
   async findOneByTenant(tenantId: string, id: string): Promise<TurfCourt> {
@@ -258,7 +322,10 @@ export class TurfService {
       row.name = input.name.trim();
     }
 
-    if (typeof input.businessLocationId === 'string' && input.businessLocationId.trim()) {
+    if (
+      typeof input.businessLocationId === 'string' &&
+      input.businessLocationId.trim()
+    ) {
       const businessLocationId = input.businessLocationId.trim();
       await this.businessesService.assertLocationBelongsToTenant(
         businessLocationId,
@@ -295,10 +362,15 @@ export class TurfService {
       }
     }
 
-    if (typeof input.surfaceType === 'string') row.surfaceType = input.surfaceType;
-    if (typeof input.turfQuality === 'string') row.turfQuality = input.turfQuality;
+    if (typeof input.surfaceType === 'string')
+      row.surfaceType = input.surfaceType;
+    if (typeof input.turfQuality === 'string')
+      row.turfQuality = input.turfQuality;
 
-    if (input.slotDurationMinutes !== undefined && typeof input.slotDurationMinutes === 'number') {
+    if (
+      input.slotDurationMinutes !== undefined &&
+      typeof input.slotDurationMinutes === 'number'
+    ) {
       row.slotDuration = input.slotDurationMinutes;
     }
     if (
