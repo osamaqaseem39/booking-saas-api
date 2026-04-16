@@ -318,6 +318,32 @@ export class BusinessesService {
       const t = dto.locationType.trim().toLowerCase();
       rows = rows.filter((r) => (r.locationType ?? '').toLowerCase() === t || (t === 'padel' && (r.facilityCounts.padel ?? 0) > 0));
     }
+
+    if (dto.bookingStatus === 'unbooked' && dto.date && dto.startTime && dto.endTime) {
+      const busyKeys = await this.loadBusyCourtKeysForWindow(
+        dto.date,
+        this.hhMmToMinutes(dto.startTime),
+        this.hhMmToMinutes(dto.endTime),
+      );
+      const locationIds = rows.map((r) => r.id);
+      const courtsByLocation = await this.loadCourtKeysByLocationId(locationIds);
+
+      rows = rows.filter((loc) => {
+        const courts = courtsByLocation.get(loc.id) ?? [];
+        if (courts.length === 0) return false;
+        // If searching specifically for a type, we should only consider those courts
+        const t = dto.locationType?.trim().toLowerCase();
+        let relevant = courts;
+        if (t === 'padel') {
+          relevant = courts.filter((c) => c.startsWith('padel_court:'));
+        } else if (t === 'turf' || t === 'futsal' || t === 'cricket') {
+          relevant = courts.filter((c) => c.startsWith('turf_court:'));
+        }
+        if (relevant.length === 0) return false;
+        return relevant.some((key) => !busyKeys.has(key));
+      });
+    }
+
     return rows.map((r) => this.toVenueMapMarker(r));
   }
 
@@ -463,10 +489,34 @@ export class BusinessesService {
         [r.name, r.addressLine, r.details, r.city, r.area, r.country, r.business?.businessName]
           .filter(Boolean)
           .join(' ')
-          .toLowerCase()
           .includes(q),
       );
     }
+
+    if (dto.date && dto.startTime && dto.endTime) {
+      const busyKeys = await this.loadBusyCourtKeysForWindow(
+        dto.date,
+        this.hhMmToMinutes(dto.startTime),
+        this.hhMmToMinutes(dto.endTime),
+      );
+      const locationIds = rows.map((r) => r.id);
+      const courtsByLocation = await this.loadCourtKeysByLocationId(locationIds);
+
+      rows = rows.filter((loc) => {
+        const courts = courtsByLocation.get(loc.id) ?? [];
+        if (courts.length === 0) return false;
+        const t = (dto.category ?? 'all').trim().toLowerCase();
+        let relevant = courts;
+        if (t === 'padel') {
+          relevant = courts.filter((c) => c.startsWith('padel_court:'));
+        } else if (t === 'turf' || t === 'futsal' || t === 'cricket') {
+          relevant = courts.filter((c) => c.startsWith('turf_court:'));
+        }
+        if (relevant.length === 0) return false;
+        return relevant.some((key) => !busyKeys.has(key));
+      });
+    }
+
     return rows.map((r) => this.toVenueMapMarker(r));
   }
 
@@ -518,6 +568,46 @@ export class BusinessesService {
       })),
       tenantId: row.business?.tenantId ?? null,
     };
+  }
+
+  private hhMmToMinutes(hhmm: string): number {
+    const [h, m] = hhmm.split(':').map(Number);
+    return (h || 0) * 60 + (m || 0);
+  }
+
+  private async loadBusyCourtKeysForWindow(date: string, reqStart: number, reqEnd: number): Promise<Set<string>> {
+    const items = await this.bookingItemRepository.find({
+      where: { bookingDate: date, itemStatus: In(['reserved', 'confirmed']) },
+    });
+    const busy = new Set<string>();
+    for (const it of items) {
+      const s = this.hhMmToMinutes(it.startTime);
+      const e = this.hhMmToMinutes(it.endTime);
+      // Overlap: max(s1, s2) < min(e1, e2)
+      if (Math.max(s, reqStart) < Math.min(e, reqEnd)) {
+        busy.add(`${it.courtKind}:${it.courtId}`);
+      }
+    }
+    return busy;
+  }
+
+  private async loadCourtKeysByLocationId(locationIds: string[]): Promise<Map<string, string[]>> {
+    const [padel, turf] = await Promise.all([
+      this.padelCourtRepository.find({ where: { businessLocationId: In(locationIds), isActive: true, courtStatus: 'active' } }),
+      this.turfCourtRepository.find({ where: { branchId: In(locationIds), status: 'active' } }),
+    ]);
+    const map = new Map<string, string[]>();
+    for (const c of padel) {
+      const list = map.get(c.businessLocationId) ?? [];
+      list.push(`padel_court:${c.id}`);
+      map.set(c.businessLocationId, list);
+    }
+    for (const c of turf) {
+      const list = map.get(c.branchId) ?? [];
+      list.push(`turf_court:${c.id}`);
+      map.set(c.branchId, list);
+    }
+    return map;
   }
 
   private filterLocationRowsByName<T extends { name?: string | null }>(rows: T[], nameFilter?: string | null): T[] {
