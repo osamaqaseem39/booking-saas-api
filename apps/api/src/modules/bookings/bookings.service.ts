@@ -38,7 +38,8 @@ function numFromDec(v: string): number {
   return Number.parseFloat(v);
 }
 
-function toMinutes(time: string): number {
+function toMinutes(time: any): number {
+  if (typeof time !== 'string' || !time.includes(':')) return 0;
   const [hRaw, mRaw] = time.split(':');
   return Number(hRaw || 0) * 60 + Number(mRaw || 0);
 }
@@ -897,6 +898,8 @@ export class BookingsService {
     courtType?: string;
   }) {
     const date = formatDateOnly(params.date);
+    const start = params.startTime ?? '00:00';
+    const end = params.endTime ?? '24:00';
     const kinds = this.normalizeKindForAvail(params.courtType);
 
     const padelBatch = kinds.includes('padel_court')
@@ -926,8 +929,8 @@ export class BookingsService {
         kind: 'padel_court',
         courtId: court.id,
         date,
-        startTime: params.startTime,
-        endTime: params.endTime,
+        startTime: start,
+        endTime: end,
         availableOnly: true,
       });
       facilities.push({
@@ -944,8 +947,8 @@ export class BookingsService {
         kind: 'turf_court',
         courtId: court.id,
         date,
-        startTime: params.startTime,
-        endTime: params.endTime,
+        startTime: start,
+        endTime: end,
         availableOnly: true,
       });
       facilities.push({
@@ -973,11 +976,17 @@ export class BookingsService {
 
   private resolveTurfPrice(turf: any, requestedType?: string): number {
     const s = (requestedType || '').toLowerCase();
-    if (s.includes('futsal')) return Number(turf.pricing?.futsal?.basePrice ?? 0);
-    if (s.includes('cricket')) return Number(turf.pricing?.cricket?.basePrice ?? 0);
-    const firstSport = turf.supportedSports?.[0];
-    if (firstSport) return Number(turf.pricing?.[firstSport]?.basePrice ?? 0);
-    return 0;
+    const pricing = turf.pricing || {};
+    let priceObj: any = null;
+
+    if (s.includes('futsal')) priceObj = pricing.futsal;
+    else if (s.includes('cricket')) priceObj = pricing.cricket;
+
+    if (!priceObj) {
+      const firstSport = turf.supportedSports?.[0];
+      if (firstSport) priceObj = pricing[firstSport];
+    }
+    return Number(priceObj?.basePrice ?? 0);
   }
 
   async getLocationFacilitiesAvailableForSlot(params: {
@@ -989,11 +998,10 @@ export class BookingsService {
   }) {
     const date = formatDateOnly(params.date);
     const nextDate = addDays(date, 1);
+    const start = params.startTime ?? '09:00';
     const end =
       params.endTime ??
-      minutesToTimeString(
-        toMinutes(params.startTime) + COURT_SLOT_GRID_STEP_MINUTES,
-      );
+      minutesToTimeString(toMinutes(start) + COURT_SLOT_GRID_STEP_MINUTES);
 
     const kinds = this.normalizeKindForAvail(params.courtType);
 
@@ -1027,7 +1035,7 @@ export class BookingsService {
             kind: c.kind,
             courtId: c.id,
             date: targetDate,
-            startTime: params.startTime,
+            startTime: start,
             endTime: end,
           });
           const isAvailable = slots.slots.some(
