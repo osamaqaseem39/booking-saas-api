@@ -217,18 +217,18 @@ export class BusinessesService {
         ])
       : [[], [], []];
 
-    const facilityCourtsByLocation = new Map<string, Array<{ facilityType: 'padel' | 'turf' | 'gaming'; id: string; name: string }>>();
+    const facilityCourtsByLocation = new Map<string, Array<{ facilityType: 'padel' | 'turf' | 'gaming'; id: string; name: string; price?: number }>>();
 
     for (const c of padelCourts) {
       const key = c.businessLocationId ?? '';
       const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({ facilityType: 'padel', id: c.id, name: c.name });
+      rows.push({ facilityType: 'padel', id: c.id, name: c.name, price: parseFloat(c.pricePerSlot ?? '0') });
       facilityCourtsByLocation.set(key, rows);
     }
     for (const c of turfCourts) {
       const key = c.branchId ?? '';
       const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({ facilityType: 'turf', id: c.id, name: c.name });
+      rows.push({ facilityType: 'turf', id: c.id, name: c.name, price: c.pricing?.defaultPrice ?? 0 });
       facilityCourtsByLocation.set(key, rows);
     }
     for (const c of gamingStations) {
@@ -274,6 +274,7 @@ export class BusinessesService {
           : null,
         facilityCounts: { padel: padelCount, turf: turfCount, gaming: gamingCount },
         facilityCourts,
+        price: facilityCourts.length > 0 ? Math.min(...facilityCourts.map(f => f.price || 0)) : 0,
       };
     });
     return this.filterLocationRowsByName(rows, nameFilter);
@@ -448,6 +449,7 @@ export class BusinessesService {
       longitude: row.longitude,
       logo: row.logo,
       bannerImage: row.bannerImage,
+      price: row.price ?? 0,
     };
   }
 

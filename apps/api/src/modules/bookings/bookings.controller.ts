@@ -267,6 +267,7 @@ export class BookingsController {
       date: query.date,
       startTime: query.startTime,
       endTime: query.endTime,
+      courtType: query.courtType,
     });
   }
 

@@ -21,6 +21,15 @@ export class LocationFacilitySlotPickQueryDto {
   })
   endTime?: string;
 
+  /**
+   * Limit to one facility kind. Accepts `padel`, `futsal`, `cricket`, or `turf`.
+   */
+  @IsOptional()
+  @Matches(/^(padel|padel_court|futsal|cricket|turf|turf_court)$/i, {
+    message: 'courtType must be padel, futsal, cricket or turf',
+  })
+  courtType?: string;
+
   /** Cache-buster (timestamp) */
   @IsOptional()
   _t?: string;

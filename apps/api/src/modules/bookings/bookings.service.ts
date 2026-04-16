@@ -973,51 +973,81 @@ export class BookingsService {
     date: string;
     startTime: string;
     endTime?: string;
+    courtType?: string;
   }) {
     const date = formatDateOnly(params.date);
+    const nextDate = addDays(date, 1);
     const end =
       params.endTime ??
       minutesToTimeString(
         toMinutes(params.startTime) + COURT_SLOT_GRID_STEP_MINUTES,
       );
-    const courts = await this.padelRepo.find({
-      where: {
-        businessLocationId: params.locationId,
-        isActive: true,
-        courtStatus: In(['active', 'draft']) as any,
-      },
-      select: ['id', 'name', 'tenantId'],
-    });
-    const facilities: Array<{
-      kind: CourtKind;
-      courtId: string;
-      name: string;
-    }> = [];
-    for (const c of courts) {
-      const slots = await this.getCourtSlots(c.tenantId, {
-        kind: 'padel_court',
-        courtId: c.id,
-        date,
-        startTime: params.startTime,
-        endTime: end,
-      });
-      if (
-        slots.slots.some(
-          (s: any) =>
-            s.startTime === params.startTime &&
-            s.endTime === end &&
-            s.availability === 'available',
-        )
-      ) {
-        facilities.push({ kind: 'padel_court', courtId: c.id, name: c.name });
-      }
-    }
+
+    const kinds = this.normalizeKindForAvail(params.courtType);
+
+    const padelBatch = kinds.includes('padel_court')
+      ? await this.padelRepo.find({
+          where: {
+            businessLocationId: params.locationId,
+            isActive: true,
+            courtStatus: In(['active', 'draft']) as any,
+          },
+          select: ['id', 'name', 'tenantId'],
+        })
+      : [];
+
+    const turfBatch = kinds.includes('turf_court')
+      ? await this.turfRepo.find({
+          where: { branchId: params.locationId, status: 'active' },
+          select: ['id', 'name', 'tenantId'],
+        })
+      : [];
+
+    const allCourts = [
+      ...padelBatch.map((c) => ({ ...c, kind: 'padel_court' as const })),
+      ...turfBatch.map((c) => ({ ...c, kind: 'turf_court' as const })),
+    ];
+
+    const getFacilitiesForDate = async (targetDate: string) => {
+      const results = await Promise.all(
+        allCourts.map(async (c) => {
+          const slots = await this.getCourtSlots(c.tenantId, {
+            kind: c.kind,
+            courtId: c.id,
+            date: targetDate,
+            startTime: params.startTime,
+            endTime: end,
+          });
+          const isAvailable = slots.slots.some(
+            (s: any) =>
+              s.startTime === params.startTime &&
+              s.endTime === end &&
+              s.availability === 'available',
+          );
+          return isAvailable
+            ? { kind: c.kind, courtId: c.id, name: c.name }
+            : null;
+        }),
+      );
+      return results.filter(
+        (f): f is { kind: CourtKind; courtId: string; name: string } =>
+          f !== null,
+      );
+    };
+
+    const [facilities, nextDayFacilities] = await Promise.all([
+      getFacilitiesForDate(date),
+      getFacilitiesForDate(nextDate),
+    ]);
+
     return {
       date,
+      nextDayDate: nextDate,
       locationId: params.locationId,
       startTime: params.startTime,
       endTime: end,
       facilities,
+      nextDayFacilities,
     };
   }
 
