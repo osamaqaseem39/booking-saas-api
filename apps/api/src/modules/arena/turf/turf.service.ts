@@ -153,86 +153,6 @@ export class TurfService {
           ? 'indoor'
           : 'open';
 
-    const pricing = (() => {
-      const base =
-        typeof input.pricePerSlot === 'number' ? input.pricePerSlot : undefined;
-      const peakPricing =
-        input.peakPricing && typeof input.peakPricing === 'object'
-          ? (input.peakPricing as {
-              weekdayEvening?: unknown;
-              weekend?: unknown;
-            })
-          : undefined;
-      if (base === undefined && !peakPricing) return undefined;
-      return {
-        futsal: supportedSports.includes('futsal')
-          ? {
-              basePrice: base,
-              peakPrice:
-                typeof peakPricing?.weekdayEvening === 'number'
-                  ? peakPricing.weekdayEvening
-                  : undefined,
-              weekendPrice:
-                typeof peakPricing?.weekend === 'number'
-                  ? peakPricing.weekend
-                  : undefined,
-            }
-          : undefined,
-        cricket: supportedSports.includes('cricket')
-          ? {
-              basePrice: base,
-              peakPrice:
-                typeof peakPricing?.weekdayEvening === 'number'
-                  ? peakPricing.weekdayEvening
-                  : undefined,
-              weekendPrice:
-                typeof peakPricing?.weekend === 'number'
-                  ? peakPricing.weekend
-                  : undefined,
-            }
-          : undefined,
-      };
-    })();
-
-    const sportConfig = {
-      futsal: supportedSports.includes('futsal')
-        ? {
-            format:
-              typeof input.futsalFormat === 'string'
-                ? input.futsalFormat
-                : undefined,
-            goalPostAvailable:
-              typeof input.futsalGoalPostsAvailable === 'boolean'
-                ? input.futsalGoalPostsAvailable
-                : undefined,
-            goalPostSize:
-              typeof input.futsalGoalPostSize === 'string'
-                ? input.futsalGoalPostSize
-                : undefined,
-            lineMarkings:
-              typeof input.futsalLineMarkings === 'string'
-                ? input.futsalLineMarkings
-                : undefined,
-          }
-        : undefined,
-      cricket: supportedSports.includes('cricket')
-        ? {
-            type:
-              typeof input.cricketFormat === 'string'
-                ? input.cricketFormat
-                : undefined,
-            stumpsAvailable:
-              typeof input.cricketStumpsAvailable === 'boolean'
-                ? input.cricketStumpsAvailable
-                : undefined,
-            bowlingMachine:
-              typeof input.cricketBowlingMachine === 'boolean'
-                ? input.cricketBowlingMachine
-                : undefined,
-          }
-        : undefined,
-    };
-
     const row = this.turfRepo.create({
       tenantId,
       branchId: businessLocationId,
@@ -247,8 +167,8 @@ export class TurfService {
       turfQuality:
         typeof input.turfQuality === 'string' ? input.turfQuality : undefined,
       supportedSports,
-      sportConfig,
-      pricing,
+      sportConfig: this.calculateSportConfig(supportedSports, input),
+      pricing: this.calculatePricing(supportedSports, input),
       slotDuration:
         typeof input.slotDurationMinutes === 'number'
           ? input.slotDurationMinutes
@@ -359,6 +279,34 @@ export class TurfService {
       row.timeSlotTemplateId = nextTemplateId;
     }
 
+    // Update sports types if provided (though UI typically prevents this for existing courts)
+    if (Array.isArray(input.supportedSports) && input.supportedSports.length > 0) {
+      row.supportedSports = input.supportedSports as TurfSportType[];
+    } else if (input.supportsCricket === true && !row.supportedSports.includes('cricket')) {
+      row.supportedSports = [...row.supportedSports, 'cricket'];
+    }
+
+    // Always recalculate config/pricing if hints are provided or explicitly requested
+    const hasFutsalHints =
+      input.futsalFormat !== undefined ||
+      input.futsalGoalPostsAvailable !== undefined ||
+      input.futsalGoalPostSize !== undefined ||
+      input.futsalLineMarkings !== undefined;
+    const hasCricketHints =
+      input.cricketFormat !== undefined ||
+      input.cricketStumpsAvailable !== undefined ||
+      input.cricketBowlingMachine !== undefined ||
+      input.cricketPracticeMode !== undefined;
+    const hasPricingHints =
+      input.pricePerSlot !== undefined || input.peakPricing !== undefined;
+
+    if (hasFutsalHints || hasCricketHints) {
+      row.sportConfig = this.calculateSportConfig(row.supportedSports, input);
+    }
+    if (hasPricingHints) {
+      row.pricing = this.calculatePricing(row.supportedSports, input);
+    }
+
     const saved = await this.turfRepo.save(row);
     if (input.timeSlotTemplateId !== undefined && saved.timeSlotTemplateId) {
       await this.syncSlotsFromTemplate(tenantId, saved);
@@ -410,5 +358,95 @@ export class TurfService {
       .values(values as CourtFacilitySlot[])
       .orIgnore()
       .execute();
+  }
+
+  private calculateSportConfig(
+    supportedSports: TurfSportType[],
+    input: Record<string, unknown>,
+  ) {
+    return {
+      futsal: supportedSports.includes('futsal')
+        ? {
+            format:
+              typeof input.futsalFormat === 'string'
+                ? input.futsalFormat
+                : undefined,
+            goalPostAvailable:
+              typeof input.futsalGoalPostsAvailable === 'boolean'
+                ? input.futsalGoalPostsAvailable
+                : undefined,
+            goalPostSize:
+              typeof input.futsalGoalPostSize === 'string'
+                ? input.futsalGoalPostSize
+                : undefined,
+            lineMarkings:
+              typeof input.futsalLineMarkings === 'string'
+                ? input.futsalLineMarkings
+                : undefined,
+          }
+        : undefined,
+      cricket: supportedSports.includes('cricket')
+        ? {
+            type:
+              typeof input.cricketFormat === 'string'
+                ? input.cricketFormat
+                : undefined,
+            stumpsAvailable:
+              typeof input.cricketStumpsAvailable === 'boolean'
+                ? input.cricketStumpsAvailable
+                : undefined,
+            bowlingMachine:
+              typeof input.cricketBowlingMachine === 'boolean'
+                ? input.cricketBowlingMachine
+                : undefined,
+          }
+        : undefined,
+    };
+  }
+
+  private calculatePricing(
+    supportedSports: TurfSportType[],
+    input: Record<string, unknown>,
+  ) {
+    const base =
+      typeof input.pricePerSlot === 'number' ? input.pricePerSlot : undefined;
+    const peakPricing =
+      input.peakPricing && typeof input.peakPricing === 'object'
+        ? (input.peakPricing as {
+            weekdayEvening?: unknown;
+            weekend?: unknown;
+          })
+        : undefined;
+
+    if (base === undefined && !peakPricing) return undefined;
+
+    return {
+      futsal: supportedSports.includes('futsal')
+        ? {
+            basePrice: base,
+            peakPrice:
+              typeof peakPricing?.weekdayEvening === 'number'
+                ? peakPricing.weekdayEvening
+                : undefined,
+            weekendPrice:
+              typeof peakPricing?.weekend === 'number'
+                ? peakPricing.weekend
+                : undefined,
+          }
+        : undefined,
+      cricket: supportedSports.includes('cricket')
+        ? {
+            basePrice: base,
+            peakPrice:
+              typeof peakPricing?.weekdayEvening === 'number'
+                ? peakPricing.weekdayEvening
+                : undefined,
+            weekendPrice:
+              typeof peakPricing?.weekend === 'number'
+                ? peakPricing.weekend
+                : undefined,
+          }
+        : undefined,
+    };
   }
 }
