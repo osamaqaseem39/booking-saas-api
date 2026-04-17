@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { IamService } from '../iam/iam.service';
 import { randomUUID } from 'crypto';
 
-interface InvoiceRecord {
+export interface InvoiceRecord {
   id: string;
   tenantId: string;
   bookingId: string;

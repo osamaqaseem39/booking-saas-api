@@ -28,7 +28,7 @@ import { LocationFacilitySlotsQueryDto } from './dto/location-facility-slots-que
 import { LocationFacilitySlotPickQueryDto } from './dto/location-facility-slot-pick-query.dto';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
-import { BookingsService } from './bookings.service';
+import { BookingsService, BookingApiRow } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { GenerateFacilitySlotsDto } from './dto/generate-facility-slots.dto';
@@ -91,7 +91,9 @@ export class BookingsController {
   }
 
   @Get()
-  list(@Req() req: Request, @CurrentTenant() tenant: TenantContext) {
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin')
+  list(@Req() req: Request, @CurrentTenant() tenant: TenantContext): Promise<BookingApiRow[]> {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');
     return this.bookingsService.list(userId, this.getTenantUuidOrNull(tenant) ?? undefined);

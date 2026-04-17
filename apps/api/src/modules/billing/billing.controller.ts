@@ -1,16 +1,20 @@
-import { Body, Controller, Get, Post, Req, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
 import { IssueInvoiceDto } from './dto/issue-invoice.dto';
-import { BillingService } from './billing.service';
+import { BillingService, InvoiceRecord } from './billing.service';
+import { Roles } from '../iam/authz/roles.decorator';
+import { RolesGuard } from '../iam/authz/roles.guard';
 
 @Controller('billing')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
   @Get('invoices')
-  listInvoices(@Req() req: Request, @CurrentTenant() tenant: TenantContext) {
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin')
+  listInvoices(@Req() req: Request, @CurrentTenant() tenant: TenantContext): Promise<InvoiceRecord[]> {
     const userId = (req as any).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');
     return this.billingService.list(userId, tenant?.tenantId?.trim() || undefined);
@@ -20,7 +24,7 @@ export class BillingController {
   issueInvoice(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: IssueInvoiceDto,
-  ) {
+  ): InvoiceRecord {
     return this.billingService.issue(
       tenant.tenantId,
       dto.bookingId,
