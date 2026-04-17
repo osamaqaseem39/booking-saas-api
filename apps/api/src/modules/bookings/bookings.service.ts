@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -132,6 +133,8 @@ export class BookingsService {
     private readonly slotTemplateLineRepo: Repository<TenantTimeSlotTemplateLine>,
     private readonly iamService: IamService,
   ) {}
+
+  private readonly logger = new Logger(BookingsService.name);
 
   async resolveTenantIdByCourt(
     kind: CourtKind,
@@ -498,10 +501,17 @@ export class BookingsService {
     const booking = this.bookingRepo.create(bookingPayload);
 
     const saved = await this.bookingRepo.save(booking);
+
     const full = await this.bookingRepo.findOneOrFail({
       where: { id: saved.id },
       relations: ['items', 'user'],
     });
+
+    // Block the slots in the facility slots table
+    if (full.bookingStatus === 'confirmed') {
+      await this.blockFacilitySlots(full);
+    }
+
     const { locationsMap, courtToLocationMap } =
       await this.resolveLocationMapping(full);
     return this.toApi(full, locationsMap, courtToLocationMap);
@@ -545,10 +555,20 @@ export class BookingsService {
         item.itemStatus = row.status;
       }
     }
-    await this.bookingRepo.save(booking);
+    const saved = await this.bookingRepo.save(booking);
+
+    const full = await this.bookingRepo.findOneOrFail({
+      where: { id: saved.id },
+      relations: ['items', 'user'],
+    });
+
+    if (full.bookingStatus === 'confirmed') {
+      await this.blockFacilitySlots(full);
+    }
+
     const { locationsMap, courtToLocationMap } =
-      await this.resolveLocationMapping(booking);
-    return this.toApi(booking, locationsMap, courtToLocationMap);
+      await this.resolveLocationMapping(full);
+    return this.toApi(full, locationsMap, courtToLocationMap);
   }
 
   async editBookingFacilitySlots(
@@ -1287,5 +1307,55 @@ export class BookingsService {
       bookingId: booking.bookingId,
       placedAt: booking.createdAt,
     };
+  }
+
+  private async blockFacilitySlots(booking: Booking): Promise<void> {
+    if (!booking.items?.length) return;
+    for (const item of booking.items) {
+      if (item.itemStatus !== 'confirmed' && item.itemStatus !== 'reserved')
+        continue;
+
+      // Update the status to 'booked' in court_facility_slots
+      // We search for a slot that matches the starting time.
+      // If the booking spans multiple slots, we'd need to find all of them.
+      // Assuming 1:1 for now as per the current grid logic, but let's be safe.
+      
+      const startMinutes = toMinutes(item.startTime, false);
+      const endMinutes = toMinutes(item.endTime, true);
+      
+      for (let m = startMinutes; m < endMinutes; m += COURT_SLOT_GRID_STEP_MINUTES) {
+        const timeStr = minutesToTimeString(m);
+        await this.facilitySlotRepo.update(
+          {
+            tenantId: booking.tenantId,
+            courtKind: item.courtKind,
+            courtId: item.courtId,
+            slotDate: booking.bookingDate,
+            startTime: timeStr,
+          },
+          { status: 'booked' },
+        );
+      }
+    }
+  }
+
+  async completePastBookings() {
+    const now = new Date();
+    
+    // Find confirmed bookings where all items have ended
+    const pastBookings = await this.bookingRepo
+      .createQueryBuilder('b')
+      .innerJoin('b.items', 'i')
+      .where("b.bookingStatus = 'confirmed'")
+      .groupBy('b.id')
+      .having('MAX(i.endDatetime) < :now', { now: now.toISOString() })
+      .select('b.id', 'id')
+      .getRawMany();
+
+    if (pastBookings.length === 0) return;
+
+    const ids = pastBookings.map((b) => b.id);
+    await this.bookingRepo.update({ id: In(ids) }, { bookingStatus: 'completed' });
+    this.logger.log(`Marked ${ids.length} confirmed bookings as completed.`);
   }
 }

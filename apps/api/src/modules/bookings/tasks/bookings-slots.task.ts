@@ -120,4 +120,18 @@ export class BookingsSlotsTask {
 
     this.logger.log('Daily slot maintenance task completed.');
   }
+
+  /**
+   * Run every 15 minutes to:
+   * Mark confirmed bookings as completed if their slot time has ended.
+   */
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async handleBookingCompletion() {
+    this.logger.log('Starting booking completion task...');
+    try {
+      await this.bookingsService.completePastBookings();
+    } catch (err) {
+      this.logger.error('Failed to complete past bookings', err);
+    }
+  }
 }
