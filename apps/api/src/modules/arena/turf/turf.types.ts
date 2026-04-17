@@ -19,6 +19,21 @@ export type TurfSportConfig = {
     stumpsAvailable?: boolean;
     bowlingMachine?: boolean;
   };
+  common?: {
+    imageUrls?: string[];
+    arenaLabel?: string;
+    ceilingHeightUnit?: string;
+    sideNetting?: boolean;
+    netHeight?: string;
+    boundaryType?: string;
+    ventilation?: string[];
+    lighting?: string;
+    shockAbsorptionLayer?: boolean;
+    discountMembership?: any;
+    amenities?: any;
+    rules?: any;
+    allowParallelBooking?: boolean;
+  };
 };
 
 export type TurfPricingConfig = {

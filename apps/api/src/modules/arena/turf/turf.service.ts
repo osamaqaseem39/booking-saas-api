@@ -158,33 +158,17 @@ export class TurfService {
       branchId: businessLocationId,
       name,
       status,
-      imageUrls: Array.isArray(input.imageUrls) ? input.imageUrls : [],
-      arenaLabel: typeof input.arenaLabel === 'string' ? input.arenaLabel : undefined,
       length: this.parseNum(input.lengthM),
       width: this.parseNum(input.widthM),
       ceilingHeight: this.parseNum(input.ceilingHeightValue),
-      ceilingHeightUnit:
-        typeof input.ceilingHeightUnit === 'string'
-          ? input.ceilingHeightUnit
-          : 'm',
       coveredType,
-      sideNetting: input.sideNetting === true,
-      netHeight: typeof input.netHeight === 'string' ? input.netHeight : undefined,
-      boundaryType:
-        typeof input.boundaryType === 'string' ? input.boundaryType : undefined,
-      ventilation: Array.isArray(input.ventilation) ? input.ventilation : [],
-      lighting: typeof input.lighting === 'string' ? input.lighting : undefined,
       surfaceType:
         typeof input.surfaceType === 'string' ? input.surfaceType : undefined,
       turfQuality:
         typeof input.turfQuality === 'string' ? input.turfQuality : undefined,
-      shockAbsorptionLayer: input.shockAbsorptionLayer === true,
       supportedSports,
       sportConfig: this.calculateSportConfig(supportedSports, input),
       pricing: this.calculatePricing(supportedSports, input),
-      discountMembership: input.discountMembership ?? undefined,
-      amenities: input.amenities ?? undefined,
-      rules: input.rules ?? undefined,
       slotDuration:
         typeof input.slotDurationMinutes === 'number'
           ? input.slotDurationMinutes
@@ -193,7 +177,6 @@ export class TurfService {
         typeof input.bufferBetweenSlotsMinutes === 'number'
           ? input.bufferBetweenSlotsMinutes
           : 0,
-      allowParallelBooking: input.allowParallelBooking === true,
       timeSlotTemplateId:
         (await this.resolveTimeSlotTemplateId(
           tenantId,
@@ -275,29 +258,6 @@ export class TurfService {
     if (typeof input.turfQuality === 'string')
       row.turfQuality = input.turfQuality;
 
-    if (Array.isArray(input.imageUrls)) row.imageUrls = input.imageUrls;
-    if (input.arenaLabel !== undefined)
-      row.arenaLabel = typeof input.arenaLabel === 'string' ? input.arenaLabel : undefined;
-    if (input.ceilingHeightUnit !== undefined)
-      row.ceilingHeightUnit = typeof input.ceilingHeightUnit === 'string' ? input.ceilingHeightUnit : 'm';
-    if (input.sideNetting !== undefined)
-      row.sideNetting = input.sideNetting === true;
-    if (input.netHeight !== undefined)
-      row.netHeight = typeof input.netHeight === 'string' ? input.netHeight : undefined;
-    if (input.boundaryType !== undefined)
-      row.boundaryType = typeof input.boundaryType === 'string' ? input.boundaryType : undefined;
-    if (Array.isArray(input.ventilation)) row.ventilation = input.ventilation as string[];
-    if (input.lighting !== undefined)
-      row.lighting = typeof input.lighting === 'string' ? input.lighting : undefined;
-    if (input.shockAbsorptionLayer !== undefined)
-      row.shockAbsorptionLayer = input.shockAbsorptionLayer === true;
-    if (input.discountMembership !== undefined)
-      row.discountMembership = input.discountMembership;
-    if (input.amenities !== undefined) row.amenities = input.amenities;
-    if (input.rules !== undefined) row.rules = input.rules;
-    if (input.allowParallelBooking !== undefined)
-      row.allowParallelBooking = input.allowParallelBooking === true;
-
     if (
       input.slotDurationMinutes !== undefined &&
       typeof input.slotDurationMinutes === 'number'
@@ -340,11 +300,32 @@ export class TurfService {
     const hasPricingHints =
       input.pricePerSlot !== undefined || input.peakPricing !== undefined;
 
-    if (hasFutsalHints || hasCricketHints) {
-      row.sportConfig = this.calculateSportConfig(row.supportedSports, input);
+    const hasCommonHints =
+      input.imageUrls !== undefined ||
+      input.arenaLabel !== undefined ||
+      input.ceilingHeightUnit !== undefined ||
+      input.sideNetting !== undefined ||
+      input.netHeight !== undefined ||
+      input.boundaryType !== undefined ||
+      input.ventilation !== undefined ||
+      input.lighting !== undefined ||
+      input.shockAbsorptionLayer !== undefined ||
+      input.discountMembership !== undefined ||
+      input.amenities !== undefined ||
+      input.rules !== undefined ||
+      input.allowParallelBooking !== undefined;
+
+    if (hasFutsalHints || hasCricketHints || hasCommonHints) {
+      row.sportConfig = this.calculateSportConfig(row.supportedSports, {
+        ...(row.sportConfig as any),
+        ...input,
+      });
     }
     if (hasPricingHints) {
-      row.pricing = this.calculatePricing(row.supportedSports, input);
+      row.pricing = this.calculatePricing(row.supportedSports, {
+        ...(row.pricing as any),
+        ...input,
+      });
     }
 
     const saved = await this.turfRepo.save(row);
@@ -441,6 +422,58 @@ export class TurfService {
                 : undefined,
           }
         : undefined,
+      common: {
+        imageUrls: Array.isArray(input.imageUrls)
+          ? (input.imageUrls as string[])
+          : (input as any).common?.imageUrls,
+        arenaLabel:
+          typeof input.arenaLabel === 'string'
+            ? input.arenaLabel
+            : (input as any).common?.arenaLabel,
+        ceilingHeightUnit:
+          typeof input.ceilingHeightUnit === 'string'
+            ? input.ceilingHeightUnit
+            : (input as any).common?.ceilingHeightUnit,
+        sideNetting:
+          typeof input.sideNetting === 'boolean'
+            ? input.sideNetting
+            : (input as any).common?.sideNetting,
+        netHeight:
+          typeof input.netHeight === 'string'
+            ? input.netHeight
+            : (input as any).common?.netHeight,
+        boundaryType:
+          typeof input.boundaryType === 'string'
+            ? input.boundaryType
+            : (input as any).common?.boundaryType,
+        ventilation: Array.isArray(input.ventilation)
+          ? (input.ventilation as string[])
+          : (input as any).common?.ventilation,
+        lighting:
+          typeof input.lighting === 'string'
+            ? input.lighting
+            : (input as any).common?.lighting,
+        shockAbsorptionLayer:
+          typeof input.shockAbsorptionLayer === 'boolean'
+            ? input.shockAbsorptionLayer
+            : (input as any).common?.shockAbsorptionLayer,
+        discountMembership:
+          input.discountMembership !== undefined
+            ? input.discountMembership
+            : (input as any).common?.discountMembership,
+        amenities:
+          input.amenities !== undefined
+            ? input.amenities
+            : (input as any).common?.amenities,
+        rules:
+          input.rules !== undefined
+            ? input.rules
+            : (input as any).common?.rules,
+        allowParallelBooking:
+          typeof input.allowParallelBooking === 'boolean'
+            ? input.allowParallelBooking
+            : (input as any).common?.allowParallelBooking,
+      },
     };
   }
 
