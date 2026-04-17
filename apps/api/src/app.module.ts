@@ -12,8 +12,10 @@ import { BookingsModule } from './modules/bookings/bookings.module';
 import { FacilityCatalogModule } from './modules/facility-catalog/facility-catalog.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { IamModule } from './modules/iam/iam.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 import { TenancyModule } from './tenancy/tenancy.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
   const poolMax = resolvePoolMax();
@@ -140,6 +142,7 @@ function sslModeFromEnv() {
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     JwtModule.register({
       secret:
         process.env.JWT_SECRET ??
@@ -160,6 +163,7 @@ function sslModeFromEnv() {
     BookingsModule,
     BillingModule,
     BusinessesModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}

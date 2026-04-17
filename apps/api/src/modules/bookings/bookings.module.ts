@@ -19,6 +19,8 @@ import { PublicBookingsController } from './public/public-bookings.controller';
 import { PreviousBookingsController } from './user/previous-bookings.controller';
 import { IamModule } from '../iam/iam.module';
 
+import { BookingsSlotsTask } from './tasks/bookings-slots.task';
+
 @Module({
   imports: [
     IamModule,
@@ -42,7 +44,7 @@ import { IamModule } from '../iam/iam.module';
     PublicBookingsController,
     PreviousBookingsController,
   ],
-  providers: [BookingsService, TimeSlotTemplatesService],
+  providers: [BookingsService, TimeSlotTemplatesService, BookingsSlotsTask],
   exports: [BookingsService, TimeSlotTemplatesService],
 })
 export class BookingsModule {}

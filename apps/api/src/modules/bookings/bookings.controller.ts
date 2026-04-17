@@ -201,6 +201,7 @@ export class BookingsController {
       date: query.date,
       startTime: query.startTime,
       endTime: query.endTime,
+      availableOnly: true,
     });
   }
 

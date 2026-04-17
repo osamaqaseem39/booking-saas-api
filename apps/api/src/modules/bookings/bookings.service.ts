@@ -587,6 +587,7 @@ export class BookingsService {
       date: string;
       startTime?: string;
       endTime?: string;
+      availableOnly?: boolean;
     },
   ) {
     if (params.kind === 'padel_court') {
@@ -636,7 +637,7 @@ export class BookingsService {
         itemStatus: BookingItemStatus;
       }>();
 
-    const slots: Array<any> = [];
+    let slots: Array<any> = [];
     if (facilitySlots.length > 0) {
       for (const fs of facilitySlots) {
         if (toMinutes(fs.startTime) >= end || toMinutes(fs.endTime) <= start)
@@ -693,6 +694,11 @@ export class BookingsService {
         }
       }
     }
+
+    if (params.availableOnly) {
+      slots = slots.filter((s) => s.availability === 'available');
+    }
+
     return { date, kind: params.kind, courtId: params.courtId, slots };
   }
 
@@ -707,7 +713,10 @@ export class BookingsService {
       availableOnly?: boolean;
     },
   ) {
-    const data = await this.getCourtSlots(tenantId, params);
+    const data = await this.getCourtSlots(tenantId, {
+      ...params,
+      availableOnly: false,
+    });
     let segments = data.slots.map((s: any) =>
       s.availability === 'booked'
         ? {
