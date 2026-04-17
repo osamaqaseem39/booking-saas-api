@@ -38,8 +38,9 @@ function numFromDec(v: string): number {
   return Number.parseFloat(v);
 }
 
-function toMinutes(time: any): number {
+function toMinutes(time: any, isEndTime = false): number {
   if (typeof time !== 'string' || !time.includes(':')) return 0;
+  if (time === '24:00' || (time === '00:00' && isEndTime)) return 24 * 60;
   const [hRaw, mRaw] = time.split(':');
   return Number(hRaw || 0) * 60 + Number(mRaw || 0);
 }
@@ -65,6 +66,7 @@ function addDays(date: string, days: number): string {
 export type BookingApiRow = {
   bookingId: string;
   arenaId: string;
+  arenaName?: string;
   userId: string;
   sportType: BookingSportType;
   bookingDate: string;
@@ -175,11 +177,54 @@ export class BookingsService {
     return business?.tenantId ?? null;
   }
 
-  private toApi(booking: Booking): BookingApiRow {
+  private async resolveLocationMapping(booking: Booking): Promise<{
+    locationsMap: Record<string, string>;
+    courtToLocationMap: Record<string, string>;
+  }> {
+    const locationsMap: Record<string, string> = {};
+    const courtToLocationMap: Record<string, string> = {};
+    const firstItem = booking.items?.[0];
+
+    if (firstItem) {
+      if (firstItem.courtKind === 'padel_court') {
+        const court = await this.padelRepo.findOne({
+          where: { id: firstItem.courtId },
+          relations: ['businessLocation'],
+        });
+        if (court?.businessLocation) {
+          courtToLocationMap[court.id] = court.businessLocation.id;
+          locationsMap[court.businessLocation.id] = court.businessLocation.name;
+        }
+      } else if (firstItem.courtKind === 'turf_court') {
+        const court = await this.turfRepo.findOne({
+          where: { id: firstItem.courtId },
+        });
+        if (court?.branchId) {
+          courtToLocationMap[court.id] = court.branchId;
+          const loc = await this.locationRepo.findOne({
+            where: { id: court.branchId },
+          });
+          if (loc) locationsMap[loc.id] = loc.name;
+        }
+      }
+    }
+    return { locationsMap, courtToLocationMap };
+  }
+ 
+  private toApi(
+    booking: Booking,
+    locationsMap: Record<string, string> = {},
+    courtToLocationMap: Record<string, string> = {},
+  ): BookingApiRow {
     const first = booking.items?.[0];
+    const courtId = first?.courtId;
+    const locationId = courtId ? courtToLocationMap[courtId] : undefined;
+    const arenaId = locationId || booking.tenantId;
+
     return {
       bookingId: booking.id,
-      arenaId: booking.tenantId,
+      arenaId,
+      arenaName: locationId ? locationsMap[locationId] : undefined,
       userId: booking.userId,
       sportType: booking.sportType,
       bookingDate: formatDateOnly(booking.bookingDate),
@@ -220,7 +265,39 @@ export class BookingsService {
       relations: ['items'],
       order: { createdAt: 'DESC' },
     });
-    return rows.map((b) => this.toApi(b));
+
+    // To improve performance, we fetch location mapping once.
+    const business = await this.businessRepo.findOne({
+      where: { tenantId },
+    });
+    const locationsMap: Record<string, string> = {};
+    if (business) {
+      const locations = await this.locationRepo.find({
+        where: { businessId: business.id },
+      });
+      for (const loc of locations) {
+        locationsMap[loc.id] = loc.name;
+      }
+    }
+
+    // Map courts to locations
+    const courtToLocationMap: Record<string, string> = {};
+    const padels = await this.padelRepo.find({
+      where: { tenantId },
+      select: ['id', 'businessLocationId'],
+    });
+    for (const p of padels) {
+      if (p.businessLocationId) courtToLocationMap[p.id] = p.businessLocationId;
+    }
+    const turfs = await this.turfRepo.find({
+      where: { tenantId },
+      select: ['id', 'branchId'],
+    });
+    for (const t of turfs) {
+      if (t.branchId) courtToLocationMap[t.id] = t.branchId;
+    }
+
+    return rows.map((b) => this.toApi(b, locationsMap, courtToLocationMap));
   }
 
   async listByUserForProfile(userId: string): Promise<BookingApiRow[]> {
@@ -229,6 +306,8 @@ export class BookingsService {
       relations: ['items'],
       order: { createdAt: 'DESC' },
     });
+    // For profile, we might not have tenantId easily for batching locs,
+    // so we'll just return with whatever we have or omit loc names here.
     return rows.map((b) => this.toApi(b));
   }
 
@@ -238,7 +317,11 @@ export class BookingsService {
       relations: ['items'],
     });
     if (!row) throw new NotFoundException(`Booking ${bookingId} not found`);
-    return this.toApi(row);
+
+    const { locationsMap, courtToLocationMap } =
+      await this.resolveLocationMapping(row);
+
+    return this.toApi(row, locationsMap, courtToLocationMap);
   }
 
   private async assertPadelCourtExists(
@@ -394,7 +477,9 @@ export class BookingsService {
       where: { id: saved.id },
       relations: ['items'],
     });
-    return this.toApi(full);
+    const { locationsMap, courtToLocationMap } =
+      await this.resolveLocationMapping(full);
+    return this.toApi(full, locationsMap, courtToLocationMap);
   }
 
   async update(
@@ -436,7 +521,9 @@ export class BookingsService {
       }
     }
     await this.bookingRepo.save(booking);
-    return this.toApi(booking);
+    const { locationsMap, courtToLocationMap } =
+      await this.resolveLocationMapping(booking);
+    return this.toApi(booking, locationsMap, courtToLocationMap);
   }
 
   async editBookingFacilitySlots(
@@ -510,7 +597,7 @@ export class BookingsService {
       .andWhere("b.bookingStatus = 'confirmed'")
       .andWhere("i.itemStatus = 'confirmed'")
       .andWhere('i.courtKind = :courtKind', { courtKind: courtKindFilter })
-      .andWhere('i.startTime < :end', { end: params.endTime })
+      .andWhere('i.startTime < :end', { end: params.endTime === '00:00' ? '24:00' : params.endTime })
       .andWhere('i.endTime > :start', { start: params.startTime })
       .select([
         'i.courtId AS courtId',
@@ -547,8 +634,8 @@ export class BookingsService {
     const blockedIds = new Set<string>();
     for (const fs of blocked) {
       if (
-        toMinutes(fs.startTime) < toMinutes(params.endTime) &&
-        toMinutes(fs.endTime) > toMinutes(params.startTime)
+        toMinutes(fs.startTime, false) < toMinutes(params.endTime, true) &&
+        toMinutes(fs.endTime, true) > toMinutes(params.startTime, false)
       ) {
         blockedIds.add(fs.courtId);
       }
@@ -598,8 +685,8 @@ export class BookingsService {
       throw new BadRequestException('Unsupported court kind');
     }
     const date = formatDateOnly(params.date);
-    const start = toMinutes(params.startTime ?? '00:00');
-    const end = toMinutes(params.endTime ?? '24:00');
+    const start = toMinutes(params.startTime ?? '00:00', false);
+    const end = toMinutes(params.endTime ?? '24:00', true);
 
     // Instead of completely generating grid steps, we will read the real slots from court_facility_slots
     // if they exist for this court and date, falling back to the 60 min loop if nothing exists.
@@ -640,12 +727,12 @@ export class BookingsService {
     let slots: Array<any> = [];
     if (facilitySlots.length > 0) {
       for (const fs of facilitySlots) {
-        if (toMinutes(fs.startTime) >= end || toMinutes(fs.endTime) <= start)
+        if (toMinutes(fs.startTime, false) >= end || toMinutes(fs.endTime, true) <= start)
           continue;
         const hit = rows.find(
           (r) =>
-            toMinutes(r.startTime) < toMinutes(fs.endTime) &&
-            toMinutes(r.endTime) > toMinutes(fs.startTime),
+            toMinutes(r.startTime, false) < toMinutes(fs.endTime, true) &&
+            toMinutes(r.endTime, true) > toMinutes(fs.startTime, false),
         );
         if (hit) {
           slots.push({
@@ -677,8 +764,8 @@ export class BookingsService {
         const e = minutesToTimeString(m + COURT_SLOT_GRID_STEP_MINUTES);
         const hit = rows.find(
           (r) =>
-            toMinutes(r.startTime) < toMinutes(e) &&
-            toMinutes(r.endTime) > toMinutes(s),
+            toMinutes(r.startTime, false) < toMinutes(e, true) &&
+            toMinutes(r.endTime, true) > toMinutes(s, false),
         );
         if (hit) {
           slots.push({
@@ -1010,7 +1097,7 @@ export class BookingsService {
     const start = params.startTime ?? '09:00';
     const end =
       params.endTime ??
-      minutesToTimeString(toMinutes(start) + COURT_SLOT_GRID_STEP_MINUTES);
+      minutesToTimeString(toMinutes(start, false) + COURT_SLOT_GRID_STEP_MINUTES);
 
     const kinds = this.normalizeKindForAvail(params.courtType);
 

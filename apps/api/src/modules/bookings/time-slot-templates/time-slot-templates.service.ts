@@ -11,8 +11,8 @@ import { TenantTimeSlotTemplate } from '../entities/tenant-time-slot-template.en
 import { TenantTimeSlotTemplateLine } from '../entities/tenant-time-slot-template-line.entity';
 import { COURT_SLOT_GRID_STEP_MINUTES } from '../types/booking.types';
 
-function toMinutes(time: string): number {
-  if (time === '24:00') return 24 * 60;
+function toMinutes(time: string, isEndTime = false): number {
+  if (time === '24:00' || (time === '00:00' && isEndTime)) return 24 * 60;
   const [hRaw, mRaw] = time.split(':');
   const h = Number(hRaw || 0);
   const m = Number(mRaw || 0);
@@ -55,7 +55,7 @@ export class TimeSlotTemplatesService {
     for (const s of raw) {
       const t = String(s).trim();
       if (!t) continue;
-      const m = toMinutes(t);
+      const m = toMinutes(t, false);
       if (m < 0 || m >= 24 * 60) {
         throw new BadRequestException(`Invalid slot start time: ${t}`);
       }
@@ -106,8 +106,8 @@ export class TimeSlotTemplatesService {
             'Each slot line requires startTime and endTime',
           );
         }
-        const startMin = toMinutes(startTime);
-        const endMin = toMinutes(endTime);
+        const startMin = toMinutes(startTime, false);
+        const endMin = toMinutes(endTime, true);
         if (
           startMin < 0 ||
           startMin >= 24 * 60 ||
@@ -157,7 +157,7 @@ export class TimeSlotTemplatesService {
       return rows;
     }
     const starts = this.normalizeSlotStarts(dto.slotStarts ?? []);
-    const startMinutes = starts.map((s) => toMinutes(s));
+    const startMinutes = starts.map((s) => toMinutes(s, false));
     const diffs = startMinutes
       .slice(1)
       .map((m, idx) => m - startMinutes[idx])
@@ -165,7 +165,7 @@ export class TimeSlotTemplatesService {
     const inferredDuration =
       diffs.length > 0 ? Math.min(...diffs) : COURT_SLOT_GRID_STEP_MINUTES;
     return starts.map((startTime, idx) => {
-      const start = toMinutes(startTime);
+      const start = toMinutes(startTime, false);
       const nextStart = startMinutes[idx + 1];
       const end = nextStart ?? start + inferredDuration;
       if (end <= start || end > 24 * 60) {
