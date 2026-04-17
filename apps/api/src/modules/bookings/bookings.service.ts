@@ -70,6 +70,11 @@ export type BookingApiRow = {
   arenaId: string;
   arenaName?: string;
   userId: string;
+  user?: {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+  };
   sportType: BookingSportType;
   bookingDate: string;
   items: Array<{
@@ -229,6 +234,13 @@ export class BookingsService {
       arenaId,
       arenaName: locationId ? locationsMap[locationId] : undefined,
       userId: booking.userId,
+      user: booking.user
+        ? {
+            fullName: booking.user.fullName,
+            email: booking.user.email,
+            phone: booking.user.phone,
+          }
+        : undefined,
       sportType: booking.sportType,
       bookingDate: formatDateOnly(booking.bookingDate),
       items: (booking.items ?? []).map((it) => ({
@@ -276,7 +288,7 @@ export class BookingsService {
 
     const rows = await this.bookingRepo.find({
       where,
-      relations: ['items'],
+      relations: ['items', 'user'],
       order: { createdAt: 'DESC' },
     });
 
@@ -316,7 +328,7 @@ export class BookingsService {
   async listByUserForProfile(userId: string): Promise<BookingApiRow[]> {
     const rows = await this.bookingRepo.find({
       where: { userId },
-      relations: ['items'],
+      relations: ['items', 'user'],
       order: { createdAt: 'DESC' },
     });
     // For profile, we might not have tenantId easily for batching locs,
@@ -327,7 +339,7 @@ export class BookingsService {
   async getOne(tenantId: string, bookingId: string): Promise<BookingApiRow> {
     const row = await this.bookingRepo.findOne({
       where: { id: bookingId, tenantId },
-      relations: ['items'],
+      relations: ['items', 'user'],
     });
     if (!row) throw new NotFoundException(`Booking ${bookingId} not found`);
 
@@ -488,7 +500,7 @@ export class BookingsService {
     const saved = await this.bookingRepo.save(booking);
     const full = await this.bookingRepo.findOneOrFail({
       where: { id: saved.id },
-      relations: ['items'],
+      relations: ['items', 'user'],
     });
     const { locationsMap, courtToLocationMap } =
       await this.resolveLocationMapping(full);
@@ -502,7 +514,7 @@ export class BookingsService {
   ): Promise<BookingApiRow> {
     const booking = await this.bookingRepo.findOne({
       where: { id: bookingId, tenantId },
-      relations: ['items'],
+      relations: ['items', 'user'],
     });
     if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
 

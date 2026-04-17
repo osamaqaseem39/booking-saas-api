@@ -99,9 +99,12 @@ export class IamService implements OnModuleInit {
       sortOrder?: string;
     },
   ) {
-    const businessRoles: SystemRole[] = isPlatformOwner
-      ? ['platform-owner', 'business-admin', 'business-staff', 'customer-end-user']
-      : ['business-admin', 'business-staff'];
+    const businessRoles: SystemRole[] = [
+      'platform-owner',
+      'business-admin',
+      'business-staff',
+      'customer-end-user',
+    ];
     const businessRoleRows = await this.userRolesRepository.find({
       where: { roleCode: In(businessRoles) },
     });
