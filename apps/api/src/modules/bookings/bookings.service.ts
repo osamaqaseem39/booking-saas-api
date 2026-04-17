@@ -786,6 +786,33 @@ export class BookingsService {
       slots = slots.filter((s) => s.availability === 'available');
     }
 
+    // --- Filter out past slots (today and older) ---
+    const now = new Date();
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Karachi',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(now);
+    const y = parts.find((p) => p.type === 'year')?.value;
+    const m = parts.find((p) => p.type === 'month')?.value;
+    const d = parts.find((p) => p.type === 'day')?.value;
+    const hh = parts.find((p) => p.type === 'hour')?.value;
+    const mm = parts.find((p) => p.type === 'minute')?.value;
+
+    const todayStr = `${y}-${m}-${d}`;
+    const currentTimeStr = `${hh}:${mm}`;
+
+    if (date < todayStr) {
+      slots = [];
+    } else if (date === todayStr) {
+      slots = slots.filter((s) => s.startTime >= currentTimeStr);
+    }
+
     return { date, kind: params.kind, courtId: params.courtId, slots };
   }
 
@@ -819,14 +846,7 @@ export class BookingsService {
           : { startTime: s.startTime, endTime: s.endTime, state: 'free' },
     );
 
-    // NOTE: Past-slot filtering is intentionally handled on the client side,
-    // because the server runs in UTC and cannot know the client's local timezone.
-    // The dashboard filters out already-passed slots using browser local time.
-    // We only purge slots for dates that are strictly in the past (UTC date comparison).
-    const nowUtcDate = new Date().toISOString().slice(0, 10);
-    if (params.date < nowUtcDate) {
-      segments = [];
-    }
+    // segments is already filtered for past slots by getCourtSlots call above.
 
     if (params.availableOnly) {
       segments = segments.filter((s: any) => s.state === 'free');
