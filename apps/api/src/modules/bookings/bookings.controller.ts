@@ -10,8 +10,11 @@ import {
   Post,
   Put,
   Query,
+  Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { isUUID } from 'class-validator';
 import {
   COURT_KINDS,
@@ -55,14 +58,8 @@ export class BookingsController {
     return isUUID(tenantId, 4) ? tenantId : null;
   }
 
-  private requireTenantUuid(tenant: TenantContext): string {
-    const tenantId = this.getTenantUuidOrNull(tenant);
-    if (!tenantId) {
-      throw new BadRequestException(
-        'Valid X-Tenant-Id UUID is required for bookings endpoints',
-      );
-    }
-    return tenantId;
+  private requireTenantUuid(tenant: TenantContext): string | null {
+    return this.getTenantUuidOrNull(tenant);
   }
 
   private async resolveTenantForCourt(
@@ -94,8 +91,10 @@ export class BookingsController {
   }
 
   @Get()
-  list(@CurrentTenant() tenant: TenantContext) {
-    return this.bookingsService.list(this.requireTenantUuid(tenant));
+  list(@Req() req: Request, @CurrentTenant() tenant: TenantContext) {
+    const userId = (req as Request & { userId?: string }).userId?.trim();
+    if (!userId) throw new UnauthorizedException('Missing user');
+    return this.bookingsService.list(userId, this.getTenantUuidOrNull(tenant) ?? undefined);
   }
 
   @Get('availability')

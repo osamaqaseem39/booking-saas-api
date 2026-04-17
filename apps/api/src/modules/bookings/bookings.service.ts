@@ -2,7 +2,9 @@ import {
   BadRequestException,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import { IamService } from '../iam/iam.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DeepPartial, In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
@@ -123,6 +125,7 @@ export class BookingsService {
     private readonly slotTemplateRepo: Repository<TenantTimeSlotTemplate>,
     @InjectRepository(TenantTimeSlotTemplateLine)
     private readonly slotTemplateLineRepo: Repository<TenantTimeSlotTemplateLine>,
+    private readonly iamService: IamService,
   ) {}
 
   async resolveTenantIdByCourt(
@@ -259,42 +262,52 @@ export class BookingsService {
     };
   }
 
-  async list(tenantId: string): Promise<BookingApiRow[]> {
+  async list(requesterUserId: string, tenantId?: string): Promise<BookingApiRow[]> {
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, ['platform-owner']);
+    
+    const where: any = {};
+    if (tenantId) {
+      where.tenantId = tenantId;
+    } else if (!isPlatformOwner) {
+      // If not platform owner and no tenantId provided, they shouldn't see anything or we should find their businesses.
+      // For now, let's assume they must provide a tenantId unless they are platform owner.
+      throw new UnauthorizedException('Tenant ID is required');
+    }
+
     const rows = await this.bookingRepo.find({
-      where: { tenantId },
+      where,
       relations: ['items'],
       order: { createdAt: 'DESC' },
     });
 
-    // To improve performance, we fetch location mapping once.
-    const business = await this.businessRepo.findOne({
-      where: { tenantId },
-    });
+    // To improve performance, we fetch location mapping.
     const locationsMap: Record<string, string> = {};
-    if (business) {
-      const locations = await this.locationRepo.find({
-        where: { businessId: business.id },
-      });
-      for (const loc of locations) {
-        locationsMap[loc.id] = loc.name;
-      }
-    }
-
-    // Map courts to locations
     const courtToLocationMap: Record<string, string> = {};
-    const padels = await this.padelRepo.find({
-      where: { tenantId },
-      select: ['id', 'businessLocationId'],
-    });
-    for (const p of padels) {
-      if (p.businessLocationId) courtToLocationMap[p.id] = p.businessLocationId;
-    }
-    const turfs = await this.turfRepo.find({
-      where: { tenantId },
-      select: ['id', 'branchId'],
-    });
-    for (const t of turfs) {
-      if (t.branchId) courtToLocationMap[t.id] = t.branchId;
+
+    if (tenantId) {
+      const business = await this.businessRepo.findOne({ where: { tenantId } });
+      if (business) {
+        const locations = await this.locationRepo.find({ where: { businessId: business.id } });
+        for (const loc of locations) {
+          locationsMap[loc.id] = loc.name;
+        }
+      }
+      
+      const padels = await this.padelRepo.find({ where: { tenantId }, select: ['id', 'businessLocationId'] });
+      for (const p of padels) if (p.businessLocationId) courtToLocationMap[p.id] = p.businessLocationId;
+      
+      const turfs = await this.turfRepo.find({ where: { tenantId }, select: ['id', 'branchId'] });
+      for (const t of turfs) if (t.branchId) courtToLocationMap[t.id] = t.branchId;
+    } else {
+      // Global view for platform-owner
+      const locations = await this.locationRepo.find({ select: ['id', 'name'] });
+      for (const loc of locations) locationsMap[loc.id] = loc.name;
+      
+      const padels = await this.padelRepo.find({ select: ['id', 'businessLocationId'] });
+      for (const p of padels) if (p.businessLocationId) courtToLocationMap[p.id] = p.businessLocationId;
+      
+      const turfs = await this.turfRepo.find({ select: ['id', 'branchId'] });
+      for (const t of turfs) if (t.branchId) courtToLocationMap[t.id] = t.branchId;
     }
 
     return rows.map((b) => this.toApi(b, locationsMap, courtToLocationMap));
