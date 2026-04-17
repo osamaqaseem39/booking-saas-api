@@ -27,7 +27,7 @@ import type { UpdateBookingDto } from './dto/update-booking.dto';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { Business } from '../businesses/entities/business.entity';
 import type { PlacePadelBookingDto } from './dto/place-padel-booking.dto';
-import { CourtFacilitySlot } from './entities/court-facility-slot.entity';
+import { CourtFacilitySlot, CourtFacilitySlotStatus } from './entities/court-facility-slot.entity';
 import { BookingItem } from './entities/booking-item.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { Booking } from './entities/booking.entity';
@@ -508,9 +508,7 @@ export class BookingsService {
     });
 
     // Block the slots in the facility slots table
-    if (full.bookingStatus === 'confirmed') {
-      await this.blockFacilitySlots(full);
-    }
+    await this.syncFacilitySlotsStatus(full);
 
     const { locationsMap, courtToLocationMap } =
       await this.resolveLocationMapping(full);
@@ -562,9 +560,7 @@ export class BookingsService {
       relations: ['items', 'user'],
     });
 
-    if (full.bookingStatus === 'confirmed') {
-      await this.blockFacilitySlots(full);
-    }
+    await this.syncFacilitySlotsStatus(full);
 
     const { locationsMap, courtToLocationMap } =
       await this.resolveLocationMapping(full);
@@ -1309,21 +1305,37 @@ export class BookingsService {
     };
   }
 
-  private async blockFacilitySlots(booking: Booking): Promise<void> {
-    if (!booking.items?.length) return;
-    for (const item of booking.items) {
-      if (item.itemStatus !== 'confirmed' && item.itemStatus !== 'reserved')
-        continue;
+  async syncFacilitySlotsStatusById(
+    tenantId: string,
+    bookingId: string,
+  ): Promise<void> {
+    const booking = await this.bookingRepo.findOne({
+      where: { id: bookingId, tenantId },
+      relations: ['items'],
+    });
+    if (!booking) return;
+    await this.syncFacilitySlotsStatus(booking);
+  }
 
-      // Update the status to 'booked' in court_facility_slots
-      // We search for a slot that matches the starting time.
-      // If the booking spans multiple slots, we'd need to find all of them.
-      // Assuming 1:1 for now as per the current grid logic, but let's be safe.
-      
+  private async syncFacilitySlotsStatus(booking: Booking): Promise<void> {
+    if (!booking.items?.length) return;
+
+    // Use 'blocked' as requested by user
+    const targetStatus: CourtFacilitySlotStatus =
+      booking.bookingStatus === 'confirmed' ||
+      booking.bookingStatus === 'completed'
+        ? 'blocked'
+        : 'available';
+
+    for (const item of booking.items) {
       const startMinutes = toMinutes(item.startTime, false);
       const endMinutes = toMinutes(item.endTime, true);
-      
-      for (let m = startMinutes; m < endMinutes; m += COURT_SLOT_GRID_STEP_MINUTES) {
+
+      for (
+        let m = startMinutes;
+        m < endMinutes;
+        m += COURT_SLOT_GRID_STEP_MINUTES
+      ) {
         const timeStr = minutesToTimeString(m);
         await this.facilitySlotRepo.update(
           {
@@ -1333,7 +1345,7 @@ export class BookingsService {
             slotDate: booking.bookingDate,
             startTime: timeStr,
           },
-          { status: 'booked' },
+          { status: targetStatus },
         );
       }
     }

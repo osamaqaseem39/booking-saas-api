@@ -392,7 +392,14 @@ export class BookingsController {
         'Unable to resolve tenant. Provide a valid court in items or X-Tenant-Id.',
       );
     }
-    return this.bookingsService.create(tenantId, dto);
+    const result = await this.bookingsService.create(tenantId, dto);
+
+    // Explicit check in controller as requested: block slots if confirmed
+    if (result.bookingStatus === 'confirmed') {
+      await this.bookingsService.syncFacilitySlotsStatusById(tenantId, result.bookingId);
+    }
+
+    return result;
   }
 
   @Patch(':bookingId')
@@ -405,7 +412,12 @@ export class BookingsController {
     if (!tenantId) {
       throw new BadRequestException('Unable to resolve tenant for booking.');
     }
-    return this.bookingsService.update(tenantId, bookingId, dto);
+    const result = await this.bookingsService.update(tenantId, bookingId, dto);
+
+    // Explicit check in controller as requested: update slots status
+    await this.bookingsService.syncFacilitySlotsStatusById(tenantId, result.bookingId);
+
+    return result;
   }
 
   @Patch(':bookingId/facility-slots')
