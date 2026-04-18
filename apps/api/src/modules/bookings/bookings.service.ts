@@ -567,6 +567,22 @@ export class BookingsService {
     return this.toApi(full, locationsMap, courtToLocationMap);
   }
 
+  async remove(tenantId: string, bookingId: string): Promise<{ ok: true }> {
+    const booking = await this.bookingRepo.findOne({
+      where: { id: bookingId, tenantId },
+      relations: ['items'],
+    });
+    if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
+
+    // Force everything to available before deleting
+    booking.bookingStatus = 'cancelled';
+    await this.syncFacilitySlotsStatus(booking);
+
+    await this.bookingRepo.remove(booking);
+    return { ok: true };
+  }
+
+
   async editBookingFacilitySlots(
     _tenantId: string,
     bookingId: string,

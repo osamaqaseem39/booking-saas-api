@@ -436,4 +436,19 @@ export class BookingsController {
       dto.blocked,
     );
   }
+
+  @Delete(':bookingId')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin')
+  async remove(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+  ) {
+    const tenantId = await this.resolveTenantForBooking(tenant, bookingId);
+    if (!tenantId) {
+      throw new BadRequestException('Unable to resolve tenant for booking.');
+    }
+    return this.bookingsService.remove(tenantId, bookingId);
+  }
 }
+
