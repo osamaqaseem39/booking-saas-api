@@ -345,7 +345,23 @@ export class IamService implements OnModuleInit {
     return existing;
   }
 
-  async assignRole(userId: string, roleCode: SystemRole): Promise<UserRole> {
+  async assignRole(
+    userId: string,
+    roleCode: SystemRole,
+    opts?: { requesterId: string; isPlatformOwner: boolean },
+  ): Promise<UserRole> {
+    if (opts) {
+      await this.assertCanManageUser(
+        opts.requesterId,
+        userId,
+        opts.isPlatformOwner,
+        'update',
+      );
+      if (!opts.isPlatformOwner && roleCode === 'platform-owner') {
+        throw new ForbiddenException('Cannot assign platform-owner role');
+      }
+    }
+
     const user = await this.usersRepository.findOne({ where: { id: userId } });
     if (!user) {
       throw new BadRequestException(`User ${userId} does not exist`);
@@ -370,7 +386,23 @@ export class IamService implements OnModuleInit {
     return this.userRolesRepository.save(record);
   }
 
-  async unassignRole(userId: string, roleCode: string): Promise<void> {
+  async unassignRole(
+    userId: string,
+    roleCode: string,
+    opts?: { requesterId: string; isPlatformOwner: boolean },
+  ): Promise<void> {
+    if (opts) {
+      await this.assertCanManageUser(
+        opts.requesterId,
+        userId,
+        opts.isPlatformOwner,
+        'update',
+      );
+      if (!opts.isPlatformOwner && roleCode === 'platform-owner') {
+        throw new ForbiddenException('Cannot unassign platform-owner role');
+      }
+    }
+
     await this.userRolesRepository.delete({
       userId,
       roleCode: roleCode as SystemRole,

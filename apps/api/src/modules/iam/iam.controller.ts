@@ -124,14 +124,28 @@ export class IamController {
   }
 
   @Post('roles/assign')
-  @Roles('platform-owner')
-  async assignRole(@Body() dto: AssignRoleDto) {
-    return this.iamService.assignRole(dto.userId, dto.role);
+  @Roles('platform-owner', 'business-admin')
+  async assignRole(@Req() req: Request, @Body() dto: AssignRoleDto) {
+    const requesterId = this.requesterUserId(req);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
+      'platform-owner',
+    ]);
+    return this.iamService.assignRole(dto.userId, dto.role, {
+      requesterId,
+      isPlatformOwner,
+    });
   }
 
   @Post('roles/unassign')
-  @Roles('platform-owner')
-  async unassignRole(@Body() dto: AssignRoleDto) {
-    return this.iamService.unassignRole(dto.userId, dto.role);
+  @Roles('platform-owner', 'business-admin')
+  async unassignRole(@Req() req: Request, @Body() dto: AssignRoleDto) {
+    const requesterId = this.requesterUserId(req);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
+      'platform-owner',
+    ]);
+    return this.iamService.unassignRole(dto.userId, dto.role, {
+      requesterId,
+      isPlatformOwner,
+    });
   }
 }
