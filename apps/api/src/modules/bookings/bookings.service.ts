@@ -1094,7 +1094,7 @@ export class BookingsService {
       courtId: string;
       name: string;
       price?: number;
-      slots: Array<{ startTime: string; endTime: string }>;
+      slots: Array<{ startTime: string; endTime: string; availability: string }>;
     }> = [];
 
     for (const court of padelBatch) {
