@@ -1104,14 +1104,18 @@ export class BookingsService {
         date,
         startTime: start,
         endTime: end,
-        availableOnly: true,
+        availableOnly: false,
       });
       facilities.push({
         kind: 'padel_court',
         courtId: court.id,
         name: court.name,
         price: Number(court.pricePerSlot || 0),
-        slots: grid.segments.map((s: any) => ({ startTime: s.startTime, endTime: s.endTime })),
+        slots: grid.segments.map((s: any) => ({
+          startTime: s.startTime,
+          endTime: s.endTime,
+          availability: s.state === 'free' ? 'available' : s.state,
+        })),
       });
     }
 
@@ -1122,20 +1126,30 @@ export class BookingsService {
         date,
         startTime: start,
         endTime: end,
-        availableOnly: true,
+        availableOnly: false,
       });
       facilities.push({
         kind: 'turf_court',
         courtId: court.id,
         name: court.name,
         price: this.resolveTurfPrice(court, params.courtType),
-        slots: grid.segments.map((s: any) => ({ startTime: s.startTime, endTime: s.endTime })),
+        slots: grid.segments.map((s: any) => ({
+          startTime: s.startTime,
+          endTime: s.endTime,
+          availability: s.state === 'free' ? 'available' : s.state,
+        })),
       });
     }
 
-    const unionMap = new Map<string, { startTime: string; endTime: string }>();
+    const unionMap = new Map<string, { startTime: string; endTime: string; availability: string }>();
     for (const f of facilities) {
-      for (const s of f.slots) unionMap.set(`${s.startTime}\t${s.endTime}`, s);
+      for (const s of f.slots) {
+        const key = `${s.startTime}\t${s.endTime}`;
+        const existing = unionMap.get(key);
+        if (!existing || (existing.availability === 'blocked' && s.availability === 'available')) {
+          unionMap.set(key, s as any);
+        }
+      }
     }
 
     return {

@@ -128,4 +128,10 @@ export class IamController {
   async assignRole(@Body() dto: AssignRoleDto) {
     return this.iamService.assignRole(dto.userId, dto.role);
   }
+
+  @Post('roles/unassign')
+  @Roles('platform-owner')
+  async unassignRole(@Body() dto: AssignRoleDto) {
+    return this.iamService.unassignRole(dto.userId, dto.role);
+  }
 }

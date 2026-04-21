@@ -370,6 +370,13 @@ export class IamService implements OnModuleInit {
     return this.userRolesRepository.save(record);
   }
 
+  async unassignRole(userId: string, roleCode: string): Promise<void> {
+    await this.userRolesRepository.delete({
+      userId,
+      roleCode: roleCode as SystemRole,
+    });
+  }
+
   async hasAnyRole(userId: string, roles: SystemRole[]): Promise<boolean> {
     const count = await this.userRolesRepository.count({
       where: roles.map((roleCode) => ({ userId, roleCode })),
@@ -385,6 +392,11 @@ export class IamService implements OnModuleInit {
       {
         code: 'customer-end-user',
         name: 'Customer / End User',
+        createdAt: new Date(),
+      },
+      {
+        code: 'location-admin',
+        name: 'Location Admin',
         createdAt: new Date(),
       },
     ];
