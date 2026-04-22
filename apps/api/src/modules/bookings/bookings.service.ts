@@ -277,25 +277,45 @@ export class BookingsService {
     };
   }
 
-  async list(requesterUserId: string, tenantId?: string): Promise<BookingApiRow[]> {
+  async list(requesterUserId: string, tenantId?: string, locationId?: string): Promise<BookingApiRow[]> {
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, ['platform-owner']);
     
-    const where: any = {};
+    const qb = this.bookingRepo.createQueryBuilder('b')
+      .leftJoinAndSelect('b.items', 'items')
+      .leftJoinAndSelect('b.user', 'user');
+
     if (tenantId) {
-      where.tenantId = tenantId;
+      qb.andWhere('b.tenantId = :tenantId', { tenantId });
     } else if (!isPlatformOwner) {
-      // If not platform owner and no tenantId provided, they shouldn't see anything or we should find their businesses.
-      // For now, let's assume they must provide a tenantId unless they are platform owner.
       throw new UnauthorizedException('Tenant ID is required');
     }
 
-    const rows = await this.bookingRepo.find({
-      where,
-      relations: ['items', 'user'],
-      order: { createdAt: 'DESC' },
-    });
+    if (locationId) {
+      const padels = await this.padelRepo.find({
+        where: { businessLocationId: locationId },
+        select: ['id'],
+      });
+      const turfs = await this.turfRepo.find({
+        where: { branchId: locationId },
+        select: ['id'],
+      });
+      const courtIds = [...padels.map((p) => p.id), ...turfs.map((t) => t.id)];
+      if (courtIds.length === 0) return [];
+      
+      qb.andWhere((sub) => {
+        const subQuery = sub.subQuery()
+          .select('i.bookingId')
+          .from(BookingItem, 'i')
+          .where('i.courtId IN (:...courtIds)', { courtIds })
+          .getQuery();
+        return 'b.id IN ' + subQuery;
+      });
+    }
 
-    // To improve performance, we fetch location mapping.
+    qb.orderBy('b.createdAt', 'DESC');
+    const rows = await qb.getMany();
+
+    // Fetch location mapping for toApi
     const locationsMap: Record<string, string> = {};
     const courtToLocationMap: Record<string, string> = {};
 
@@ -303,9 +323,7 @@ export class BookingsService {
       const business = await this.businessRepo.findOne({ where: { tenantId } });
       if (business) {
         const locations = await this.locationRepo.find({ where: { businessId: business.id } });
-        for (const loc of locations) {
-          locationsMap[loc.id] = loc.name;
-        }
+        for (const loc of locations) locationsMap[loc.id] = loc.name;
       }
       
       const padels = await this.padelRepo.find({ where: { tenantId }, select: ['id', 'businessLocationId'] });
@@ -314,7 +332,6 @@ export class BookingsService {
       const turfs = await this.turfRepo.find({ where: { tenantId }, select: ['id', 'branchId'] });
       for (const t of turfs) if (t.branchId) courtToLocationMap[t.id] = t.branchId;
     } else {
-      // Global view for platform-owner
       const locations = await this.locationRepo.find({ select: ['id', 'name'] });
       for (const loc of locations) locationsMap[loc.id] = loc.name;
       
@@ -651,8 +668,8 @@ export class BookingsService {
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
       .andWhere('b.bookingDate = :date', { date })
-      .andWhere("b.bookingStatus = 'confirmed'")
-      .andWhere("i.itemStatus = 'confirmed'")
+      .andWhere("b.bookingStatus IN ('confirmed', 'pending')")
+      .andWhere("i.itemStatus IN ('confirmed', 'reserved')")
       .andWhere('i.courtKind = :courtKind', { courtKind: courtKindFilter })
       .andWhere('i.startTime < :end', { end: params.endTime === '00:00' ? '24:00' : params.endTime })
       .andWhere('i.endTime > :start', { start: params.startTime })
@@ -762,8 +779,8 @@ export class BookingsService {
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
       .andWhere('b.bookingDate = :date', { date })
-      .andWhere("b.bookingStatus = 'confirmed'")
-      .andWhere("i.itemStatus = 'confirmed'")
+      .andWhere("b.bookingStatus IN ('confirmed', 'pending')")
+      .andWhere("i.itemStatus IN ('confirmed', 'reserved')")
       .andWhere('i.courtKind = :kind', { kind: params.kind })
       .andWhere('i.courtId = :courtId', { courtId: params.courtId })
       .select([
@@ -1365,34 +1382,30 @@ export class BookingsService {
   private async syncFacilitySlotsStatus(booking: Booking): Promise<void> {
     if (!booking.items?.length) return;
 
-    // Use 'blocked' as requested by user
-    const targetStatus: CourtFacilitySlotStatus =
-      booking.bookingStatus === 'confirmed' ||
-      booking.bookingStatus === 'completed'
-        ? 'blocked'
-        : 'available';
-
     for (const item of booking.items) {
-      const startMinutes = toMinutes(item.startTime, false);
-      const endMinutes = toMinutes(item.endTime, true);
+      // A slot is considered 'blocked' if the booking is not cancelled/no-show 
+      // AND the item itself is not cancelled.
+      const isBookingActive =
+        booking.bookingStatus === 'confirmed' ||
+        booking.bookingStatus === 'completed' ||
+        booking.bookingStatus === 'pending';
+      
+      const isItemActive = item.itemStatus !== 'cancelled';
+      
+      const targetStatus: CourtFacilitySlotStatus =
+        isBookingActive && isItemActive ? 'blocked' : 'available';
 
-      for (
-        let m = startMinutes;
-        m < endMinutes;
-        m += COURT_SLOT_GRID_STEP_MINUTES
-      ) {
-        const timeStr = minutesToTimeString(m);
-        await this.facilitySlotRepo.update(
-          {
-            tenantId: booking.tenantId,
-            courtKind: item.courtKind,
-            courtId: item.courtId,
-            slotDate: booking.bookingDate,
-            startTime: timeStr,
-          },
-          { status: targetStatus },
-        );
-      }
+      await this.facilitySlotRepo
+        .createQueryBuilder()
+        .update(CourtFacilitySlot)
+        .set({ status: targetStatus })
+        .where('tenantId = :tenantId', { tenantId: booking.tenantId })
+        .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
+        .andWhere('courtId = :courtId', { courtId: item.courtId })
+        .andWhere('slotDate = :slotDate', { slotDate: booking.bookingDate })
+        .andWhere('startTime < :endTime', { endTime: item.endTime })
+        .andWhere('endTime > :startTime', { startTime: item.startTime })
+        .execute();
     }
   }
 

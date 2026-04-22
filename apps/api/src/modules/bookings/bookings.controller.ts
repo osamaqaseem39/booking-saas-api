@@ -93,10 +93,18 @@ export class BookingsController {
   @Get()
   @UseGuards(RolesGuard)
   @Roles('platform-owner', 'business-admin')
-  list(@Req() req: Request, @CurrentTenant() tenant: TenantContext): Promise<BookingApiRow[]> {
+  list(
+    @Req() req: Request,
+    @CurrentTenant() tenant: TenantContext,
+    @Query('locationId') locationId?: string,
+  ): Promise<BookingApiRow[]> {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');
-    return this.bookingsService.list(userId, this.getTenantUuidOrNull(tenant) ?? undefined);
+    return this.bookingsService.list(
+      userId,
+      this.getTenantUuidOrNull(tenant) ?? undefined,
+      locationId,
+    );
   }
 
   @Get('availability')

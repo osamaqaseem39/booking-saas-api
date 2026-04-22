@@ -73,17 +73,29 @@ export class BusinessesService {
   async getDashboardView(requesterUserId: string) {
     const businesses = await this.listForRequester(requesterUserId);
     const businessIds = businesses.map((b) => b.id);
+    const tenantIds = businesses.map((b) => b.tenantId);
+    
     const locations = await this.locationsRepository.find({
       where: { businessId: In(businessIds) },
       select: ['id', 'businessId'],
     });
     const locIds = locations.map((l) => l.id);
+    
     const courts = locIds.length
       ? await this.padelCourtRepository.find({
           where: { businessLocationId: In(locIds), courtStatus: 'active', isActive: true },
           select: ['id', 'businessLocationId'],
         })
       : [];
+      
+    // Fetch bookings for these tenants
+    const bookings = tenantIds.length 
+      ? await this.bookingRepository.find({
+          where: { tenantId: In(tenantIds) },
+          select: ['id', 'tenantId', 'bookingStatus', 'paymentStatus', 'totalAmount'],
+        })
+      : [];
+
     const locationBusinessMap = new Map(locations.map((l) => [l.id, l.businessId]));
     const courtCountByBusiness = new Map<string, number>();
     for (const c of courts) {
@@ -92,32 +104,66 @@ export class BusinessesService {
       courtCountByBusiness.set(bId, (courtCountByBusiness.get(bId) ?? 0) + 1);
     }
 
+    const statsByTenant = new Map<string, {
+      count: number,
+      confirmed: number,
+      pending: number,
+      cancelled: number,
+      completed: number,
+      revenue: number,
+      paid: number
+    }>();
+
+    for (const b of bookings) {
+      const s = statsByTenant.get(b.tenantId) ?? {
+        count: 0, confirmed: 0, pending: 0, cancelled: 0, completed: 0, revenue: 0, paid: 0
+      };
+      s.count += 1;
+      if (b.bookingStatus === 'confirmed') s.confirmed += 1;
+      if (b.bookingStatus === 'pending') s.pending += 1;
+      if (b.bookingStatus === 'cancelled') s.cancelled += 1;
+      if (b.bookingStatus === 'completed') s.completed += 1;
+      
+      const total = Number(b.totalAmount ?? 0);
+      s.revenue += total;
+      if (b.paymentStatus === 'paid') s.paid += total;
+      
+      statsByTenant.set(b.tenantId, s);
+    }
+
+    const totalStats = {
+      courtCount: courts.length,
+      bookingCount: bookings.length,
+      confirmedBookingCount: bookings.filter(b => b.bookingStatus === 'confirmed').length,
+      pendingBookingCount: bookings.filter(b => b.bookingStatus === 'pending').length,
+      cancelledBookingCount: bookings.filter(b => b.bookingStatus === 'cancelled').length,
+      completedBookingCount: bookings.filter(b => b.bookingStatus === 'completed').length,
+      revenueTotal: bookings.reduce((acc, b) => acc + Number(b.totalAmount ?? 0), 0),
+      revenuePaid: bookings.filter(b => b.paymentStatus === 'paid').reduce((acc, b) => acc + Number(b.totalAmount ?? 0), 0),
+    };
+
     return {
       generatedAt: new Date().toISOString(),
       scope: { businessCount: businesses.length, locationCount: locations.length },
-      totals: {
-        courtCount: courts.length,
-        bookingCount: 0,
-        confirmedBookingCount: 0,
-        pendingBookingCount: 0,
-        cancelledBookingCount: 0,
-        revenueTotal: 0,
-        revenuePaid: 0,
-      },
-      businesses: businesses.map((b) => ({
-        businessId: b.id,
-        tenantId: b.tenantId,
-        businessName: b.businessName,
-        status: b.status,
-        locationCount: locations.filter((l) => l.businessId === b.id).length,
-        courtCount: courtCountByBusiness.get(b.id) ?? 0,
-        bookingCount: 0,
-        confirmedBookingCount: 0,
-        pendingBookingCount: 0,
-        cancelledBookingCount: 0,
-        revenueTotal: 0,
-        revenuePaid: 0,
-      })),
+      totals: totalStats,
+      businesses: businesses.map((b) => {
+        const s = statsByTenant.get(b.tenantId);
+        return {
+          businessId: b.id,
+          tenantId: b.tenantId,
+          businessName: b.businessName,
+          status: b.status,
+          locationCount: locations.filter((l) => l.businessId === b.id).length,
+          courtCount: courtCountByBusiness.get(b.id) ?? 0,
+          bookingCount: s?.count ?? 0,
+          confirmedBookingCount: s?.confirmed ?? 0,
+          pendingBookingCount: s?.pending ?? 0,
+          cancelledBookingCount: s?.cancelled ?? 0,
+          completedBookingCount: s?.completed ?? 0,
+          revenueTotal: s?.revenue ?? 0,
+          revenuePaid: s?.paid ?? 0,
+        };
+      }),
     };
   }
 
