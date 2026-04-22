@@ -1120,6 +1120,12 @@ export class BookingsService {
     }
 
     for (const court of turfBatch) {
+      const isFutsalRequested = (params.courtType || '').toLowerCase().includes('futsal');
+      const isCricketRequested = (params.courtType || '').toLowerCase().includes('cricket');
+      
+      if (isFutsalRequested && !court.supportedSports?.includes('futsal')) continue;
+      if (isCricketRequested && !court.supportedSports?.includes('cricket')) continue;
+
       const grid = await this.getCourtSlotGrid(court.tenantId, {
         kind: 'turf_court',
         courtId: court.id,
@@ -1212,7 +1218,16 @@ export class BookingsService {
 
     const allCourts = [
       ...padelBatch.map((c) => ({ ...c, kind: 'padel_court' as const })),
-      ...turfBatch.map((c) => ({ ...c, kind: 'turf_court' as const })),
+      ...turfBatch
+        .filter((c) => {
+          const s = (params.courtType || '').toLowerCase();
+          if (s.includes('futsal') && !c.supportedSports?.includes('futsal'))
+            return false;
+          if (s.includes('cricket') && !c.supportedSports?.includes('cricket'))
+            return false;
+          return true;
+        })
+        .map((c) => ({ ...c, kind: 'turf_court' as const })),
     ];
 
     const getFacilitiesForDate = async (targetDate: string) => {

@@ -213,7 +213,7 @@ export class BusinessesService {
           }),
           this.turfCourtRepository.find({
             where: { branchId: In(locationIds), status: 'active' },
-            select: ['id', 'name', 'branchId', 'pricing'],
+            select: ['id', 'name', 'branchId', 'pricing', 'supportedSports'],
           }),
           this.gamingStationRepository.find({
             where: {
@@ -234,6 +234,7 @@ export class BusinessesService {
         name: string;
         price?: number;
         pricing?: TurfPricingConfig;
+        supportedSports?: string[];
       }>
     >();
     
@@ -259,6 +260,7 @@ export class BusinessesService {
         price:
           c.pricing?.futsal?.basePrice ?? c.pricing?.cricket?.basePrice ?? 0,
         pricing: c.pricing,
+        supportedSports: c.supportedSports,
       });
       facilityCourtsByLocation.set(key, rows);
     }
@@ -362,7 +364,15 @@ export class BusinessesService {
         (r) =>
           (r.locationType ?? '').toLowerCase() === t ||
           (t === 'padel' && (r.facilityCounts.padel ?? 0) > 0) ||
-          ((t === 'turf' || t === 'futsal' || t === 'cricket') && (r.facilityCounts.turf ?? 0) > 0) ||
+          (t === 'turf' && (r.facilityCounts.turf ?? 0) > 0) ||
+          ((t === 'futsal' || t === 'futsalarenas') &&
+            (r.facilityCourts as any[]).some(
+              (f) => f.facilityType === 'turf' && f.supportedSports?.includes('futsal'),
+            )) ||
+          (t === 'cricket' &&
+            (r.facilityCourts as any[]).some(
+              (f) => f.facilityType === 'turf' && f.supportedSports?.includes('cricket'),
+            )) ||
           ((t === 'gaming' || t === 'gaming-zone') && (r.facilityCounts.gaming ?? 0) > 0),
       );
     }
@@ -554,9 +564,17 @@ export class BusinessesService {
     } else if (cat === 'padel') {
       picked = rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
     } else if (cat === 'futsal' || cat === 'futsalarenas') {
-      picked = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
+      picked = rows.filter((r) =>
+        (r.facilityCourts as any[]).some(
+          (f) => f.facilityType === 'turf' && f.supportedSports?.includes('futsal'),
+        ),
+      );
     } else if (cat === 'cricket') {
-      picked = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
+      picked = rows.filter((r) =>
+        (r.facilityCourts as any[]).some(
+          (f) => f.facilityType === 'turf' && f.supportedSports?.includes('cricket'),
+        ),
+      );
     } else if (cat === 'turf') {
       picked = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
     }
@@ -570,7 +588,19 @@ export class BusinessesService {
       rows = rows.filter((r) => (r.locationType ?? '').toLowerCase().includes('gaming') || (r.facilityCounts.gaming ?? 0) > 0);
     } else if (category === 'padel') {
       rows = rows.filter((r) => (r.facilityCounts.padel ?? 0) > 0);
-    } else if (category === 'turf' || category === 'futsal' || category === 'cricket' || category === 'futsalarenas') {
+    } else if (category === 'futsal' || category === 'futsalarenas') {
+      rows = rows.filter((r) =>
+        (r.facilityCourts as any[]).some(
+          (f) => f.facilityType === 'turf' && f.supportedSports?.includes('futsal'),
+        ),
+      );
+    } else if (category === 'cricket') {
+      rows = rows.filter((r) =>
+        (r.facilityCourts as any[]).some(
+          (f) => f.facilityType === 'turf' && f.supportedSports?.includes('cricket'),
+        ),
+      );
+    } else if (category === 'turf') {
       rows = rows.filter((r) => (r.facilityCounts.turf ?? 0) > 0);
     }
     if (dto.city?.trim()) {
@@ -626,11 +656,21 @@ export class BusinessesService {
       facilityAvailable.push({ label: 'Padel', count: row.facilityCounts.padel });
     }
     if (row.facilityCounts.turf > 0) {
-      sportsOffered.push('futsal', 'cricket');
-      facilityAvailable.push(
-        { label: 'Futsal', count: row.facilityCounts.turf },
-        { label: 'Cricket', count: row.facilityCounts.turf },
-      );
+      const futsalCount = (row.facilityCourts as any[]).filter(
+        (f) => f.facilityType === 'turf' && f.supportedSports?.includes('futsal'),
+      ).length;
+      const cricketCount = (row.facilityCourts as any[]).filter(
+        (f) => f.facilityType === 'turf' && f.supportedSports?.includes('cricket'),
+      ).length;
+
+      if (futsalCount > 0) {
+        sportsOffered.push('futsal');
+        facilityAvailable.push({ label: 'Futsal', count: futsalCount });
+      }
+      if (cricketCount > 0) {
+        sportsOffered.push('cricket');
+        facilityAvailable.push({ label: 'Cricket', count: cricketCount });
+      }
     }
     if (row.facilityCounts.gaming > 0) {
       sportsOffered.push('gaming');
@@ -661,6 +701,7 @@ export class BusinessesService {
         facilityType: f.facilityType,
         locationId: row.id,
         pricePerSlot: f.price ?? 0,
+        supportedSports: f.supportedSports,
       })),
       tenantId: row.business?.tenantId ?? null,
     };
