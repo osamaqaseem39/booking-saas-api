@@ -70,7 +70,7 @@ export class IamController {
   }
 
   @Post('users')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async createUser(
     @Req() req: Request,
     @Body() dto: CreateUserDto,
@@ -88,7 +88,7 @@ export class IamController {
   }
 
   @Patch('users/:userId')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async updateUser(
     @Req() req: Request,
     @Param('userId') userId: string,
@@ -105,7 +105,7 @@ export class IamController {
   }
 
   @Delete('users/:userId')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async deleteUser(@Req() req: Request, @Param('userId') userId: string) {
     const requesterId = this.requesterUserId(req);
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [

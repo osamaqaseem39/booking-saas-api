@@ -33,7 +33,7 @@ export class BusinessesController {
   ) {}
 
   @Get()
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async list(@Req() req: Request) {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) {
@@ -152,7 +152,7 @@ export class BusinessesController {
   }
 
   @Patch('locations/:locationId')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async updateLocation(
     @Req() req: Request,
     @Param('locationId') locationId: string,

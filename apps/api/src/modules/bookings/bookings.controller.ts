@@ -135,7 +135,7 @@ export class BookingsController {
 
   @Post('time-slot-templates')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async createTimeSlotTemplate(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateTimeSlotTemplateDto,
@@ -151,7 +151,7 @@ export class BookingsController {
 
   @Patch('time-slot-templates/:templateId')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async updateTimeSlotTemplate(
     @CurrentTenant() tenant: TenantContext,
     @Param('templateId', ParseUUIDPipe) templateId: string,
@@ -166,7 +166,7 @@ export class BookingsController {
 
   @Delete('time-slot-templates/:templateId')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async deleteTimeSlotTemplate(
     @CurrentTenant() tenant: TenantContext,
     @Param('templateId', ParseUUIDPipe) templateId: string,
@@ -449,7 +449,7 @@ export class BookingsController {
 
   @Delete(':bookingId')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async remove(
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
