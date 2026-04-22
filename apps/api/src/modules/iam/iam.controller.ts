@@ -43,7 +43,7 @@ export class IamController {
   }
 
   @Get('users')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
   async listUsers(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -64,7 +64,7 @@ export class IamController {
   }
 
   @Get('end-users')
-  @Roles('platform-owner')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
   async listEndUsers() {
     return this.iamService.listEndUsers();
   }
