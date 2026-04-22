@@ -238,7 +238,6 @@ export class IamService implements OnModuleInit {
       if (!requesterMember) {
         throw new ForbiddenException('You are not a member of this business');
       }
-      await this.assignRole(saved.id, 'business-staff');
       const membership = this.membershipsRepository.create({
         businessId: business.id,
         userId: saved.id,
