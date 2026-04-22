@@ -58,15 +58,33 @@ export class BusinessesService {
       order: { createdAt: 'DESC' },
     });
     const memberships = await this.membershipsRepository.find();
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, ['platform-owner']);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
+      'platform-owner',
+    ]);
+    
+    // Also consider location-admin roles to find businesses
+    const constraint = await this.iamService.getLocationAdminConstraint(requesterUserId);
+    let allowedBusinessIds = new Set<string>();
+    if (constraint) {
+      const loc = await this.locationsRepository.findOne({ where: { id: constraint } });
+      if (loc) {
+        allowedBusinessIds.add(loc.businessId);
+      }
+    }
+
     const scoped = isPlatformOwner
       ? businesses
-      : businesses.filter((b) =>
-          memberships.some((m) => m.businessId === b.id && m.userId === requesterUserId),
+      : businesses.filter(
+          (b) =>
+            memberships.some(
+              (m) => m.businessId === b.id && m.userId === requesterUserId,
+            ) || allowedBusinessIds.has(b.id),
         );
     return scoped.map((business) => ({
       ...business,
-      memberships: memberships.filter((membership) => membership.businessId === business.id),
+      memberships: memberships.filter(
+        (membership) => membership.businessId === business.id,
+      ),
     }));
   }
 
@@ -240,7 +258,12 @@ export class BusinessesService {
   }
 
   async hasConsoleLocationListScope(userId: string): Promise<boolean> {
-    return this.iamService.hasAnyRole(userId, ['platform-owner', 'business-admin', 'business-staff']);
+    return this.iamService.hasAnyRole(userId, [
+      'platform-owner',
+      'business-admin',
+      'location-admin',
+      'business-staff',
+    ]);
   }
 
   async listLocationNameIdsPublic(nameFilter?: string | null) {
@@ -254,11 +277,20 @@ export class BusinessesService {
   }
 
   async listLocationsForRequester(requesterUserId: string) {
-    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, ['platform-owner']);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, [
+      'platform-owner',
+    ]);
     if (isPlatformOwner) return this.listAllLocationsPublic();
+
+    const constraint = await this.iamService.getLocationAdminConstraint(requesterUserId);
+    const all = await this.listAllLocationsPublic();
+    
+    if (constraint) {
+      return all.filter((l) => l.id === constraint);
+    }
+
     const businesses = await this.listForRequester(requesterUserId);
     const businessIds = businesses.map((b) => b.id);
-    const all = await this.listAllLocationsPublic();
     return all.filter((l) => businessIds.includes(l.businessId));
   }
 
