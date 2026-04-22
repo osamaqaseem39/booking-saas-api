@@ -133,6 +133,7 @@ export class IamController {
     return this.iamService.assignRole(dto.userId, dto.role, {
       requesterId,
       isPlatformOwner,
+      locationId: dto.locationId,
     });
   }
 

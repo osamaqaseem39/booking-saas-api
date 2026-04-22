@@ -50,6 +50,7 @@ export class IamService implements OnModuleInit {
       phone: user.phone,
       isActive: user.isActive,
       roles: roleRows.map((r) => r.roleCode),
+      locationId: roleRows.find(r => r.roleCode === 'location-admin')?.locationId ?? undefined,
     };
   }
 
@@ -348,7 +349,7 @@ export class IamService implements OnModuleInit {
   async assignRole(
     userId: string,
     roleCode: SystemRole,
-    opts?: { requesterId: string; isPlatformOwner: boolean },
+    opts?: { requesterId: string; isPlatformOwner: boolean; locationId?: string },
   ): Promise<UserRole> {
     if (opts) {
       await this.assertCanManageUser(
@@ -374,14 +375,22 @@ export class IamService implements OnModuleInit {
       throw new BadRequestException(`Role ${roleCode} does not exist`);
     }
 
-    const existing = await this.userRolesRepository.findOne({
+    let existing = await this.userRolesRepository.findOne({
       where: { userId, roleCode },
     });
-    if (existing) return existing;
+    
+    if (existing) {
+      if (opts?.locationId && existing.locationId !== opts.locationId) {
+        existing.locationId = opts.locationId;
+        return this.userRolesRepository.save(existing);
+      }
+      return existing;
+    }
 
     const record = this.userRolesRepository.create({
       userId,
       roleCode,
+      locationId: opts?.locationId,
     });
     return this.userRolesRepository.save(record);
   }
@@ -414,6 +423,19 @@ export class IamService implements OnModuleInit {
       where: roles.map((roleCode) => ({ userId, roleCode })),
     });
     return count > 0;
+  }
+
+  async getLocationAdminConstraint(userId: string): Promise<string | null> {
+    const roleRows = await this.userRolesRepository.find({ where: { userId } });
+    const codes = roleRows.map(r => r.roleCode);
+    if (codes.includes('platform-owner') || codes.includes('business-admin')) {
+      return null; // Unconstrained
+    }
+    const locAdmin = roleRows.find(r => r.roleCode === 'location-admin');
+    if (locAdmin && locAdmin.locationId) {
+      return locAdmin.locationId;
+    }
+    return null; // For business-staff or others, they either have no access or access is scoped by tenant.
   }
 
   async seedSystemRoles(): Promise<void> {

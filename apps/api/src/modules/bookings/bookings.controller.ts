@@ -92,7 +92,7 @@ export class BookingsController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   list(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -371,14 +371,16 @@ export class BookingsController {
 
   @Get(':bookingId')
   async getOne(
+    @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
   ) {
+    const userId = (req as Request & { userId?: string }).userId?.trim();
     const tenantId = await this.resolveTenantForBooking(tenant, bookingId);
     if (!tenantId) {
       throw new BadRequestException('Unable to resolve tenant for booking.');
     }
-    return this.bookingsService.getOne(tenantId, bookingId);
+    return this.bookingsService.getOne(tenantId, bookingId, userId);
   }
 
   @Post()

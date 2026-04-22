@@ -31,6 +31,9 @@ export class UserRole {
   @JoinColumn({ name: 'roleCode', referencedColumnName: 'code' })
   role?: Role;
 
+  @Column({ type: 'uuid', nullable: true })
+  locationId?: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 }

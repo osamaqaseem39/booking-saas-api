@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -279,6 +280,7 @@ export class BookingsService {
 
   async list(requesterUserId: string, tenantId?: string, locationId?: string): Promise<BookingApiRow[]> {
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterUserId, ['platform-owner']);
+    const constraint = await this.iamService.getLocationAdminConstraint(requesterUserId);
     
     const qb = this.bookingRepo.createQueryBuilder('b')
       .leftJoinAndSelect('b.items', 'items')
@@ -290,13 +292,15 @@ export class BookingsService {
       throw new UnauthorizedException('Tenant ID is required');
     }
 
-    if (locationId) {
+    const effectiveLocationId = constraint || locationId;
+
+    if (effectiveLocationId) {
       const padels = await this.padelRepo.find({
-        where: { businessLocationId: locationId },
+        where: { businessLocationId: effectiveLocationId },
         select: ['id'],
       });
       const turfs = await this.turfRepo.find({
-        where: { branchId: locationId },
+        where: { branchId: effectiveLocationId },
         select: ['id'],
       });
       const courtIds = [...padels.map((p) => p.id), ...turfs.map((t) => t.id)];
@@ -356,12 +360,23 @@ export class BookingsService {
     return rows.map((b) => this.toApi(b));
   }
 
-  async getOne(tenantId: string, bookingId: string): Promise<BookingApiRow> {
+  async getOne(tenantId: string, bookingId: string, requesterUserId?: string): Promise<BookingApiRow> {
     const row = await this.bookingRepo.findOne({
       where: { id: bookingId, tenantId },
       relations: ['items', 'user'],
     });
     if (!row) throw new NotFoundException(`Booking ${bookingId} not found`);
+
+    if (requesterUserId) {
+      const constraint = await this.iamService.getLocationAdminConstraint(requesterUserId);
+      if (constraint) {
+        const padels = await this.padelRepo.find({ where: { businessLocationId: constraint }, select: ['id'] });
+        const turfs = await this.turfRepo.find({ where: { branchId: constraint }, select: ['id'] });
+        const courtIds = new Set([...padels.map((p) => p.id), ...turfs.map((t) => t.id)]);
+        const allowed = row.items?.some((i) => courtIds.has(i.courtId));
+        if (!allowed) throw new ForbiddenException('Booking does not belong to your location');
+      }
+    }
 
     const { locationsMap, courtToLocationMap } =
       await this.resolveLocationMapping(row);

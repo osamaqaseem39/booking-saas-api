@@ -75,26 +75,56 @@ export class BusinessesService {
     const businessIds = businesses.map((b) => b.id);
     const tenantIds = businesses.map((b) => b.tenantId);
     
-    const locations = await this.locationsRepository.find({
+    const constraint = await this.iamService.getLocationAdminConstraint(requesterUserId);
+
+    let locations = await this.locationsRepository.find({
       where: { businessId: In(businessIds) },
       select: ['id', 'businessId'],
     });
+
+    if (constraint) {
+      locations = locations.filter(l => l.id === constraint);
+    }
+    
     const locIds = locations.map((l) => l.id);
     
-    const courts = locIds.length
+    const padelCourts = locIds.length
       ? await this.padelCourtRepository.find({
           where: { businessLocationId: In(locIds), courtStatus: 'active', isActive: true },
           select: ['id', 'businessLocationId'],
         })
       : [];
-      
-    // Fetch bookings for these tenants
-    const bookings = tenantIds.length 
-      ? await this.bookingRepository.find({
-          where: { tenantId: In(tenantIds) },
-          select: ['id', 'tenantId', 'bookingStatus', 'paymentStatus', 'totalAmount'],
+    const turfCourts = locIds.length
+      ? await this.turfCourtRepository.find({
+          where: { branchId: In(locIds), status: 'active' },
+          select: ['id', 'branchId'],
         })
       : [];
+    const gamingStations = locIds.length
+      ? await this.gamingStationRepository.find({
+          where: { businessLocationId: In(locIds), unitStatus: 'active', isActive: true },
+          select: ['id', 'businessLocationId'],
+        })
+      : [];
+
+    const courts = [
+      ...padelCourts,
+      ...turfCourts.map(c => ({ id: c.id, businessLocationId: c.branchId })),
+      ...gamingStations
+    ];
+
+    // Fetch bookings for these tenants
+    let bookings = tenantIds.length 
+      ? await this.bookingRepository.find({
+          where: { tenantId: In(tenantIds) },
+          relations: ['items'],
+        })
+      : [];
+    
+    if (constraint) {
+      const allowedCourtIds = new Set(courts.map(c => c.id));
+      bookings = bookings.filter(b => b.items?.some(i => allowedCourtIds.has(i.courtId)));
+    }
 
     const locationBusinessMap = new Map(locations.map((l) => [l.id, l.businessId]));
     const courtCountByBusiness = new Map<string, number>();
