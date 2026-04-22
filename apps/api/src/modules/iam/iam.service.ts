@@ -11,6 +11,7 @@ import { In, QueryFailedError, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { Business } from '../businesses/entities/business.entity';
 import { BusinessMembership } from '../businesses/entities/business-membership.entity';
+import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { SystemRole } from './iam.constants';
@@ -31,6 +32,8 @@ export class IamService implements OnModuleInit {
     private readonly businessesRepository: Repository<Business>,
     @InjectRepository(BusinessMembership)
     private readonly membershipsRepository: Repository<BusinessMembership>,
+    @InjectRepository(BusinessLocation)
+    private readonly locationsRepository: Repository<BusinessLocation>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -58,12 +61,48 @@ export class IamService implements OnModuleInit {
     const myMemberships = await this.membershipsRepository.find({
       where: { userId: requesterUserId },
     });
-    const businessIds = [...new Set(myMemberships.map((m) => m.businessId))];
-    if (businessIds.length === 0) return [];
-    const rows = await this.membershipsRepository.find({
-      where: { businessId: In(businessIds) },
+    const businessIds = new Set(myMemberships.map((m) => m.businessId));
+
+    // Also consider location-admin roles to find business memberships
+    const myLocAdminRoles = await this.userRolesRepository.find({
+      where: { userId: requesterUserId, roleCode: 'location-admin' },
     });
-    return [...new Set(rows.map((r) => r.userId))];
+    const myLocIds = myLocAdminRoles
+      .map((r) => r.locationId)
+      .filter((id): id is string => !!id);
+
+    if (myLocIds.length > 0) {
+      const myLocations = await this.locationsRepository.find({
+        where: { id: In(myLocIds) },
+      });
+      for (const loc of myLocations) {
+        businessIds.add(loc.businessId);
+      }
+    }
+
+    if (businessIds.size === 0) return [];
+
+    const bIds = [...businessIds];
+    const rows = await this.membershipsRepository.find({
+      where: { businessId: In(bIds) },
+    });
+    const userIds = new Set(rows.map((r) => r.userId));
+
+    // Also include users who are location-admin for any location in these businesses
+    const allLocations = await this.locationsRepository.find({
+      where: { businessId: In(bIds) },
+    });
+    const allLocationIds = allLocations.map((l) => l.id);
+    if (allLocationIds.length > 0) {
+      const locAdminRoles = await this.userRolesRepository.find({
+        where: { roleCode: 'location-admin', locationId: In(allLocationIds) },
+      });
+      for (const r of locAdminRoles) {
+        userIds.add(r.userId);
+      }
+    }
+
+    return [...userIds];
   }
 
   private async assertCanManageUser(
@@ -103,6 +142,7 @@ export class IamService implements OnModuleInit {
     const businessRoles: SystemRole[] = [
       'platform-owner',
       'business-admin',
+      'location-admin',
       'business-staff',
       'customer-end-user',
     ];
@@ -120,8 +160,25 @@ export class IamService implements OnModuleInit {
         where: { businessId: business.id },
       });
       const tenantUserIds = new Set(tenantMemberships.map((m) => m.userId));
+
+      // Also include users who are location-admin for any location in this business
+      const locations = await this.locationsRepository.find({
+        where: { businessId: business.id },
+      });
+      const locationIds = locations.map((l) => l.id);
+      if (locationIds.length > 0) {
+        const locAdminRoles = await this.userRolesRepository.find({
+          where: { roleCode: 'location-admin', locationId: In(locationIds) },
+        });
+        for (const r of locAdminRoles) {
+          tenantUserIds.add(r.userId);
+        }
+      }
+
       if (!isPlatformOwner && !tenantUserIds.has(requesterUserId)) {
-        throw new ForbiddenException('You can only view users in your business');
+        throw new ForbiddenException(
+          'You can only view users in your business',
+        );
       }
       businessUserIds = businessUserIds.filter((id) => tenantUserIds.has(id));
     }
@@ -391,7 +448,29 @@ export class IamService implements OnModuleInit {
       roleCode,
       locationId: opts?.locationId,
     });
-    return this.userRolesRepository.save(record);
+    const saved = await this.userRolesRepository.save(record);
+
+    // If it's a location-admin, ensure they have a membership in the business that owns the location.
+    if (roleCode === 'location-admin' && opts?.locationId) {
+      const location = await this.locationsRepository.findOne({
+        where: { id: opts.locationId },
+      });
+      if (location) {
+        const existingMembership = await this.membershipsRepository.findOne({
+          where: { userId, businessId: location.businessId },
+        });
+        if (!existingMembership) {
+          const membership = this.membershipsRepository.create({
+            businessId: location.businessId,
+            userId,
+            membershipRole: 'staff',
+          });
+          await this.membershipsRepository.save(membership);
+        }
+      }
+    }
+
+    return saved;
   }
 
   async unassignRole(

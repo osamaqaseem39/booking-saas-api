@@ -5,6 +5,7 @@ import { RolesGuard } from './authz/roles.guard';
 import { IamController } from './iam.controller';
 import { Business } from '../businesses/entities/business.entity';
 import { BusinessMembership } from '../businesses/entities/business-membership.entity';
+import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { Role } from './entities/role.entity';
 import { User } from './entities/user.entity';
 import { UserRole } from './entities/user-role.entity';
@@ -18,6 +19,7 @@ import { IamService } from './iam.service';
       UserRole,
       Business,
       BusinessMembership,
+      BusinessLocation,
     ]),
     JwtModule.register({
       secret:
