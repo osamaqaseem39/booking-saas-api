@@ -485,11 +485,9 @@ export class BookingsService {
     const overlaps = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
-      .where('b.tenantId = :tenantId', { tenantId })
-      .andWhere("b.bookingStatus IN ('pending','confirmed')")
-      .andWhere("i.itemStatus IN ('reserved','confirmed')")
-      .andWhere('i.courtKind = :kind', { kind: item.courtKind })
+      .where('i.courtKind = :kind', { kind: item.courtKind })
       .andWhere('i.courtId = :courtId', { courtId: item.courtId })
+      .andWhere("i.itemStatus <> 'cancelled'")
       .andWhere('i.startDatetime < :endDatetime', {
         endDatetime: endDatetime.toISOString(),
       })
@@ -593,20 +591,17 @@ export class BookingsService {
     if (dto.bookingStatus !== undefined) {
       booking.bookingStatus = dto.bookingStatus;
       // Cascade status to items to satisfy unique constraints (uq_booking_items_court_start_datetime_active)
-      if (booking.items) {
-        for (const item of booking.items) {
-          if (
-            dto.bookingStatus === 'cancelled' ||
-            dto.bookingStatus === 'no_show'
-          ) {
-            item.itemStatus = 'cancelled';
-          } else if (dto.bookingStatus === 'pending') {
-            item.itemStatus = 'reserved';
-          } else {
-            item.itemStatus = 'confirmed';
-          }
-        }
+      let targetItemStatus: BookingItemStatus = 'confirmed';
+      if (dto.bookingStatus === 'cancelled' || dto.bookingStatus === 'no_show') {
+        targetItemStatus = 'cancelled';
+      } else if (dto.bookingStatus === 'pending') {
+        targetItemStatus = 'reserved';
       }
+
+      await this.bookingRepo.manager.query(
+        'UPDATE booking_items SET "itemStatus" = $1 WHERE "bookingId" = $2',
+        [targetItemStatus, bookingId],
+      );
     }
     if (dto.notes !== undefined) booking.notes = dto.notes;
     if (dto.cancellationReason !== undefined)
@@ -656,11 +651,10 @@ export class BookingsService {
 
     // Force everything to available before deleting
     booking.bookingStatus = 'cancelled';
-    if (booking.items) {
-      for (const item of booking.items) {
-        item.itemStatus = 'cancelled';
-      }
-    }
+    await this.bookingRepo.manager.query(
+      'UPDATE booking_items SET "itemStatus" = $1 WHERE "bookingId" = $2',
+      ['cancelled', booking.id],
+    );
     await this.syncFacilitySlotsStatus(booking);
 
     await this.bookingRepo.remove(booking);
