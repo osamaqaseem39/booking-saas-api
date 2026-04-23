@@ -189,38 +189,63 @@ export class BookingsService {
     return business?.tenantId ?? null;
   }
 
-  private async resolveLocationMapping(booking: Booking): Promise<{
+  private async resolveLocationMappingBatch(bookings: Booking[]): Promise<{
     locationsMap: Record<string, string>;
     courtToLocationMap: Record<string, string>;
   }> {
     const locationsMap: Record<string, string> = {};
     const courtToLocationMap: Record<string, string> = {};
-    const firstItem = booking.items?.[0];
 
-    if (firstItem) {
-      if (firstItem.courtKind === 'padel_court') {
-        const court = await this.padelRepo.findOne({
-          where: { id: firstItem.courtId },
-          relations: ['businessLocation'],
-        });
-        if (court?.businessLocation) {
-          courtToLocationMap[court.id] = court.businessLocation.id;
-          locationsMap[court.businessLocation.id] = court.businessLocation.name;
-        }
-      } else if (firstItem.courtKind === 'turf_court') {
-        const court = await this.turfRepo.findOne({
-          where: { id: firstItem.courtId },
-        });
-        if (court?.branchId) {
-          courtToLocationMap[court.id] = court.branchId;
-          const loc = await this.locationRepo.findOne({
-            where: { id: court.branchId },
-          });
-          if (loc) locationsMap[loc.id] = loc.name;
-        }
+    const padelIds = new Set<string>();
+    const turfIds = new Set<string>();
+
+    for (const b of bookings) {
+      for (const item of b.items || []) {
+        if (item.courtKind === 'padel_court') padelIds.add(item.courtId);
+        else if (item.courtKind === 'turf_court') turfIds.add(item.courtId);
       }
     }
+
+    if (padelIds.size > 0) {
+      const padels = await this.padelRepo.find({
+        where: { id: In([...padelIds]) },
+        select: ['id', 'businessLocationId'],
+      });
+      for (const p of padels) {
+        if (p.businessLocationId)
+          courtToLocationMap[p.id] = p.businessLocationId;
+      }
+    }
+
+    if (turfIds.size > 0) {
+      const turfs = await this.turfRepo.find({
+        where: { id: In([...turfIds]) },
+        select: ['id', 'branchId'],
+      });
+      for (const t of turfs) {
+        if (t.branchId) courtToLocationMap[t.id] = t.branchId;
+      }
+    }
+
+    const locationIds = new Set(Object.values(courtToLocationMap));
+    if (locationIds.size > 0) {
+      const locations = await this.locationRepo.find({
+        where: { id: In([...locationIds]) },
+        select: ['id', 'name'],
+      });
+      for (const loc of locations) {
+        locationsMap[loc.id] = loc.name;
+      }
+    }
+
     return { locationsMap, courtToLocationMap };
+  }
+
+  private async resolveLocationMapping(booking: Booking): Promise<{
+    locationsMap: Record<string, string>;
+    courtToLocationMap: Record<string, string>;
+  }> {
+    return this.resolveLocationMappingBatch([booking]);
   }
  
   private toApi(
@@ -355,9 +380,11 @@ export class BookingsService {
       relations: ['items', 'user'],
       order: { createdAt: 'DESC' },
     });
-    // For profile, we might not have tenantId easily for batching locs,
-    // so we'll just return with whatever we have or omit loc names here.
-    return rows.map((b) => this.toApi(b));
+
+    const { locationsMap, courtToLocationMap } =
+      await this.resolveLocationMappingBatch(rows);
+
+    return rows.map((b) => this.toApi(b, locationsMap, courtToLocationMap));
   }
 
   async getOne(tenantId: string, bookingId: string, requesterUserId?: string): Promise<BookingApiRow> {
