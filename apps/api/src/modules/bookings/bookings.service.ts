@@ -839,10 +839,8 @@ export class BookingsService {
     const rows = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
-      .where('b.tenantId = :tenantId', { tenantId })
       .andWhere('b.bookingDate = :date', { date })
-      .andWhere("b.bookingStatus IN ('confirmed', 'pending')")
-      .andWhere("i.itemStatus IN ('confirmed', 'reserved')")
+      .andWhere("i.itemStatus <> 'cancelled'")
       .andWhere('i.courtKind = :kind', { kind: params.kind })
       .andWhere('i.courtId = :courtId', { courtId: params.courtId })
       .select([
