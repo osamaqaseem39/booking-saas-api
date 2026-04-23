@@ -40,7 +40,7 @@ export class PadelCourtController {
   }
 
   @Post()
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   create(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreatePadelCourtDto,
@@ -49,7 +49,7 @@ export class PadelCourtController {
   }
 
   @Patch(':id')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   patch(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -59,7 +59,7 @@ export class PadelCourtController {
   }
 
   @Delete(':id')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   remove(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,

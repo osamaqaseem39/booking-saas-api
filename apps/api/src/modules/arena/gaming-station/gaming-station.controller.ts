@@ -45,7 +45,7 @@ export class GamingStationController {
   }
 
   @Post()
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   create(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateGamingStationDto,
@@ -54,7 +54,7 @@ export class GamingStationController {
   }
 
   @Patch(':id')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   patch(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -64,7 +64,7 @@ export class GamingStationController {
   }
 
   @Delete(':id')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   remove(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -122,7 +122,7 @@ export class TypedGamingStationController {
   }
 
   @Post(TYPE_BASE_PATHS)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   create(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -133,7 +133,7 @@ export class TypedGamingStationController {
   }
 
   @Patch(TYPE_ID_PATHS)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   patch(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -145,7 +145,7 @@ export class TypedGamingStationController {
   }
 
   @Delete(TYPE_ID_PATHS)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   remove(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,

@@ -124,7 +124,7 @@ export class IamController {
   }
 
   @Post('roles/assign')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async assignRole(@Req() req: Request, @Body() dto: AssignRoleDto) {
     const requesterId = this.requesterUserId(req);
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
@@ -138,7 +138,7 @@ export class IamController {
   }
 
   @Post('roles/unassign')
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   async unassignRole(@Req() req: Request, @Body() dto: AssignRoleDto) {
     const requesterId = this.requesterUserId(req);
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [

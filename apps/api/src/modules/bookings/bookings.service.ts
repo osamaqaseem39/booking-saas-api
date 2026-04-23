@@ -476,11 +476,12 @@ export class BookingsService {
     date: string,
     item: CreateBookingItemDto,
   ) {
-    const { startDatetime } = this.toSlotDateTimes(
+    const { startDatetime, endDatetime } = this.toSlotDateTimes(
       date,
       item.startTime,
       item.endTime,
     );
+
     const overlaps = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
@@ -489,10 +490,14 @@ export class BookingsService {
       .andWhere("i.itemStatus IN ('reserved','confirmed')")
       .andWhere('i.courtKind = :kind', { kind: item.courtKind })
       .andWhere('i.courtId = :courtId', { courtId: item.courtId })
-      .andWhere('i.startDatetime = :startDatetime', {
+      .andWhere('i.startDatetime < :endDatetime', {
+        endDatetime: endDatetime.toISOString(),
+      })
+      .andWhere('i.endDatetime > :startDatetime', {
         startDatetime: startDatetime.toISOString(),
       })
       .getCount();
+
     if (overlaps > 0)
       throw new BadRequestException('Selected slot is already booked');
   }
@@ -1437,7 +1442,9 @@ export class BookingsService {
       const targetStatus: CourtFacilitySlotStatus =
         isBookingActive && isItemActive ? 'blocked' : 'available';
 
-      await this.facilitySlotRepo
+      const effectiveEndTime = item.endTime === '00:00' ? '24:00' : item.endTime;
+
+      const updateResult = await this.facilitySlotRepo
         .createQueryBuilder()
         .update(CourtFacilitySlot)
         .set({ status: targetStatus })
@@ -1445,9 +1452,15 @@ export class BookingsService {
         .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
         .andWhere('courtId = :courtId', { courtId: item.courtId })
         .andWhere('slotDate = :slotDate', { slotDate: booking.bookingDate })
-        .andWhere('startTime < :endTime', { endTime: item.endTime })
+        .andWhere('startTime < :endTime', { endTime: effectiveEndTime })
         .andWhere('endTime > :startTime', { startTime: item.startTime })
         .execute();
+
+      console.log(
+        `[syncFacilitySlotsStatus] Booking ${booking.bookingId} (${booking.bookingStatus}): ` +
+        `Updated ${updateResult.affected} slots to ${targetStatus} for court ${item.courtId} ` +
+        `on ${booking.bookingDate} ${item.startTime}-${item.endTime}`,
+      );
     }
   }
 

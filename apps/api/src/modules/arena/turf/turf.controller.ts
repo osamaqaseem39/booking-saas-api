@@ -63,7 +63,7 @@ export class TurfController {
 
   @Post()
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   create(@CurrentTenant() tenant: TenantContext, @Body() body: Record<string, unknown>) {
     return this.turfService.createByTenant(tenant.tenantId, body);
   }
@@ -79,7 +79,7 @@ export class TurfController {
 
   @Patch(':id')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   patch(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -90,7 +90,7 @@ export class TurfController {
 
   @Delete(':id')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
   remove(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,

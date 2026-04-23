@@ -13,7 +13,7 @@ export class BillingController {
 
   @Get('invoices')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
   listInvoices(@Req() req: Request, @CurrentTenant() tenant: TenantContext): Promise<InvoiceRecord[]> {
     const userId = (req as any).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');
