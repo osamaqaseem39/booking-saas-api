@@ -6,12 +6,26 @@ import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import { DatabaseQueryExceptionFilter } from './common/filters/database-query-exception.filter';
 
+/** Merged with `CORS_ORIGINS` / `CORS_ORIGIN` when set (see `applyHttpGlobals`). */
+const DEFAULT_CORS_ORIGINS: readonly string[] = [
+  'https://www.vellay.pro',
+  'https://www.velay.app',
+  'https://www.velay.pro',
+  'https://www.vellay.app',
+  'http://localhost:3000',
+  'https://booking-saas-kappa.vercel.app'
+];
+
 export function applyHttpGlobals(app: NestExpressApplication): void {
   const originsEnv = process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '';
-  const allowedOrigins = originsEnv
+  const fromEnv = originsEnv
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  const hasEnvOrigins = fromEnv.length > 0;
+  const allowedOrigins = hasEnvOrigins
+    ? [...new Set([...DEFAULT_CORS_ORIGINS, ...fromEnv])]
+    : [];
 
   // Explicit CORS middleware to ensure preflight `OPTIONS` requests
   // never hit a 404/route-miss without `Access-Control-Allow-Origin`.
