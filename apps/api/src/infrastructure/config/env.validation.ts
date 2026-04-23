@@ -15,6 +15,6 @@ export const envValidationSchema = Joi.object({
   REDIS_PASSWORD: Joi.string().optional(),
   JWT_ACCESS_SECRET: Joi.string().required(),
   JWT_REFRESH_SECRET: Joi.string().required(),
-  JWT_ACCESS_TTL: Joi.string().default('15m'),
+  JWT_ACCESS_TTL: Joi.string().default('7d'),
   JWT_REFRESH_TTL: Joi.string().default('7d'),
 });
