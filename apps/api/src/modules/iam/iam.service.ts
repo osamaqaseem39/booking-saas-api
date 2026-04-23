@@ -46,6 +46,35 @@ export class IamService implements OnModuleInit {
       throw new NotFoundException(`User ${userId} not found`);
     }
     const roleRows = await this.userRolesRepository.find({ where: { userId } });
+
+    // Find locationId if any
+    const locationRole = roleRows.find((r) => r.roleCode === 'location-admin');
+    const locationId = locationRole?.locationId;
+
+    let business: Business | null = null;
+    let tenantId: string | undefined = undefined;
+
+    // Try to find business via membership
+    const membership = await this.membershipsRepository.findOne({
+      where: { userId },
+      relations: ['business'],
+    });
+
+    if (membership?.business) {
+      business = membership.business;
+      tenantId = business.tenantId;
+    } else if (locationId) {
+      // If no membership but has location, find business via location
+      const location = await this.locationsRepository.findOne({
+        where: { id: locationId },
+        relations: ['business'],
+      });
+      if (location?.business) {
+        business = location.business;
+        tenantId = business.tenantId;
+      }
+    }
+
     return {
       id: user.id,
       fullName: user.fullName,
@@ -53,7 +82,15 @@ export class IamService implements OnModuleInit {
       phone: user.phone,
       isActive: user.isActive,
       roles: roleRows.map((r) => r.roleCode),
-      locationId: roleRows.find(r => r.roleCode === 'location-admin')?.locationId ?? undefined,
+      locationId,
+      tenantId,
+      business: business
+        ? {
+            id: business.id,
+            businessName: business.businessName,
+            tenantId: business.tenantId,
+          }
+        : undefined,
     };
   }
 

@@ -27,14 +27,7 @@ export class AuthController {
   async login(@Body() dto: LoginDto): Promise<{
     token: string;
     refreshToken: string;
-    user: {
-      id: string;
-      fullName: string;
-      email: string;
-      phone?: string;
-      isActive: boolean;
-      roles: string[];
-    };
+    user: Awaited<ReturnType<AuthService['login']>>['user'];
   }> {
     return this.authService.login(dto);
   }
