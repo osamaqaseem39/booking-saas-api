@@ -51,7 +51,13 @@ export class Booking {
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   totalAmount!: string;
 
-  @Column({ type: 'decimal', precision: 12, scale: 2, default: '0' })
+  @Column({
+    name: 'paid_amount',
+    type: 'decimal',
+    precision: 12,
+    scale: 2,
+    default: '0',
+  })
   paidAmount!: string;
 
   @Column({ type: 'varchar', length: 16 })
