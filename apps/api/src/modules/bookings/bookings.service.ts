@@ -492,6 +492,8 @@ export class BookingsService {
       .where('i.courtKind = :kind', { kind: item.courtKind })
       .andWhere('i.courtId = :courtId', { courtId: item.courtId })
       .andWhere("i.itemStatus <> 'cancelled'")
+      // Ignore cancelled / no_show bookings (also covers legacy rows where itemStatus was not persisted)
+      .andWhere("b.bookingStatus NOT IN ('cancelled', 'no_show')")
       .andWhere('i.startDatetime < :endDatetime', {
         endDatetime: endDatetime.toISOString(),
       })
@@ -595,18 +597,17 @@ export class BookingsService {
 
     if (dto.bookingStatus !== undefined) {
       booking.bookingStatus = dto.bookingStatus;
-      // Cascade status to items to satisfy unique constraints (uq_booking_items_court_start_datetime_active)
+      // Align every item in memory: subsequent save() cascades to booking_items, and
+      // a raw SQL UPDATE would be overwritten by those stale in-memory item rows.
       let targetItemStatus: BookingItemStatus = 'confirmed';
       if (dto.bookingStatus === 'cancelled' || dto.bookingStatus === 'no_show') {
         targetItemStatus = 'cancelled';
       } else if (dto.bookingStatus === 'pending') {
         targetItemStatus = 'reserved';
       }
-
-      await this.bookingRepo.manager.query(
-        'UPDATE booking_items SET "itemStatus" = $1 WHERE "bookingId" = $2',
-        [targetItemStatus, bookingId],
-      );
+      for (const item of booking.items) {
+        item.itemStatus = targetItemStatus;
+      }
     }
     if (dto.notes !== undefined) booking.notes = dto.notes;
     if (dto.cancellationReason !== undefined)
