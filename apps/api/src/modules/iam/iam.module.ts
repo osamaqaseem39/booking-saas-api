@@ -28,7 +28,7 @@ import { IamService } from './iam.service';
         process.env.SUPABASE_SECRET_KEY ??
         'dev-jwt-secret',
       signOptions: {
-        expiresIn: (process.env.JWT_EXPIRES_IN ?? '1d') as any,
+        expiresIn: (process.env.JWT_EXPIRES_IN ?? '7d') as any,
       },
     }),
   ],
