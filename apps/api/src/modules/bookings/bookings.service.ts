@@ -1457,7 +1457,7 @@ export class BookingsService {
         .execute();
 
       console.log(
-        `[syncFacilitySlotsStatus] Booking ${booking.bookingId} (${booking.bookingStatus}): ` +
+        `[syncFacilitySlotsStatus] Booking ${booking.id} (${booking.bookingStatus}): ` +
         `Updated ${updateResult.affected} slots to ${targetStatus} for court ${item.courtId} ` +
         `on ${booking.bookingDate} ${item.startTime}-${item.endTime}`,
       );
