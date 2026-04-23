@@ -590,8 +590,24 @@ export class BookingsService {
     });
     if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
 
-    if (dto.bookingStatus !== undefined)
+    if (dto.bookingStatus !== undefined) {
       booking.bookingStatus = dto.bookingStatus;
+      // Cascade status to items to satisfy unique constraints (uq_booking_items_court_start_datetime_active)
+      if (booking.items) {
+        for (const item of booking.items) {
+          if (
+            dto.bookingStatus === 'cancelled' ||
+            dto.bookingStatus === 'no_show'
+          ) {
+            item.itemStatus = 'cancelled';
+          } else if (dto.bookingStatus === 'pending') {
+            item.itemStatus = 'reserved';
+          } else {
+            item.itemStatus = 'confirmed';
+          }
+        }
+      }
+    }
     if (dto.notes !== undefined) booking.notes = dto.notes;
     if (dto.cancellationReason !== undefined)
       booking.cancellationReason = dto.cancellationReason;
@@ -640,6 +656,11 @@ export class BookingsService {
 
     // Force everything to available before deleting
     booking.bookingStatus = 'cancelled';
+    if (booking.items) {
+      for (const item of booking.items) {
+        item.itemStatus = 'cancelled';
+      }
+    }
     await this.syncFacilitySlotsStatus(booking);
 
     await this.bookingRepo.remove(booking);
