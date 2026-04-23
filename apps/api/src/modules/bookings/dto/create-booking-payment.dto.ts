@@ -20,4 +20,7 @@ export class CreateBookingPaymentDto {
   @IsOptional()
   @IsDateString()
   paidAt?: string;
+
+  @IsOptional()
+  paidAmount?: number;
 }

@@ -34,6 +34,9 @@ export class UpdateBookingPaymentDto {
   @IsOptional()
   @IsDateString()
   paidAt?: string;
+
+  @IsOptional()
+  paidAmount?: number;
 }
 
 export class UpdateBookingItemStatusDto {

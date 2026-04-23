@@ -19,6 +19,7 @@ export type BookingStatus = (typeof BOOKING_STATUSES)[number];
 
 export const PAYMENT_STATUSES = [
   'pending',
+  'partially_paid',
   'paid',
   'failed',
   'refunded',

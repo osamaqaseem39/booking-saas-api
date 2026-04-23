@@ -101,6 +101,8 @@ export type BookingApiRow = {
     paymentMethod: PaymentMethod;
     transactionId?: string;
     paidAt?: string;
+    paidAmount: number;
+    remainingAmount: number;
   };
   bookingStatus: BookingStatus;
   notes?: string;
@@ -294,6 +296,8 @@ export class BookingsService {
         paymentMethod: booking.paymentMethod,
         transactionId: booking.transactionId,
         paidAt: booking.paidAt?.toISOString(),
+        paidAmount: numFromDec(booking.paidAmount),
+        remainingAmount: numFromDec(booking.totalAmount) - numFromDec(booking.paidAmount),
       },
       bookingStatus: booking.bookingStatus,
       notes: booking.notes,
@@ -556,6 +560,7 @@ export class BookingsService {
       paymentMethod: dto.payment.paymentMethod,
       transactionId: dto.payment.transactionId,
       paidAt: dto.payment.paidAt ? new Date(dto.payment.paidAt) : undefined,
+      paidAmount: dec(dto.payment.paidAmount ?? 0),
       bookingStatus: dto.bookingStatus ?? 'confirmed',
       notes: dto.notes,
       items: itemsPayload,
@@ -616,6 +621,9 @@ export class BookingsService {
       booking.paidAt = dto.payment.paidAt
         ? new Date(dto.payment.paidAt)
         : undefined;
+    }
+    if (dto.payment?.paidAmount !== undefined) {
+      booking.paidAmount = dec(dto.payment.paidAmount);
     }
     if (dto.itemStatuses?.length) {
       const byId = new Map(booking.items.map((i) => [i.id, i]));
