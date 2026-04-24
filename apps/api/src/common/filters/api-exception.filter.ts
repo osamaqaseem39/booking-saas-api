@@ -39,6 +39,21 @@ export class ApiExceptionFilter implements ExceptionFilter {
         }
       }
 
+      // ValidationPipe, guards, and BadRequest from handlers — visible in Vercel function logs
+      const logDetail = Array.isArray(message)
+        ? message.join(' | ')
+        : String(message);
+      if (statusCode >= 500) {
+        this.logger.error(
+          `HTTP ${statusCode} ${req.method} ${req.url} — ${logDetail}`,
+          exception.stack,
+        );
+      } else {
+        this.logger.warn(
+          `HTTP ${statusCode} ${req.method} ${req.url} — ${logDetail}`,
+        );
+      }
+
       res.status(statusCode).json({
         statusCode,
         error: error ?? this.httpStatusLabel(statusCode),
