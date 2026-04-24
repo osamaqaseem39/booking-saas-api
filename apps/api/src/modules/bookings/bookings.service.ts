@@ -464,6 +464,34 @@ export class BookingsService {
     };
   }
 
+  private resolveItemBookingDates(
+    bookingDate: string,
+    items: CreateBookingItemDto[],
+  ): string[] {
+    const baseDate = formatDateOnly(bookingDate);
+    const dayOffsetByCourt = new Map<string, number>();
+    const prevStartByCourt = new Map<string, number>();
+
+    return items.map((item) => {
+      const key = `${item.courtKind}:${item.courtId}`;
+      const currentStart = toMinutes(item.startTime, false);
+      const previousStart = prevStartByCourt.get(key);
+      let offset = dayOffsetByCourt.get(key) ?? 0;
+
+      // If times wrap backwards for the same court in a single payload,
+      // treat subsequent rows as next-day selections.
+      if (previousStart !== undefined && currentStart < previousStart) {
+        offset += 1;
+        dayOffsetByCourt.set(key, offset);
+      } else if (!dayOffsetByCourt.has(key)) {
+        dayOffsetByCourt.set(key, offset);
+      }
+
+      prevStartByCourt.set(key, currentStart);
+      return addDays(baseDate, offset);
+    });
+  }
+
   private assertBookingItem(item: CreateBookingItemDto): void {
     if (item.courtKind !== 'padel_court' && item.courtKind !== 'turf_court') {
       throw new BadRequestException(
@@ -513,7 +541,12 @@ export class BookingsService {
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new BadRequestException(`User ${dto.userId} not found`);
 
-    for (const item of dto.items) {
+    const itemBookingDates = this.resolveItemBookingDates(
+      dto.bookingDate,
+      dto.items,
+    );
+
+    for (const [idx, item] of dto.items.entries()) {
       this.assertBookingItem(item);
       if (item.courtKind === 'padel_court') {
         await this.assertPadelCourtExists(tenantId, item.courtId);
@@ -534,16 +567,16 @@ export class BookingsService {
           );
         }
       }
-      await this.assertNoOverlap(tenantId, dto.bookingDate, item);
+      await this.assertNoOverlap(tenantId, itemBookingDates[idx], item);
     }
 
-    const itemsPayload: DeepPartial<BookingItem>[] = dto.items.map((i) => ({
+    const itemsPayload: DeepPartial<BookingItem>[] = dto.items.map((i, idx) => ({
       courtKind: i.courtKind,
       courtId: i.courtId,
       slotId: i.slotId,
       startTime: i.startTime,
       endTime: i.endTime,
-      ...this.toSlotDateTimes(dto.bookingDate, i.startTime, i.endTime),
+      ...this.toSlotDateTimes(itemBookingDates[idx], i.startTime, i.endTime),
       price: dec(i.price),
       currency: i.currency ?? 'PKR',
       itemStatus: i.status ?? 'confirmed',
@@ -689,6 +722,7 @@ export class BookingsService {
     },
   ) {
     const date = formatDateOnly(params.date);
+    const nextDate = addDays(date, 1);
     const sport = params.sportType ?? 'padel';
     const isTurf = sport === 'futsal' || sport === 'cricket';
 
@@ -734,16 +768,25 @@ export class BookingsService {
 
     // --- Find booked slots that overlap the requested window ---
     const courtKindFilter = isTurf ? 'turf_court' : 'padel_court';
+    const queryStart = new Date(`${date}T00:00:00.000Z`);
+    queryStart.setUTCMinutes(toMinutes(params.startTime, false));
+    const queryEnd = new Date(`${date}T00:00:00.000Z`);
+    queryEnd.setUTCMinutes(toMinutes(params.endTime, true));
+    if (queryEnd <= queryStart) queryEnd.setUTCDate(queryEnd.getUTCDate() + 1);
+
     const busy = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
-      .andWhere('b.bookingDate = :date', { date })
       .andWhere("b.bookingStatus IN ('confirmed', 'pending')")
       .andWhere("i.itemStatus IN ('confirmed', 'reserved')")
       .andWhere('i.courtKind = :courtKind', { courtKind: courtKindFilter })
-      .andWhere('i.startTime < :end', { end: params.endTime === '00:00' ? '24:00' : params.endTime })
-      .andWhere('i.endTime > :start', { start: params.startTime })
+      .andWhere('i.startDatetime < :queryEnd', {
+        queryEnd: queryEnd.toISOString(),
+      })
+      .andWhere('i.endDatetime > :queryStart', {
+        queryStart: queryStart.toISOString(),
+      })
       .select([
         'i.courtId AS courtId',
         'i.courtKind AS courtKind',
@@ -767,20 +810,28 @@ export class BookingsService {
 
     // --- Also check for slots explicitly marked as "blocked" (e.g. via templates) ---
     const blocked = await this.facilitySlotRepo.find({
-      where: {
-        tenantId,
-        courtKind: courtKindFilter,
-        slotDate: date,
-        status: 'blocked',
-      },
-      select: ['courtId', 'startTime', 'endTime'],
+      where: [
+        {
+          tenantId,
+          courtKind: courtKindFilter,
+          slotDate: date,
+          status: 'blocked',
+        },
+        {
+          tenantId,
+          courtKind: courtKindFilter,
+          slotDate: nextDate,
+          status: 'blocked',
+        },
+      ],
+      select: ['courtId', 'slotDate', 'startTime', 'endTime'],
     });
 
     const blockedIds = new Set<string>();
     for (const fs of blocked) {
       if (
-        toMinutes(fs.startTime, false) < toMinutes(params.endTime, true) &&
-        toMinutes(fs.endTime, true) > toMinutes(params.startTime, false)
+        new Date(`${fs.slotDate}T${fs.startTime}:00Z`) < queryEnd &&
+        new Date(`${fs.slotDate}T${fs.endTime}:00Z`) > queryStart
       ) {
         blockedIds.add(fs.courtId);
       }
@@ -845,13 +896,23 @@ export class BookingsService {
       order: { startTime: 'ASC' },
     });
 
+    const queryStart = new Date(`${date}T00:00:00.000Z`);
+    queryStart.setUTCMinutes(toMinutes(params.startTime ?? '00:00', false));
+    const queryEnd = new Date(`${date}T00:00:00.000Z`);
+    queryEnd.setUTCMinutes(toMinutes(params.endTime ?? '24:00', true));
+
     const rows = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
-      .andWhere('b.bookingDate = :date', { date })
+      .andWhere('b.tenantId = :tenantId', { tenantId })
+      .andWhere("b.bookingStatus IN ('confirmed', 'pending', 'completed')")
       .andWhere("i.itemStatus <> 'cancelled'")
       .andWhere('i.courtKind = :kind', { kind: params.kind })
       .andWhere('i.courtId = :courtId', { courtId: params.courtId })
+      .andWhere('i.startDatetime < :queryEnd', { queryEnd: queryEnd.toISOString() })
+      .andWhere('i.endDatetime > :queryStart', {
+        queryStart: queryStart.toISOString(),
+      })
       .select([
         'b.id AS bookingId',
         'i.id AS id',
@@ -1464,24 +1525,49 @@ export class BookingsService {
       const targetStatus: CourtFacilitySlotStatus =
         isBookingActive && isItemActive ? 'blocked' : 'available';
 
-      const effectiveEndTime = item.endTime === '00:00' ? '24:00' : item.endTime;
+      const startDateIso = item.startDatetime
+        ? formatDateOnly(item.startDatetime)
+        : formatDateOnly(booking.bookingDate);
+      const endDateIso = item.endDatetime
+        ? formatDateOnly(item.endDatetime)
+        : startDateIso;
+      const startTimeValue =
+        item.startDatetime &&
+        formatDateOnly(item.startDatetime) !== formatDateOnly(booking.bookingDate)
+          ? item.startDatetime.toISOString().slice(11, 16)
+          : item.startTime;
+      const endTimeValue =
+        item.endDatetime &&
+        formatDateOnly(item.endDatetime) !== formatDateOnly(booking.bookingDate)
+          ? item.endDatetime.toISOString().slice(11, 16)
+          : item.endTime;
 
-      const updateResult = await this.facilitySlotRepo
-        .createQueryBuilder()
-        .update(CourtFacilitySlot)
-        .set({ status: targetStatus })
-        .where('tenantId = :tenantId', { tenantId: booking.tenantId })
-        .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
-        .andWhere('courtId = :courtId', { courtId: item.courtId })
-        .andWhere('slotDate = :slotDate', { slotDate: booking.bookingDate })
-        .andWhere('startTime < :endTime', { endTime: effectiveEndTime })
-        .andWhere('endTime > :startTime', { startTime: item.startTime })
-        .execute();
+      let totalAffected = 0;
+      const touchedDates = new Set<string>([startDateIso, endDateIso]);
+
+      for (const slotDate of touchedDates) {
+        const windowStart = slotDate === startDateIso ? startTimeValue : '00:00';
+        const windowEnd = slotDate === endDateIso ? endTimeValue : '24:00';
+        const effectiveEnd = windowEnd === '00:00' ? '24:00' : windowEnd;
+
+        const updateResult = await this.facilitySlotRepo
+          .createQueryBuilder()
+          .update(CourtFacilitySlot)
+          .set({ status: targetStatus })
+          .where('tenantId = :tenantId', { tenantId: booking.tenantId })
+          .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
+          .andWhere('courtId = :courtId', { courtId: item.courtId })
+          .andWhere('slotDate = :slotDate', { slotDate })
+          .andWhere('startTime < :endTime', { endTime: effectiveEnd })
+          .andWhere('endTime > :startTime', { startTime: windowStart })
+          .execute();
+        totalAffected += updateResult.affected ?? 0;
+      }
 
       console.log(
         `[syncFacilitySlotsStatus] Booking ${booking.id} (${booking.bookingStatus}): ` +
-        `Updated ${updateResult.affected} slots to ${targetStatus} for court ${item.courtId} ` +
-        `on ${booking.bookingDate} ${item.startTime}-${item.endTime}`,
+          `Updated ${totalAffected} slots to ${targetStatus} for court ${item.courtId} ` +
+          `across ${startDateIso}..${endDateIso} ${item.startTime}-${item.endTime}`,
       );
     }
   }

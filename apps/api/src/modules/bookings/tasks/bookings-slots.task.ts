@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { LessThan, LessThanOrEqual, Repository } from 'typeorm';
 import { BookingsService } from '../bookings.service';
 import { PadelCourt } from '../../arena/padel-court/entities/padel-court.entity';
 import { TurfCourt } from '../../arena/turf/entities/turf-court.entity';
@@ -10,6 +10,7 @@ import { CourtFacilitySlot } from '../entities/court-facility-slot.entity';
 @Injectable()
 export class BookingsSlotsTask {
   private readonly logger = new Logger(BookingsSlotsTask.name);
+  private readonly slotsTimeZone = 'Asia/Karachi';
 
   constructor(
     private readonly bookingsService: BookingsService,
@@ -21,6 +22,49 @@ export class BookingsSlotsTask {
     private readonly facilitySlotRepo: Repository<CourtFacilitySlot>,
   ) {}
 
+  private getCurrentSlotDateTime() {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.slotsTimeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+    const parts = formatter.formatToParts(new Date());
+    const y = parts.find((p) => p.type === 'year')?.value;
+    const m = parts.find((p) => p.type === 'month')?.value;
+    const d = parts.find((p) => p.type === 'day')?.value;
+    const hh = parts.find((p) => p.type === 'hour')?.value;
+    const mm = parts.find((p) => p.type === 'minute')?.value;
+
+    return {
+      today: `${y}-${m}-${d}`,
+      currentTime: `${hh}:${mm}`,
+    };
+  }
+
+  private async cleanupPastFacilitySlots(includePastTimesToday = false) {
+    const { today, currentTime } = this.getCurrentSlotDateTime();
+    const deleteOlderDateResult = await this.facilitySlotRepo.delete({
+      slotDate: LessThan(today),
+    });
+
+    let deletedCount = deleteOlderDateResult.affected ?? 0;
+    if (includePastTimesToday) {
+      const deletePastTimeTodayResult = await this.facilitySlotRepo.delete({
+        slotDate: today,
+        endTime: LessThanOrEqual(currentTime),
+      });
+      deletedCount += deletePastTimeTodayResult.affected ?? 0;
+    }
+
+    this.logger.log(
+      `Cleaned up ${deletedCount} expired facility slots (today=${today}, now=${currentTime}).`,
+    );
+  }
+
   /**
    * Run every day at midnight to:
    * 1. Delete past slots.
@@ -30,16 +74,9 @@ export class BookingsSlotsTask {
   async handleSlotMaintenance() {
     this.logger.log('Starting daily slot maintenance task...');
 
-    const today = new Date().toISOString().slice(0, 10);
-
     // 1. Cleanup past slots (older than today)
     try {
-      const deleteResult = await this.facilitySlotRepo.delete({
-        slotDate: LessThan(today),
-      });
-      this.logger.log(
-        `Cleaned up ${deleteResult.affected ?? 0} past booking slots.`,
-      );
+      await this.cleanupPastFacilitySlots();
     } catch (err) {
       this.logger.error('Failed to cleanup past slots', err);
     }
@@ -132,6 +169,20 @@ export class BookingsSlotsTask {
       await this.bookingsService.completePastBookings();
     } catch (err) {
       this.logger.error('Failed to complete past bookings', err);
+    }
+  }
+
+  /**
+   * Run every 10 minutes to:
+   * Delete expired facility slots for both past days and elapsed time today.
+   */
+  @Cron(CronExpression.EVERY_10_MINUTES)
+  async handleExpiredFacilitySlotCleanup() {
+    this.logger.log('Starting expired facility slot cleanup task...');
+    try {
+      await this.cleanupPastFacilitySlots(true);
+    } catch (err) {
+      this.logger.error('Failed expired facility slot cleanup', err);
     }
   }
 }
