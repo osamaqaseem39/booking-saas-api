@@ -4,11 +4,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, MoreThanOrEqual, Repository } from 'typeorm';
 import type { CreateTimeSlotTemplateDto } from '../dto/create-time-slot-template.dto';
 import type { UpdateTimeSlotTemplateDto } from '../dto/update-time-slot-template.dto';
 import { TenantTimeSlotTemplate } from '../entities/tenant-time-slot-template.entity';
 import { TenantTimeSlotTemplateLine } from '../entities/tenant-time-slot-template-line.entity';
+import { PadelCourt } from '../../arena/padel-court/entities/padel-court.entity';
+import { TurfCourt } from '../../arena/turf/entities/turf-court.entity';
+import { CourtFacilitySlot } from '../entities/court-facility-slot.entity';
+import { BookingItem } from '../entities/booking-item.entity';
 import { COURT_SLOT_GRID_STEP_MINUTES } from '../types/booking.types';
 
 function toMinutes(time: string, isEndTime = false): number {
@@ -47,7 +51,155 @@ export class TimeSlotTemplatesService {
     private readonly templateRepo: Repository<TenantTimeSlotTemplate>,
     @InjectRepository(TenantTimeSlotTemplateLine)
     private readonly lineRepo: Repository<TenantTimeSlotTemplateLine>,
+    @InjectRepository(PadelCourt)
+    private readonly padelRepo: Repository<PadelCourt>,
+    @InjectRepository(TurfCourt)
+    private readonly turfRepo: Repository<TurfCourt>,
+    @InjectRepository(CourtFacilitySlot)
+    private readonly facilitySlotRepo: Repository<CourtFacilitySlot>,
+    @InjectRepository(BookingItem)
+    private readonly bookingItemRepo: Repository<BookingItem>,
   ) {}
+
+  private async syncTemplateToFacilitySlots(
+    tenantId: string,
+    templateId: string,
+    slotLines: TenantTimeSlotTemplateLine[],
+  ): Promise<void> {
+    const [padelCourts, turfCourts] = await Promise.all([
+      this.padelRepo.find({
+        where: { tenantId, timeSlotTemplateId: templateId },
+        select: ['id'],
+      }),
+      this.turfRepo.find({
+        where: { tenantId, timeSlotTemplateId: templateId },
+        select: ['id'],
+      }),
+    ]);
+
+    const padelCourtIds = padelCourts.map((c) => c.id);
+    const turfCourtIds = turfCourts.map((c) => c.id);
+    if (!padelCourtIds.length && !turfCourtIds.length) return;
+
+    const today = new Date().toISOString().slice(0, 10);
+    const dates: string[] = [];
+    for (let i = 0; i < 30; i++) {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() + i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+
+    if (padelCourtIds.length) {
+      await this.facilitySlotRepo.delete({
+        tenantId,
+        courtKind: 'padel_court',
+        courtId: In(padelCourtIds),
+        slotDate: MoreThanOrEqual(today),
+      });
+    }
+    if (turfCourtIds.length) {
+      await this.facilitySlotRepo.delete({
+        tenantId,
+        courtKind: 'turf_court',
+        courtId: In(turfCourtIds),
+        slotDate: MoreThanOrEqual(today),
+      });
+    }
+
+    if (!slotLines.length) return;
+
+    const values: CourtFacilitySlot[] = [];
+    for (const slotDate of dates) {
+      for (const line of slotLines) {
+        for (const courtId of padelCourtIds) {
+          values.push(
+            this.facilitySlotRepo.create({
+              tenantId,
+              courtKind: 'padel_court',
+              courtId,
+              slotDate,
+              startTime: line.startTime,
+              endTime: line.endTime,
+              status: line.status,
+            }),
+          );
+        }
+        for (const courtId of turfCourtIds) {
+          values.push(
+            this.facilitySlotRepo.create({
+              tenantId,
+              courtKind: 'turf_court',
+              courtId,
+              slotDate,
+              startTime: line.startTime,
+              endTime: line.endTime,
+              status: line.status,
+            }),
+          );
+        }
+      }
+    }
+
+    if (values.length) {
+      await this.facilitySlotRepo.insert(values);
+    }
+
+    const affectedCourtIds = [...padelCourtIds, ...turfCourtIds];
+    if (!affectedCourtIds.length) return;
+
+    const activeBookingItems = await this.bookingItemRepo
+      .createQueryBuilder('item')
+      .innerJoin('item.booking', 'booking')
+      .where('item.tenantId = :tenantId', { tenantId })
+      .andWhere('item.courtId IN (:...courtIds)', {
+        courtIds: affectedCourtIds,
+      })
+      .andWhere("booking.bookingStatus IN ('confirmed', 'pending', 'completed')")
+      .andWhere("item.itemStatus <> 'cancelled'")
+      .andWhere('item.endDatetime >= :startDateTime', {
+        startDateTime: `${today}T00:00:00.000Z`,
+      })
+      .select([
+        'item.courtKind AS "courtKind"',
+        'item.courtId AS "courtId"',
+        'item.startDatetime AS "startDatetime"',
+        'item.endDatetime AS "endDatetime"',
+      ])
+      .getRawMany<{
+        courtKind: 'padel_court' | 'turf_court';
+        courtId: string;
+        startDatetime: string;
+        endDatetime: string;
+      }>();
+
+    for (const item of activeBookingItems) {
+      const startIso = new Date(item.startDatetime);
+      const endIso = new Date(item.endDatetime);
+      const startDate = startIso.toISOString().slice(0, 10);
+      const endDate = endIso.toISOString().slice(0, 10);
+      const touchedDates = new Set<string>([startDate, endDate]);
+
+      for (const slotDate of touchedDates) {
+        const windowStart =
+          slotDate === startDate ? startIso.toISOString().slice(11, 16) : '00:00';
+        const windowEnd =
+          slotDate === endDate ? endIso.toISOString().slice(11, 16) : '24:00';
+        const effectiveEnd = windowEnd === '00:00' ? '24:00' : windowEnd;
+
+        await this.facilitySlotRepo
+          .createQueryBuilder()
+          .update(CourtFacilitySlot)
+          .set({ status: 'blocked' })
+          .where('tenantId = :tenantId', { tenantId })
+          .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
+          .andWhere('courtId = :courtId', { courtId: item.courtId })
+          .andWhere('slotDate = :slotDate', { slotDate })
+          .andWhere('startTime < :endTime', { endTime: effectiveEnd })
+          .andWhere('endTime > :startTime', { startTime: windowStart })
+          .execute();
+      }
+    }
+  }
 
   private normalizeSlotStarts(raw: string[]): string[] {
     const seen = new Set<number>();
@@ -249,13 +401,16 @@ export class TimeSlotTemplatesService {
     if (!existing) {
       throw new NotFoundException(`Time slot template ${id} not found`);
     }
+    const hasSlotDefinitionChanges =
+      dto.slotLines !== undefined || dto.slotStarts !== undefined;
+
     await this.templateRepo.manager.transaction(async (tx) => {
       if (dto.name !== undefined) {
         await tx
           .getRepository(TenantTimeSlotTemplate)
           .update({ id, tenantId }, { name: dto.name.trim() });
       }
-      if (dto.slotLines !== undefined || dto.slotStarts !== undefined) {
+      if (hasSlotDefinitionChanges) {
         const lines = this.normalizeSlotLines(dto);
         await tx
           .getRepository(TenantTimeSlotTemplateLine)
@@ -278,6 +433,17 @@ export class TimeSlotTemplatesService {
     });
     if (!saved)
       throw new NotFoundException(`Time slot template ${id} not found`);
+
+    if (hasSlotDefinitionChanges) {
+      await this.syncTemplateToFacilitySlots(
+        tenantId,
+        id,
+        (saved.slotLines ?? [])
+          .slice()
+          .sort((a, b) => a.sortOrder - b.sortOrder),
+      );
+    }
+
     return this.toApiRow(saved);
   }
 
