@@ -33,7 +33,7 @@ import {
 import {
   bookingDateWindow,
   bookingInDateWindow,
-  buildCustomersBySource,
+  buildBookingFromPayload,
   currencyLabel,
   formatStatChange,
   greetingTimeLabelKarachi,
@@ -245,9 +245,10 @@ export class BusinessesService {
       sportRevenue.set(st, (sportRevenue.get(st) ?? 0) + amt);
       sportCount.set(st, (sportCount.get(st) ?? 0) + 1);
     }
-    const customersBySource = buildCustomersBySource(windowBookings);
-    /** All-time (in scope) source mix; unchanged when `period` is `all`. */
-    const customersBySourceOverall = buildCustomersBySource(bookings);
+    const bookingFrom = buildBookingFromPayload(windowBookings);
+    const bookingFromOverall = buildBookingFromPayload(bookings);
+    const customersBySource = bookingFrom.sources;
+    const customersBySourceOverall = bookingFromOverall.sources;
     const revSum = totalStats.revenueTotal || 0;
     const bookSum = totalStats.bookingCount || 0;
 
@@ -312,6 +313,8 @@ export class BusinessesService {
         revenueBySport,
         bookingsBySport,
       },
+      bookingFrom,
+      bookingFromOverall,
       customersBySource,
       customersBySourceOverall,
       totals: totalStats,

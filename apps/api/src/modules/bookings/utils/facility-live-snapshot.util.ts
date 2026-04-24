@@ -192,9 +192,7 @@ export function buildPlaySnapshot(
   const todayYmd = ymdInTimeZone(tz, new Date(now));
   const weekYmds = new Set<string>();
   for (let i = 0; i < 7; i++) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    weekYmds.add(ymdInTimeZone(tz, d));
+    weekYmds.add(addDaysYmd(todayYmd, -i));
   }
 
   const windows = collectItemWindows(bookings, courtKind, courtId, tz);

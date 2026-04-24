@@ -158,52 +158,86 @@ export function colorForIndex(i: number): string {
   return SOURCE_COLOR_PALETTE[i % SOURCE_COLOR_PALETTE.length]!;
 }
 
-export type CustomersBySourceRow = {
-  source: string
-  count: number
-  percentage: number
-  color: string
+/** Aligns with web “Booking from” and `source:*` in booking `notes` (e.g. `source:app`). */
+export type BookingFromKey = 'walkin' | 'app' | 'call';
+
+const BOOKING_FROM_ORDER: BookingFromKey[] = ['walkin', 'app', 'call'];
+
+const BOOKING_FROM_LABEL: Record<BookingFromKey, string> = {
+  walkin: 'Walk-in',
+  app: 'App',
+  call: 'Call',
+};
+
+/** Same as web `OverviewPage` SOURCE_COLORS. */
+const BOOKING_FROM_COLOR: Record<BookingFromKey, string> = {
+  walkin: '#6366f1',
+  app: '#8b5cf6',
+  call: '#ec4899',
+};
+
+/**
+ * Parsed from `notes` — mirrors `bookingSourceFromRecord` in the web dashboard.
+ * Defaults to walk-in when not tagged.
+ */
+export function parseBookingFromNotes(
+  notes: string | undefined | null,
+): BookingFromKey {
+  const n = (notes ?? '').toLowerCase();
+  const tagged = n.match(/source\s*:\s*(walkin|walk-in|app|call)\b/);
+  if (tagged?.[1]) {
+    return tagged[1] === 'walk-in' ? 'walkin' : (tagged[1] as BookingFromKey);
+  }
+  if (n.includes('walk-in') || n.includes('walkin')) return 'walkin';
+  if (n.includes('call')) return 'call';
+  if (n.includes('app')) return 'app';
+  return 'walkin';
 }
 
-/** Top sources + “Others” for pie charts; percentages are share of `rows.length`. */
-export function buildCustomersBySource(
-  rows: Array<{ sportType: string; paymentMethod: PaymentMethod | string }>,
-): CustomersBySourceRow[] {
-  const sourceCount = new Map<string, number>();
+export type CustomersBySourceRow = {
+  key: BookingFromKey;
+  source: string;
+  count: number;
+  /** 0–100, integer share of bookings in the window. */
+  percentage: number;
+  color: string;
+};
+
+export type BookingFromPayload = {
+  /** For donut / “total sources” style widgets. */
+  totalBookings: number;
+  /** Always three rows: Walk-in, App, Call. */
+  sources: CustomersBySourceRow[];
+};
+
+/** “Booking from” / source analytics for API + mobile, period- or all-time scoped. */
+export function buildBookingFromPayload(
+  rows: Array<{ notes?: string }>,
+): BookingFromPayload {
+  const counts: Record<BookingFromKey, number> = {
+    walkin: 0,
+    app: 0,
+    call: 0,
+  };
   for (const b of rows) {
-    const sk = customerSourceKey({
-      sportType: b.sportType,
-      paymentMethod: b.paymentMethod,
-    });
-    sourceCount.set(sk, (sourceCount.get(sk) ?? 0) + 1);
+    counts[parseBookingFromNotes(b.notes)] += 1;
   }
-  const bookSum = rows.length;
-  const sourceRows = [...sourceCount.entries()]
-    .map(([source, count]) => ({
-      source,
+  const totalBookings = rows.length;
+  const sources: CustomersBySourceRow[] = BOOKING_FROM_ORDER.map((key) => {
+    const count = counts[key];
+    const percentage =
+      totalBookings > 0
+        ? Math.round((count / totalBookings) * 100)
+        : 0;
+    return {
+      key,
+      source: BOOKING_FROM_LABEL[key],
       count,
-      pct: bookSum > 0 ? (count / bookSum) * 100 : 0,
-    }))
-    .sort((a, b) => b.count - a.count);
-  const maxSources = 5;
-  const top = sourceRows.slice(0, maxSources);
-  const rest = sourceRows.slice(maxSources);
-  const restCount = rest.reduce((a, r) => a + r.count, 0);
-  const out: CustomersBySourceRow[] = top.map((r, i) => ({
-    source: r.source,
-    count: r.count,
-    percentage: bookSum > 0 ? Math.round(r.pct * 10) / 10 : 0,
-    color: colorForIndex(i),
-  }));
-  if (restCount > 0) {
-    out.push({
-      source: 'Others',
-      count: restCount,
-      percentage: bookSum > 0 ? Math.round((restCount / bookSum) * 1000) / 10 : 0,
-      color: colorForIndex(maxSources),
-    });
-  }
-  return out;
+      percentage,
+      color: BOOKING_FROM_COLOR[key],
+    };
+  });
+  return { totalBookings, sources };
 }
 
 export function greetingTimeLabelKarachi(d = new Date()): {
