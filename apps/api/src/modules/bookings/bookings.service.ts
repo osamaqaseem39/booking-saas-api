@@ -1329,11 +1329,7 @@ export class BookingsService {
     };
 
     const currentDateSlots = await buildSlotsResponseForDate(date);
-    const selectedDayOfMonth = Number(date.slice(8, 10));
-    const additionalDates =
-      selectedDayOfMonth === 25
-        ? [await buildSlotsResponseForDate(addDays(date, 1))]
-        : [];
+    const additionalDates = [await buildSlotsResponseForDate(addDays(date, 1))];
 
     return {
       date,
