@@ -240,6 +240,150 @@ export function buildBookingFromPayload(
   return { totalBookings, sources };
 }
 
+/**
+ * Resolves a booking’s “primary” location from the first `items` line whose
+ * `courtId` maps in `courtIdToLocationId` (courts at allowed branches).
+ */
+export function primaryLocationIdForBooking(
+  booking: { items?: Array<{ courtId: string }> | null },
+  courtIdToLocationId: ReadonlyMap<string, string>,
+): string | null {
+  for (const it of booking.items ?? []) {
+    const loc = courtIdToLocationId.get(it.courtId);
+    if (loc) {
+      return loc;
+    }
+  }
+  return null;
+}
+
+type DashboardBookRow = {
+  sportType: string
+  bookingStatus: string
+  bookingDate: string
+  totalAmount: string
+  paymentStatus: string
+  notes?: string
+}
+
+export function countBookingsKpis(
+  rows: Array<{ bookingStatus: string; bookingDate: string }>,
+  refToday: string,
+) {
+  return {
+    upcoming: rows.filter(
+      (b) => b.bookingStatus === 'confirmed' && b.bookingDate >= refToday,
+    ).length,
+    pending: rows.filter((b) => b.bookingStatus === 'pending').length,
+    completed: rows.filter((b) => b.bookingStatus === 'completed').length,
+    canceled: rows.filter((b) => b.bookingStatus === 'cancelled').length,
+  };
+}
+
+/**
+ * `totals`, `bookingStats`, `revenueOverview`, and booking-from for one slice
+ * (e.g. whole account or a single location).
+ */
+export function buildDashboardStatsSlice(input: {
+  period: DashboardPeriod
+  refToday: string
+  windowBookings: DashboardBookRow[]
+  prevWindowBookings: DashboardBookRow[]
+  allBookingsInScope: DashboardBookRow[]
+  courtCount: number
+  displayCurrency: string
+  locCurrency: string
+}) {
+  const {
+    period,
+    refToday,
+    windowBookings: w,
+    prevWindowBookings: p,
+    allBookingsInScope: all,
+    courtCount,
+    displayCurrency,
+    locCurrency,
+  } = input;
+
+  const totalStats = {
+    courtCount,
+    bookingCount: w.length,
+    confirmedBookingCount: w.filter(b => b.bookingStatus === 'confirmed').length,
+    pendingBookingCount: w.filter(b => b.bookingStatus === 'pending').length,
+    cancelledBookingCount: w.filter(b => b.bookingStatus === 'cancelled').length,
+    completedBookingCount: w.filter(b => b.bookingStatus === 'completed').length,
+    revenueTotal: w.reduce((acc, b) => acc + Number(b.totalAmount ?? 0), 0),
+    revenuePaid: w.filter(b => b.paymentStatus === 'paid').reduce(
+      (acc, b) => acc + Number(b.totalAmount ?? 0),
+      0,
+    ),
+  };
+
+  const curK = countBookingsKpis(w, refToday);
+  const prevK = countBookingsKpis(p, refToday);
+
+  const sportRevenue = new Map<string, number>();
+  const sportCount = new Map<string, number>();
+  for (const b of w) {
+    const st = String(b.sportType || 'other').toLowerCase();
+    const amt = Number(b.totalAmount ?? 0);
+    sportRevenue.set(st, (sportRevenue.get(st) ?? 0) + amt);
+    sportCount.set(st, (sportCount.get(st) ?? 0) + 1);
+  }
+  const revSum = totalStats.revenueTotal || 0;
+  const bookSum = totalStats.bookingCount || 0;
+
+  const sportKeys = [...sportRevenue.keys()].sort(
+    (a, b) => (sportRevenue.get(b) ?? 0) - (sportRevenue.get(a) ?? 0),
+  );
+  const revenueBySport = sportKeys.map((k) => {
+    const amount = Math.round((sportRevenue.get(k) ?? 0) * 100) / 100;
+    return {
+      sport: sportLabel(k),
+      amount,
+      icon: sportIcon(k),
+      percentageOfRevenue: revSum > 0
+        ? Math.round(((sportRevenue.get(k) ?? 0) / revSum) * 1000) / 10
+        : 0,
+    };
+  });
+  const bookingsBySport = sportKeys.map((k) => {
+    const c = sportCount.get(k) ?? 0;
+    return {
+      sport: sportLabel(k),
+      count: c,
+      icon: sportIcon(k),
+      percentageOfTotal: bookSum > 0
+        ? Math.round((c / bookSum) * 1000) / 10
+        : 0,
+    };
+  });
+
+  const bookingFrom = buildBookingFromPayload(w);
+  const bookingFromOverall = buildBookingFromPayload(all);
+
+  return {
+    totals: totalStats,
+    bookingStats: [
+      { label: 'Upcoming', value: curK.upcoming, change: period === 'all' ? '0' : formatStatChange(curK.upcoming, prevK.upcoming) },
+      { label: 'Completed', value: curK.completed, change: period === 'all' ? '0' : formatStatChange(curK.completed, prevK.completed) },
+      { label: 'Canceled', value: curK.canceled, change: period === 'all' ? '0' : formatStatChange(curK.canceled, prevK.canceled) },
+      { label: 'Pending', value: curK.pending, change: period === 'all' ? '0' : formatStatChange(curK.pending, prevK.pending) },
+    ],
+    revenueOverview: {
+      total: Math.round(revSum * 100) / 100,
+      currency: displayCurrency,
+      currencyCode: locCurrency,
+      revenueBySport,
+      bookingsBySport,
+    },
+    bookingFrom,
+    bookingFromOverall,
+    customersBySource: bookingFrom.sources,
+    customersBySourceOverall: bookingFromOverall.sources,
+  };
+}
+
 export function greetingTimeLabelKarachi(d = new Date()): {
   part: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'NIGHT';
 } {

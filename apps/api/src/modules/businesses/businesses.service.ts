@@ -33,14 +33,12 @@ import {
 import {
   bookingDateWindow,
   bookingInDateWindow,
-  buildBookingFromPayload,
+  buildDashboardStatsSlice,
   currencyLabel,
-  formatStatChange,
   greetingTimeLabelKarachi,
   parseDashboardPeriod,
   previousWindowForDelta,
-  sportIcon,
-  sportLabel,
+  primaryLocationIdForBooking,
   todayYmdKarachi,
 } from './utils/dashboard-analytics.util';
 
@@ -106,73 +104,10 @@ export class BusinessesService {
     const refToday = todayYmdKarachi();
     const win = bookingDateWindow(period, refToday);
     const winPrev = previousWindowForDelta(period, refToday);
-
-    const businesses = await this.listForRequester(requesterUserId);
-    const businessIds = businesses.map((b) => b.id);
-    const tenantIds = businesses.map((b) => b.tenantId);
-    
-    const constraint = await this.iamService.getLocationAdminConstraint(requesterUserId);
-
-    let locations = await this.locationsRepository.find({
-      where: { businessId: In(businessIds) },
-      select: ['id', 'businessId', 'currency'],
-    });
-
-    if (constraint) {
-      locations = locations.filter(l => l.id === constraint);
-    }
-    
-    const locIds = locations.map((l) => l.id);
-    const displayCurrency = locations[0]?.currency
-      ? currencyLabel(locations[0]!.currency)
-      : 'Rs.';
-    const locCurrency = locations[0]?.currency || 'PKR';
-    
-    const padelCourts = locIds.length
-      ? await this.padelCourtRepository.find({
-          where: { businessLocationId: In(locIds), courtStatus: 'active', isActive: true },
-          select: ['id', 'businessLocationId'],
-        })
-      : [];
-    const turfCourts = locIds.length
-      ? await this.turfCourtRepository.find({
-          where: { branchId: In(locIds), status: 'active' },
-          select: ['id', 'branchId'],
-        })
-      : [];
-    const gamingStations = locIds.length
-      ? await this.gamingStationRepository.find({
-          where: { businessLocationId: In(locIds), unitStatus: 'active', isActive: true },
-          select: ['id', 'businessLocationId'],
-        })
-      : [];
-
-    const courts = [
-      ...padelCourts,
-      ...turfCourts.map(c => ({ id: c.id, businessLocationId: c.branchId })),
-      ...gamingStations
-    ];
-
-    // Fetch bookings for these tenants
-    let bookings = tenantIds.length 
-      ? await this.bookingRepository.find({
-          where: { tenantId: In(tenantIds) },
-          relations: ['items'],
-        })
-      : [];
-    
-    if (constraint) {
-      const allowedCourtIds = new Set(courts.map(c => c.id));
-      bookings = bookings.filter(b => b.items?.some(i => allowedCourtIds.has(i.courtId)));
-    }
-
-    const locationBusinessMap = new Map(locations.map((l) => [l.id, l.businessId]));
-    const courtCountByBusiness = new Map<string, number>();
-    for (const c of courts) {
-      const bId = locationBusinessMap.get(c.businessLocationId ?? '');
-      if (!bId) continue;
-      courtCountByBusiness.set(bId, (courtCountByBusiness.get(bId) ?? 0) + 1);
-    }
+    const ctx = await this.loadDashboardContext(requesterUserId);
+    const {
+      businesses, locations, bookings, courtCountByBusiness, courts, displayCurrency, locCurrency,
+    } = ctx;
 
     const windowBookings =
       period === 'all'
@@ -213,65 +148,15 @@ export class BusinessesService {
     const statsByTenant = foldTenant(windowBookings);
     const prevStatsByTenant = foldTenant(prevWindowBookings);
 
-    const totalStats = {
+    const slice = buildDashboardStatsSlice({
+      period,
+      refToday,
+      windowBookings,
+      prevWindowBookings,
+      allBookingsInScope: bookings,
       courtCount: courts.length,
-      bookingCount: windowBookings.length,
-      confirmedBookingCount: windowBookings.filter(b => b.bookingStatus === 'confirmed').length,
-      pendingBookingCount: windowBookings.filter(b => b.bookingStatus === 'pending').length,
-      cancelledBookingCount: windowBookings.filter(b => b.bookingStatus === 'cancelled').length,
-      completedBookingCount: windowBookings.filter(b => b.bookingStatus === 'completed').length,
-      revenueTotal: windowBookings.reduce((acc, b) => acc + Number(b.totalAmount ?? 0), 0),
-      revenuePaid: windowBookings.filter(b => b.paymentStatus === 'paid').reduce((acc, b) => acc + Number(b.totalAmount ?? 0), 0),
-    };
-
-    const countKpis = (rows: typeof bookings) => {
-      return {
-        upcoming: rows.filter(
-          (b) => b.bookingStatus === 'confirmed' && b.bookingDate >= refToday,
-        ).length,
-        pending: rows.filter((b) => b.bookingStatus === 'pending').length,
-        completed: rows.filter((b) => b.bookingStatus === 'completed').length,
-        canceled: rows.filter((b) => b.bookingStatus === 'cancelled').length,
-      };
-    };
-    const curK = countKpis(windowBookings);
-    const prevK = countKpis(prevWindowBookings);
-
-    const sportRevenue = new Map<string, number>();
-    const sportCount = new Map<string, number>();
-    for (const b of windowBookings) {
-      const st = String(b.sportType || 'other').toLowerCase();
-      const amt = Number(b.totalAmount ?? 0);
-      sportRevenue.set(st, (sportRevenue.get(st) ?? 0) + amt);
-      sportCount.set(st, (sportCount.get(st) ?? 0) + 1);
-    }
-    const bookingFrom = buildBookingFromPayload(windowBookings);
-    const bookingFromOverall = buildBookingFromPayload(bookings);
-    const customersBySource = bookingFrom.sources;
-    const customersBySourceOverall = bookingFromOverall.sources;
-    const revSum = totalStats.revenueTotal || 0;
-    const bookSum = totalStats.bookingCount || 0;
-
-    const sportKeys = [...sportRevenue.keys()].sort(
-      (a, b) => (sportRevenue.get(b) ?? 0) - (sportRevenue.get(a) ?? 0),
-    );
-    const revenueBySport = sportKeys.map((k) => {
-      const amount = Math.round((sportRevenue.get(k) ?? 0) * 100) / 100;
-      return {
-        sport: sportLabel(k),
-        amount,
-        icon: sportIcon(k),
-        percentageOfRevenue: revSum > 0 ? Math.round(((sportRevenue.get(k) ?? 0) / revSum) * 1000) / 10 : 0,
-      };
-    });
-    const bookingsBySport = sportKeys.map((k) => {
-      const c = sportCount.get(k) ?? 0;
-      return {
-        sport: sportLabel(k),
-        count: c,
-        icon: sportIcon(k),
-        percentageOfTotal: bookSum > 0 ? Math.round((c / bookSum) * 1000) / 10 : 0,
-      };
+      displayCurrency,
+      locCurrency,
     });
 
     const performanceSummary =
@@ -300,24 +185,7 @@ export class BusinessesService {
       scope: { businessCount: businesses.length, locationCount: locations.length },
       greeting,
       performanceSummary,
-      bookingStats: [
-        { label: 'Upcoming', value: curK.upcoming, change: period === 'all' ? '0' : formatStatChange(curK.upcoming, prevK.upcoming) },
-        { label: 'Completed', value: curK.completed, change: period === 'all' ? '0' : formatStatChange(curK.completed, prevK.completed) },
-        { label: 'Canceled', value: curK.canceled, change: period === 'all' ? '0' : formatStatChange(curK.canceled, prevK.canceled) },
-        { label: 'Pending', value: curK.pending, change: period === 'all' ? '0' : formatStatChange(curK.pending, prevK.pending) },
-      ],
-      revenueOverview: {
-        total: Math.round(revSum * 100) / 100,
-        currency: displayCurrency,
-        currencyCode: locCurrency,
-        revenueBySport,
-        bookingsBySport,
-      },
-      bookingFrom,
-      bookingFromOverall,
-      customersBySource,
-      customersBySourceOverall,
-      totals: totalStats,
+      ...slice,
       businesses: businesses.map((b) => {
         const s = statsByTenant.get(b.tenantId);
         const sPrev = prevStatsByTenant.get(b.tenantId);
@@ -342,6 +210,240 @@ export class BusinessesService {
           },
         };
       }),
+    };
+  }
+
+  /**
+   * Same shape as `GET /businesses/dashboard` but all metrics and booking-from analytics
+   * are limited to the given `locationId` (courts + booking items on that branch).
+   */
+  async getDashboardViewForLocation(
+    requesterUserId: string,
+    locationIdParam: string,
+    periodParam?: string,
+  ) {
+    const locationId = locationIdParam?.trim();
+    if (!locationId) {
+      throw new BadRequestException('locationId is required');
+    }
+    const period = parseDashboardPeriod(periodParam);
+    const refToday = todayYmdKarachi();
+    const win = bookingDateWindow(period, refToday);
+    const winPrev = previousWindowForDelta(period, refToday);
+    const ctx = await this.loadDashboardContext(requesterUserId);
+    if (!ctx.locIds.includes(locationId)) {
+      throw new BadRequestException('Invalid or inaccessible locationId');
+    }
+
+    const { businesses, locations, bookings, courts, courtIdToLocationId, displayCurrency: defDisplay, locCurrency: defCode } = ctx;
+    const loc = locations.find((l) => l.id === locationId)!;
+
+    const atLocation = (rows: typeof bookings) =>
+      rows.filter(
+        (b) => primaryLocationIdForBooking(b, courtIdToLocationId) === locationId,
+      );
+    const bookingsHere = atLocation(bookings);
+    const windowBookings =
+      period === 'all'
+        ? bookingsHere
+        : bookingsHere.filter((b) => bookingInDateWindow(b.bookingDate, win));
+    const prevWindowBookings =
+      period === 'all'
+        ? []
+        : bookingsHere.filter((b) => bookingInDateWindow(b.bookingDate, winPrev));
+
+    const foldTenant = (rows: typeof bookings) => {
+      const statsByTenant = new Map<string, {
+        count: number
+        confirmed: number
+        pending: number
+        cancelled: number
+        completed: number
+        revenue: number
+        paid: number
+      }>();
+      for (const b of rows) {
+        const s = statsByTenant.get(b.tenantId) ?? {
+          count: 0, confirmed: 0, pending: 0, cancelled: 0, completed: 0, revenue: 0, paid: 0
+        };
+        s.count += 1;
+        if (b.bookingStatus === 'confirmed') s.confirmed += 1;
+        if (b.bookingStatus === 'pending') s.pending += 1;
+        if (b.bookingStatus === 'cancelled') s.cancelled += 1;
+        if (b.bookingStatus === 'completed') s.completed += 1;
+        const total = Number(b.totalAmount ?? 0);
+        s.revenue += total;
+        if (b.paymentStatus === 'paid') s.paid += total;
+        statsByTenant.set(b.tenantId, s);
+      }
+      return statsByTenant;
+    };
+
+    const statsByTenant = foldTenant(windowBookings);
+    const prevStatsByTenant = foldTenant(prevWindowBookings);
+
+    const locDisplay = loc.currency ? currencyLabel(loc.currency) : defDisplay;
+    const locCode = loc.currency || defCode;
+    const courtCountHere = courts.filter(
+      (c) => c.businessLocationId === locationId,
+    ).length;
+
+    const slice = buildDashboardStatsSlice({
+      period,
+      refToday,
+      windowBookings,
+      prevWindowBookings,
+      allBookingsInScope: bookingsHere,
+      courtCount: courtCountHere,
+      displayCurrency: locDisplay,
+      locCurrency: locCode,
+    });
+
+    const performanceSummary =
+      period === 'today'
+        ? "Here's this location's performance for today"
+        : period === 'last7days'
+          ? "This location’s performance over the last 7 days"
+          : period === 'thisMonth'
+            ? 'Month to date at this location'
+            : 'All-time performance at this location';
+
+    const { part: greetPart } = greetingTimeLabelKarachi();
+    let firstName = 'There';
+    try {
+      const me = await this.iamService.getMe(requesterUserId);
+      const fn = String(me?.fullName || 'there').trim().split(/\s+/)[0] || 'There';
+      firstName = fn;
+    } catch {
+      firstName = 'There';
+    }
+    const greeting = `GOOD ${greetPart}, ${firstName.toUpperCase()}`;
+
+    return {
+      generatedAt: new Date().toISOString(),
+      period: { key: period, window: win, refToday, previousWindow: winPrev },
+      location: { id: loc.id, name: loc.name },
+      scope: { businessCount: businesses.length, locationCount: 1, locationId },
+      greeting,
+      performanceSummary,
+      ...slice,
+      businesses: businesses.map((b) => {
+        const s = statsByTenant.get(b.tenantId);
+        const sPrev = prevStatsByTenant.get(b.tenantId);
+        const isOwner = b.id === loc.businessId;
+        return {
+          businessId: b.id,
+          tenantId: b.tenantId,
+          businessName: b.businessName,
+          status: b.status,
+          locationCount: isOwner ? 1 : 0,
+          courtCount: isOwner ? courtCountHere : 0,
+          bookingCount: s?.count ?? 0,
+          confirmedBookingCount: s?.confirmed ?? 0,
+          pendingBookingCount: s?.pending ?? 0,
+          cancelledBookingCount: s?.cancelled ?? 0,
+          completedBookingCount: s?.completed ?? 0,
+          revenueTotal: s?.revenue ?? 0,
+          revenuePaid: s?.paid ?? 0,
+          previousPeriod: period === 'all' ? null : {
+            bookingCount: sPrev?.count ?? 0,
+            revenueTotal: sPrev?.revenue ?? 0,
+            completedBookingCount: sPrev?.completed ?? 0,
+          },
+        };
+      }),
+    };
+  }
+
+  private async loadDashboardContext(requesterUserId: string) {
+    const businesses = await this.listForRequester(requesterUserId);
+    const businessIds = businesses.map((b) => b.id);
+    const tenantIds = businesses.map((b) => b.tenantId);
+    const constraint = await this.iamService.getLocationAdminConstraint(
+      requesterUserId,
+    );
+    let locations = await this.locationsRepository.find({
+      where: { businessId: In(businessIds) },
+      select: ['id', 'businessId', 'currency', 'name'],
+    });
+    if (constraint) {
+      locations = locations.filter((l) => l.id === constraint);
+    }
+    const locIds = locations.map((l) => l.id);
+    const displayCurrency = locations[0]?.currency
+      ? currencyLabel(locations[0]!.currency)
+      : 'Rs.';
+    const locCurrency = locations[0]?.currency || 'PKR';
+    const padelCourts = locIds.length
+      ? await this.padelCourtRepository.find({
+        where: {
+          businessLocationId: In(locIds),
+          courtStatus: 'active',
+          isActive: true,
+        },
+        select: ['id', 'businessLocationId'],
+      })
+      : [];
+    const turfCourts = locIds.length
+      ? await this.turfCourtRepository.find({
+        where: { branchId: In(locIds), status: 'active' },
+        select: ['id', 'branchId'],
+      })
+      : [];
+    const gamingStations = locIds.length
+      ? await this.gamingStationRepository.find({
+        where: {
+          businessLocationId: In(locIds),
+          unitStatus: 'active',
+          isActive: true,
+        },
+        select: ['id', 'businessLocationId'],
+      })
+      : [];
+    const courts = [
+      ...padelCourts,
+      ...turfCourts.map((c) => ({ id: c.id, businessLocationId: c.branchId })),
+      ...gamingStations,
+    ];
+    const courtIdToLocationId = new Map<string, string>();
+    for (const c of courts) {
+      if (c.businessLocationId) {
+        courtIdToLocationId.set(c.id, c.businessLocationId);
+      }
+    }
+    let bookings: Booking[] = tenantIds.length
+      ? await this.bookingRepository.find({
+        where: { tenantId: In(tenantIds) },
+        relations: ['items'],
+      })
+      : [];
+    if (constraint) {
+      const allowedCourtIds = new Set(courts.map((c) => c.id));
+      bookings = bookings.filter((b) =>
+        b.items?.some((i) => allowedCourtIds.has(i.courtId)),
+      );
+    }
+    const locationBusinessMap = new Map(
+      locations.map((l) => [l.id, l.businessId]),
+    );
+    const courtCountByBusiness = new Map<string, number>();
+    for (const c of courts) {
+      const bId = locationBusinessMap.get(c.businessLocationId ?? '');
+      if (!bId) continue;
+      courtCountByBusiness.set(bId, (courtCountByBusiness.get(bId) ?? 0) + 1);
+    }
+    return {
+      businesses,
+      businessIds,
+      tenantIds,
+      locations,
+      locIds,
+      displayCurrency,
+      locCurrency,
+      courts,
+      courtIdToLocationId,
+      bookings,
+      courtCountByBusiness,
     };
   }
 

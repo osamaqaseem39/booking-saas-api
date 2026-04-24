@@ -55,6 +55,24 @@ export class BusinessesController {
     return this.businessesService.getDashboardView(userId, period);
   }
 
+  @Get('locations/:locationId/dashboard')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  async dashboardForLocation(
+    @Req() req: Request,
+    @Param('locationId') locationId: string,
+    @Query('period') period?: string,
+  ) {
+    const userId = (req as Request & { userId?: string }).userId?.trim();
+    if (!userId) {
+      throw new UnauthorizedException('Missing user');
+    }
+    return this.businessesService.getDashboardViewForLocation(
+      userId,
+      locationId,
+      period,
+    );
+  }
+
   @Post('onboard')
   @Roles('platform-owner')
   async onboard(@Body() dto: CreateBusinessDto) {
