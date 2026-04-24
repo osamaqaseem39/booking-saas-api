@@ -158,6 +158,54 @@ export function colorForIndex(i: number): string {
   return SOURCE_COLOR_PALETTE[i % SOURCE_COLOR_PALETTE.length]!;
 }
 
+export type CustomersBySourceRow = {
+  source: string
+  count: number
+  percentage: number
+  color: string
+}
+
+/** Top sources + “Others” for pie charts; percentages are share of `rows.length`. */
+export function buildCustomersBySource(
+  rows: Array<{ sportType: string; paymentMethod: PaymentMethod | string }>,
+): CustomersBySourceRow[] {
+  const sourceCount = new Map<string, number>();
+  for (const b of rows) {
+    const sk = customerSourceKey({
+      sportType: b.sportType,
+      paymentMethod: b.paymentMethod,
+    });
+    sourceCount.set(sk, (sourceCount.get(sk) ?? 0) + 1);
+  }
+  const bookSum = rows.length;
+  const sourceRows = [...sourceCount.entries()]
+    .map(([source, count]) => ({
+      source,
+      count,
+      pct: bookSum > 0 ? (count / bookSum) * 100 : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+  const maxSources = 5;
+  const top = sourceRows.slice(0, maxSources);
+  const rest = sourceRows.slice(maxSources);
+  const restCount = rest.reduce((a, r) => a + r.count, 0);
+  const out: CustomersBySourceRow[] = top.map((r, i) => ({
+    source: r.source,
+    count: r.count,
+    percentage: bookSum > 0 ? Math.round(r.pct * 10) / 10 : 0,
+    color: colorForIndex(i),
+  }));
+  if (restCount > 0) {
+    out.push({
+      source: 'Others',
+      count: restCount,
+      percentage: bookSum > 0 ? Math.round((restCount / bookSum) * 1000) / 10 : 0,
+      color: colorForIndex(maxSources),
+    });
+  }
+  return out;
+}
+
 export function greetingTimeLabelKarachi(d = new Date()): {
   part: 'MORNING' | 'AFTERNOON' | 'EVENING' | 'NIGHT';
 } {

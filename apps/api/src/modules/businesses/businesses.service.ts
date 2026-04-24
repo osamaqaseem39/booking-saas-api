@@ -33,9 +33,8 @@ import {
 import {
   bookingDateWindow,
   bookingInDateWindow,
-  colorForIndex,
+  buildCustomersBySource,
   currencyLabel,
-  customerSourceKey,
   formatStatChange,
   greetingTimeLabelKarachi,
   parseDashboardPeriod,
@@ -240,18 +239,15 @@ export class BusinessesService {
 
     const sportRevenue = new Map<string, number>();
     const sportCount = new Map<string, number>();
-    const sourceCount = new Map<string, number>();
     for (const b of windowBookings) {
       const st = String(b.sportType || 'other').toLowerCase();
       const amt = Number(b.totalAmount ?? 0);
       sportRevenue.set(st, (sportRevenue.get(st) ?? 0) + amt);
       sportCount.set(st, (sportCount.get(st) ?? 0) + 1);
-      const sk = customerSourceKey({
-        sportType: b.sportType,
-        paymentMethod: b.paymentMethod,
-      });
-      sourceCount.set(sk, (sourceCount.get(sk) ?? 0) + 1);
     }
+    const customersBySource = buildCustomersBySource(windowBookings);
+    /** All-time (in scope) source mix; unchanged when `period` is `all`. */
+    const customersBySourceOverall = buildCustomersBySource(bookings);
     const revSum = totalStats.revenueTotal || 0;
     const bookSum = totalStats.bookingCount || 0;
 
@@ -276,33 +272,6 @@ export class BusinessesService {
         percentageOfTotal: bookSum > 0 ? Math.round((c / bookSum) * 1000) / 10 : 0,
       };
     });
-
-    const sourceRows = [...sourceCount.entries()]
-      .map(([source, count]) => ({ source, count, pct: bookSum > 0 ? (count / bookSum) * 100 : 0 }))
-      .sort((a, b) => b.count - a.count);
-    const maxSources = 5;
-    const top = sourceRows.slice(0, maxSources);
-    const rest = sourceRows.slice(maxSources);
-    const restCount = rest.reduce((a, r) => a + r.count, 0);
-    const customersBySource: Array<{
-      source: string
-      count: number
-      percentage: number
-      color: string
-    }> = top.map((r, i) => ({
-      source: r.source,
-      count: r.count,
-      percentage: bookSum > 0 ? Math.round(r.pct * 10) / 10 : 0,
-      color: colorForIndex(i),
-    }));
-    if (restCount > 0) {
-      customersBySource.push({
-        source: 'Others',
-        count: restCount,
-        percentage: bookSum > 0 ? Math.round((restCount / bookSum) * 1000) / 10 : 0,
-        color: colorForIndex(maxSources),
-      });
-    }
 
     const performanceSummary =
       period === 'today'
@@ -344,6 +313,7 @@ export class BusinessesService {
         bookingsBySport,
       },
       customersBySource,
+      customersBySourceOverall,
       totals: totalStats,
       businesses: businesses.map((b) => {
         const s = statsByTenant.get(b.tenantId);

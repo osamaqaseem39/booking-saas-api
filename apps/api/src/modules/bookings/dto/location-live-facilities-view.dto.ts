@@ -1,5 +1,8 @@
 import type { CourtKind } from '../types/booking.types';
 import type { TurfCoveredType, TurfSportType } from '../../arena/turf/turf.types';
+import type { FacilityPlaySnapshot } from '../utils/facility-live-snapshot.util';
+
+export type { FacilityPlaySnapshot } from '../utils/facility-live-snapshot.util';
 
 /** Padel row for the Live Facilities “catalog” strip (per venue). */
 export type LivePadelCourtDto = {
@@ -74,6 +77,13 @@ export type LocationLiveFacilitiesView = {
   locationId: string;
   /** ISO-8601 when the view was built (cache / debug). */
   generatedAt: string;
+  /**
+   * One row per physical court: current session (if any), next booking, and play status
+   * (`live` / `soon` / `idle` / `inactive`), so the client does not have to recompute.
+   */
+  facilityPlayStatus: FacilityPlaySnapshot[];
+  /** IANA time zone id used for “now” and booking window math (from location, default Asia/Karachi). */
+  timeZone: string;
   /** All active padel courts for this business location. */
   padelCourts: LivePadelCourtDto[];
   /** Turf catalog split by sport (same as filtering `turf_courts` by supportedSports). */

@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { IamService } from '../iam/iam.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DeepPartial, In, Repository } from 'typeorm';
+import { Between, DeepPartial, In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
 import { User } from '../iam/entities/user.entity';
@@ -34,6 +34,12 @@ import type {
   LiveTurfCourtDto,
   LocationLiveFacilitiesView,
 } from './dto/location-live-facilities-view.dto';
+import {
+  addDaysYmd,
+  buildPlaySnapshot,
+  type FacilityPlaySnapshot,
+  ymdInTimeZone,
+} from './utils/facility-live-snapshot.util';
 import { CourtFacilitySlot, CourtFacilitySlotStatus } from './entities/court-facility-slot.entity';
 import { BookingItem } from './entities/booking-item.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
@@ -1435,7 +1441,7 @@ export class BookingsService {
     requesterUserId: string,
     tenantId: string | undefined,
     locationId: string,
-  ): Promise<void> {
+  ): Promise<BusinessLocation> {
     const isPlatformOwner = await this.iamService.hasAnyRole(
       requesterUserId,
       ['platform-owner'],
@@ -1459,6 +1465,7 @@ export class BookingsService {
     if (tenantId && loc.business?.tenantId !== tenantId) {
       throw new ForbiddenException('Location does not belong to this tenant');
     }
+    return loc;
   }
 
   /**
@@ -1475,11 +1482,14 @@ export class BookingsService {
     endTime?: string;
     courtType?: string;
   }): Promise<LocationLiveFacilitiesView> {
-    await this.assertCanReadLiveFacilities(
+    const loc = await this.assertCanReadLiveFacilities(
       params.requesterUserId,
       params.tenantId,
       params.locationId,
     );
+    const timeZone = (loc.timezone || '').trim() || 'Asia/Karachi';
+    const tenantIdForBookings = loc.business?.tenantId;
+
     const [slotsPayload, padelRows, turfRows] = await Promise.all([
       this.getLocationFacilitiesAvailableSlots({
         locationId: params.locationId,
@@ -1509,9 +1519,61 @@ export class BookingsService {
       if (t.supportedSports?.includes('cricket')) cricket.push(d);
     }
     const liveSlots = slotsPayload as LiveFacilitiesSlotsPayload;
+
+    const allCourtIds = [
+      ...padelRows.map((p) => p.id),
+      ...turfRows.map((t) => t.id),
+    ];
+
+    let liveBookings: Booking[] = [];
+    if (tenantIdForBookings && allCourtIds.length) {
+      const ymd = ymdInTimeZone(timeZone);
+      const from = addDaysYmd(ymd, -7);
+      const to = addDaysYmd(ymd, 90);
+      const courtSet = new Set(allCourtIds);
+      const rows = await this.bookingRepo.find({
+        where: {
+          tenantId: tenantIdForBookings,
+          bookingDate: Between(from, to),
+          bookingStatus: In([
+            'pending',
+            'confirmed',
+            'completed',
+            'no_show',
+          ] as BookingStatus[]),
+        },
+        relations: ['items', 'user'],
+      });
+      liveBookings = rows.filter((b) =>
+        b.items?.some((i) => courtSet.has(i.courtId)),
+      );
+    }
+
+    const facilityPlayStatus: FacilityPlaySnapshot[] = [];
+    for (const c of padelRows) {
+      facilityPlayStatus.push(
+        buildPlaySnapshot(liveBookings, 'padel_court', c.id, c.name, {
+          timeZone,
+          facilityActive: Boolean(c.isActive) && c.courtStatus !== 'maintenance',
+          statusRaw: c.courtStatus,
+        }),
+      );
+    }
+    for (const t of turfRows) {
+      facilityPlayStatus.push(
+        buildPlaySnapshot(liveBookings, 'turf_court', t.id, t.name, {
+          timeZone,
+          facilityActive: t.status === 'active',
+          statusRaw: t.status,
+        }),
+      );
+    }
+
     return {
       locationId: params.locationId,
       generatedAt: new Date().toISOString(),
+      timeZone,
+      facilityPlayStatus,
       padelCourts: padelRows.map((c) => this.mapPadelToLiveDto(c)),
       turfCourts: { futsal, cricket },
       liveSlots,
