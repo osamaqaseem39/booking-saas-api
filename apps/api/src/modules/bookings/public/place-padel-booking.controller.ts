@@ -1,4 +1,11 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpException,
+  InternalServerErrorException,
+  Logger,
+  Post,
+} from '@nestjs/common';
 import { BookingsService } from '../bookings.service';
 import { PlacePadelBookingDto } from '../dto/place-padel-booking.dto';
 
@@ -8,10 +15,18 @@ import { PlacePadelBookingDto } from '../dto/place-padel-booking.dto';
  */
 @Controller('placePadelBooking')
 export class PlacePadelBookingController {
+  private readonly logger = new Logger(PlacePadelBookingController.name);
+
   constructor(private readonly bookingsService: BookingsService) {}
 
   @Post()
-  placePadelBooking(@Body() dto: PlacePadelBookingDto) {
-    return this.bookingsService.placePadelBooking(dto);
+  async placePadelBooking(@Body() dto: PlacePadelBookingDto) {
+    try {
+      return await this.bookingsService.placePadelBooking(dto);
+    } catch (e) {
+      if (e instanceof HttpException) throw e;
+      this.logger.error('placePadelBooking failed', e);
+      throw new InternalServerErrorException('Failed to create booking');
+    }
   }
 }

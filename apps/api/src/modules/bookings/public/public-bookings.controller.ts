@@ -1,25 +1,47 @@
-import { BadRequestException, Body, Controller, Post } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  HttpException,
+  InternalServerErrorException,
+  Logger,
+  Post,
+} from '@nestjs/common';
 import { BookingsService } from '../bookings.service';
 import { CreateBookingDto } from '../dto/create-booking.dto';
 import { PlacePadelBookingDto } from '../dto/place-padel-booking.dto';
 
 @Controller('public/bookings')
 export class PublicBookingsController {
+  private readonly logger = new Logger(PublicBookingsController.name);
+
   constructor(private readonly bookingsService: BookingsService) {}
 
   @Post('padel')
   async placePadelBooking(@Body() dto: any) {
-    // If it looks like a full booking payload, use create()
-    if (dto.items && Array.isArray(dto.items)) {
-      return this.createPublicBooking(dto);
+    try {
+      // If it looks like a full booking payload, use create()
+      if (dto.items && Array.isArray(dto.items)) {
+        return await this.createPublicBooking(dto);
+      }
+      // Otherwise use legacy simple placePadelBooking
+      return await this.bookingsService.placePadelBooking(dto as PlacePadelBookingDto);
+    } catch (e) {
+      if (e instanceof HttpException) throw e;
+      this.logger.error('public padel booking failed', e);
+      throw new InternalServerErrorException('Failed to create booking');
     }
-    // Otherwise use legacy simple placePadelBooking
-    return this.bookingsService.placePadelBooking(dto as PlacePadelBookingDto);
   }
 
   @Post(['futsal', 'cricket', 'turf'])
   async placeTurfBooking(@Body() dto: CreateBookingDto) {
-    return this.createPublicBooking(dto);
+    try {
+      return await this.createPublicBooking(dto);
+    } catch (e) {
+      if (e instanceof HttpException) throw e;
+      this.logger.error('public booking create failed', e);
+      throw new InternalServerErrorException('Failed to create booking');
+    }
   }
 
   private async createPublicBooking(dto: CreateBookingDto) {

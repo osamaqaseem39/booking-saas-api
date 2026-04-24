@@ -4,6 +4,9 @@ import {
   Controller,
   Delete,
   Get,
+  HttpException,
+  InternalServerErrorException,
+  Logger,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -50,6 +53,8 @@ function normalizeKind(kind: string): CourtKind | string {
 
 @Controller('bookings')
 export class BookingsController {
+  private readonly logger = new Logger(BookingsController.name);
+
   constructor(
     private readonly bookingsService: BookingsService,
     private readonly timeSlotTemplatesService: TimeSlotTemplatesService,
@@ -414,28 +419,34 @@ export class BookingsController {
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateBookingDto,
   ) {
-    const tenantIdFromHeader = this.getTenantUuidOrNull(tenant);
-    const firstItem = dto.items?.[0];
-    const resolvedFromCourt = firstItem
-      ? await this.bookingsService.resolveTenantIdByCourt(
-          firstItem.courtKind,
-          firstItem.courtId,
-        )
-      : null;
-    const tenantId = tenantIdFromHeader ?? resolvedFromCourt;
-    if (!tenantId) {
-      throw new BadRequestException(
-        'Unable to resolve tenant. Provide a valid court in items or X-Tenant-Id.',
-      );
-    }
-    const result = await this.bookingsService.create(tenantId, dto);
+    try {
+      const tenantIdFromHeader = this.getTenantUuidOrNull(tenant);
+      const firstItem = dto.items?.[0];
+      const resolvedFromCourt = firstItem
+        ? await this.bookingsService.resolveTenantIdByCourt(
+            firstItem.courtKind,
+            firstItem.courtId,
+          )
+        : null;
+      const tenantId = tenantIdFromHeader ?? resolvedFromCourt;
+      if (!tenantId) {
+        throw new BadRequestException(
+          'Unable to resolve tenant. Provide a valid court in items or X-Tenant-Id.',
+        );
+      }
+      const result = await this.bookingsService.create(tenantId, dto);
 
-    // Explicit check in controller as requested: block slots if confirmed
-    if (result.bookingStatus === 'confirmed') {
-      await this.bookingsService.syncFacilitySlotsStatusById(tenantId, result.bookingId);
-    }
+      // Explicit check in controller as requested: block slots if confirmed
+      if (result.bookingStatus === 'confirmed') {
+        await this.bookingsService.syncFacilitySlotsStatusById(tenantId, result.bookingId);
+      }
 
-    return result;
+      return result;
+    } catch (e) {
+      if (e instanceof HttpException) throw e;
+      this.logger.error('bookings create failed', e);
+      throw new InternalServerErrorException('Failed to create booking');
+    }
   }
 
   @Patch(':bookingId')
