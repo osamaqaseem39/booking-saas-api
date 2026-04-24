@@ -710,6 +710,7 @@ export class BookingsService {
     if (dto.payment?.paidAmount !== undefined) {
       booking.paidAmount = dec(dto.payment.paidAmount);
     }
+    harmonizePaymentStatusWithAmounts(booking);
     if (dto.itemStatuses?.length) {
       const byId = new Map(booking.items.map((i) => [i.id, i]));
       for (const row of dto.itemStatuses) {

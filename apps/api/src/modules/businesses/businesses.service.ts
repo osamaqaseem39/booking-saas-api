@@ -30,6 +30,20 @@ import {
   normalizeLocationFacilityTypesForApi,
   normalizeLocationFacilityTypesForPersist,
 } from './constants/business-location.constants';
+import {
+  bookingDateWindow,
+  bookingInDateWindow,
+  colorForIndex,
+  currencyLabel,
+  customerSourceKey,
+  formatStatChange,
+  greetingTimeLabelKarachi,
+  parseDashboardPeriod,
+  previousWindowForDelta,
+  sportIcon,
+  sportLabel,
+  todayYmdKarachi,
+} from './utils/dashboard-analytics.util';
 
 @Injectable()
 export class BusinessesService {
@@ -88,7 +102,12 @@ export class BusinessesService {
     }));
   }
 
-  async getDashboardView(requesterUserId: string) {
+  async getDashboardView(requesterUserId: string, periodParam?: string) {
+    const period = parseDashboardPeriod(periodParam);
+    const refToday = todayYmdKarachi();
+    const win = bookingDateWindow(period, refToday);
+    const winPrev = previousWindowForDelta(period, refToday);
+
     const businesses = await this.listForRequester(requesterUserId);
     const businessIds = businesses.map((b) => b.id);
     const tenantIds = businesses.map((b) => b.tenantId);
@@ -97,7 +116,7 @@ export class BusinessesService {
 
     let locations = await this.locationsRepository.find({
       where: { businessId: In(businessIds) },
-      select: ['id', 'businessId'],
+      select: ['id', 'businessId', 'currency'],
     });
 
     if (constraint) {
@@ -105,6 +124,10 @@ export class BusinessesService {
     }
     
     const locIds = locations.map((l) => l.id);
+    const displayCurrency = locations[0]?.currency
+      ? currencyLabel(locations[0]!.currency)
+      : 'Rs.';
+    const locCurrency = locations[0]?.currency || 'PKR';
     
     const padelCourts = locIds.length
       ? await this.padelCourtRepository.find({
@@ -152,50 +175,179 @@ export class BusinessesService {
       courtCountByBusiness.set(bId, (courtCountByBusiness.get(bId) ?? 0) + 1);
     }
 
-    const statsByTenant = new Map<string, {
-      count: number,
-      confirmed: number,
-      pending: number,
-      cancelled: number,
-      completed: number,
-      revenue: number,
-      paid: number
-    }>();
+    const windowBookings =
+      period === 'all'
+        ? bookings
+        : bookings.filter((b) => bookingInDateWindow(b.bookingDate, win));
+    const prevWindowBookings =
+      period === 'all'
+        ? []
+        : bookings.filter((b) => bookingInDateWindow(b.bookingDate, winPrev));
 
-    for (const b of bookings) {
-      const s = statsByTenant.get(b.tenantId) ?? {
-        count: 0, confirmed: 0, pending: 0, cancelled: 0, completed: 0, revenue: 0, paid: 0
-      };
-      s.count += 1;
-      if (b.bookingStatus === 'confirmed') s.confirmed += 1;
-      if (b.bookingStatus === 'pending') s.pending += 1;
-      if (b.bookingStatus === 'cancelled') s.cancelled += 1;
-      if (b.bookingStatus === 'completed') s.completed += 1;
-      
-      const total = Number(b.totalAmount ?? 0);
-      s.revenue += total;
-      if (b.paymentStatus === 'paid') s.paid += total;
-      
-      statsByTenant.set(b.tenantId, s);
-    }
+    const foldTenant = (rows: typeof bookings) => {
+      const statsByTenant = new Map<string, {
+        count: number
+        confirmed: number
+        pending: number
+        cancelled: number
+        completed: number
+        revenue: number
+        paid: number
+      }>();
+      for (const b of rows) {
+        const s = statsByTenant.get(b.tenantId) ?? {
+          count: 0, confirmed: 0, pending: 0, cancelled: 0, completed: 0, revenue: 0, paid: 0
+        };
+        s.count += 1;
+        if (b.bookingStatus === 'confirmed') s.confirmed += 1;
+        if (b.bookingStatus === 'pending') s.pending += 1;
+        if (b.bookingStatus === 'cancelled') s.cancelled += 1;
+        if (b.bookingStatus === 'completed') s.completed += 1;
+        const total = Number(b.totalAmount ?? 0);
+        s.revenue += total;
+        if (b.paymentStatus === 'paid') s.paid += total;
+        statsByTenant.set(b.tenantId, s);
+      }
+      return statsByTenant;
+    };
+
+    const statsByTenant = foldTenant(windowBookings);
+    const prevStatsByTenant = foldTenant(prevWindowBookings);
 
     const totalStats = {
       courtCount: courts.length,
-      bookingCount: bookings.length,
-      confirmedBookingCount: bookings.filter(b => b.bookingStatus === 'confirmed').length,
-      pendingBookingCount: bookings.filter(b => b.bookingStatus === 'pending').length,
-      cancelledBookingCount: bookings.filter(b => b.bookingStatus === 'cancelled').length,
-      completedBookingCount: bookings.filter(b => b.bookingStatus === 'completed').length,
-      revenueTotal: bookings.reduce((acc, b) => acc + Number(b.totalAmount ?? 0), 0),
-      revenuePaid: bookings.filter(b => b.paymentStatus === 'paid').reduce((acc, b) => acc + Number(b.totalAmount ?? 0), 0),
+      bookingCount: windowBookings.length,
+      confirmedBookingCount: windowBookings.filter(b => b.bookingStatus === 'confirmed').length,
+      pendingBookingCount: windowBookings.filter(b => b.bookingStatus === 'pending').length,
+      cancelledBookingCount: windowBookings.filter(b => b.bookingStatus === 'cancelled').length,
+      completedBookingCount: windowBookings.filter(b => b.bookingStatus === 'completed').length,
+      revenueTotal: windowBookings.reduce((acc, b) => acc + Number(b.totalAmount ?? 0), 0),
+      revenuePaid: windowBookings.filter(b => b.paymentStatus === 'paid').reduce((acc, b) => acc + Number(b.totalAmount ?? 0), 0),
     };
+
+    const countKpis = (rows: typeof bookings) => {
+      return {
+        upcoming: rows.filter(
+          (b) => b.bookingStatus === 'confirmed' && b.bookingDate >= refToday,
+        ).length,
+        pending: rows.filter((b) => b.bookingStatus === 'pending').length,
+        completed: rows.filter((b) => b.bookingStatus === 'completed').length,
+        canceled: rows.filter((b) => b.bookingStatus === 'cancelled').length,
+      };
+    };
+    const curK = countKpis(windowBookings);
+    const prevK = countKpis(prevWindowBookings);
+
+    const sportRevenue = new Map<string, number>();
+    const sportCount = new Map<string, number>();
+    const sourceCount = new Map<string, number>();
+    for (const b of windowBookings) {
+      const st = String(b.sportType || 'other').toLowerCase();
+      const amt = Number(b.totalAmount ?? 0);
+      sportRevenue.set(st, (sportRevenue.get(st) ?? 0) + amt);
+      sportCount.set(st, (sportCount.get(st) ?? 0) + 1);
+      const sk = customerSourceKey({
+        sportType: b.sportType,
+        paymentMethod: b.paymentMethod,
+      });
+      sourceCount.set(sk, (sourceCount.get(sk) ?? 0) + 1);
+    }
+    const revSum = totalStats.revenueTotal || 0;
+    const bookSum = totalStats.bookingCount || 0;
+
+    const sportKeys = [...sportRevenue.keys()].sort(
+      (a, b) => (sportRevenue.get(b) ?? 0) - (sportRevenue.get(a) ?? 0),
+    );
+    const revenueBySport = sportKeys.map((k) => {
+      const amount = Math.round((sportRevenue.get(k) ?? 0) * 100) / 100;
+      return {
+        sport: sportLabel(k),
+        amount,
+        icon: sportIcon(k),
+        percentageOfRevenue: revSum > 0 ? Math.round(((sportRevenue.get(k) ?? 0) / revSum) * 1000) / 10 : 0,
+      };
+    });
+    const bookingsBySport = sportKeys.map((k) => {
+      const c = sportCount.get(k) ?? 0;
+      return {
+        sport: sportLabel(k),
+        count: c,
+        icon: sportIcon(k),
+        percentageOfTotal: bookSum > 0 ? Math.round((c / bookSum) * 1000) / 10 : 0,
+      };
+    });
+
+    const sourceRows = [...sourceCount.entries()]
+      .map(([source, count]) => ({ source, count, pct: bookSum > 0 ? (count / bookSum) * 100 : 0 }))
+      .sort((a, b) => b.count - a.count);
+    const maxSources = 5;
+    const top = sourceRows.slice(0, maxSources);
+    const rest = sourceRows.slice(maxSources);
+    const restCount = rest.reduce((a, r) => a + r.count, 0);
+    const customersBySource: Array<{
+      source: string
+      count: number
+      percentage: number
+      color: string
+    }> = top.map((r, i) => ({
+      source: r.source,
+      count: r.count,
+      percentage: bookSum > 0 ? Math.round(r.pct * 10) / 10 : 0,
+      color: colorForIndex(i),
+    }));
+    if (restCount > 0) {
+      customersBySource.push({
+        source: 'Others',
+        count: restCount,
+        percentage: bookSum > 0 ? Math.round((restCount / bookSum) * 1000) / 10 : 0,
+        color: colorForIndex(maxSources),
+      });
+    }
+
+    const performanceSummary =
+      period === 'today'
+        ? "Here's your arena performance for today"
+        : period === 'last7days'
+          ? "Here's your performance over the last 7 days"
+          : period === 'thisMonth'
+            ? "Month to date at your business locations"
+            : "All-time performance at your business locations";
+
+    const { part: greetPart } = greetingTimeLabelKarachi();
+    let firstName = 'There';
+    try {
+      const me = await this.iamService.getMe(requesterUserId);
+      const fn = String(me?.fullName || 'there').trim().split(/\s+/)[0] || 'There';
+      firstName = fn;
+    } catch {
+      firstName = 'There';
+    }
+    const greeting = `GOOD ${greetPart}, ${firstName.toUpperCase()}`;
 
     return {
       generatedAt: new Date().toISOString(),
+      period: { key: period, window: win, refToday, previousWindow: winPrev },
       scope: { businessCount: businesses.length, locationCount: locations.length },
+      greeting,
+      performanceSummary,
+      bookingStats: [
+        { label: 'Upcoming', value: curK.upcoming, change: period === 'all' ? '0' : formatStatChange(curK.upcoming, prevK.upcoming) },
+        { label: 'Completed', value: curK.completed, change: period === 'all' ? '0' : formatStatChange(curK.completed, prevK.completed) },
+        { label: 'Canceled', value: curK.canceled, change: period === 'all' ? '0' : formatStatChange(curK.canceled, prevK.canceled) },
+        { label: 'Pending', value: curK.pending, change: period === 'all' ? '0' : formatStatChange(curK.pending, prevK.pending) },
+      ],
+      revenueOverview: {
+        total: Math.round(revSum * 100) / 100,
+        currency: displayCurrency,
+        currencyCode: locCurrency,
+        revenueBySport,
+        bookingsBySport,
+      },
+      customersBySource,
       totals: totalStats,
       businesses: businesses.map((b) => {
         const s = statsByTenant.get(b.tenantId);
+        const sPrev = prevStatsByTenant.get(b.tenantId);
         return {
           businessId: b.id,
           tenantId: b.tenantId,
@@ -210,6 +362,11 @@ export class BusinessesService {
           completedBookingCount: s?.completed ?? 0,
           revenueTotal: s?.revenue ?? 0,
           revenuePaid: s?.paid ?? 0,
+          previousPeriod: period === 'all' ? null : {
+            bookingCount: sPrev?.count ?? 0,
+            revenueTotal: sPrev?.revenue ?? 0,
+            completedBookingCount: sPrev?.completed ?? 0,
+          },
         };
       }),
     };

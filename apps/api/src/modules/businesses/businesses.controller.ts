@@ -44,12 +44,15 @@ export class BusinessesController {
 
   @Get('dashboard')
   @Roles('platform-owner', 'business-admin', 'location-admin')
-  async dashboard(@Req() req: Request) {
+  async dashboard(
+    @Req() req: Request,
+    @Query('period') period?: string,
+  ) {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) {
       throw new UnauthorizedException('Missing user');
     }
-    return this.businessesService.getDashboardView(userId);
+    return this.businessesService.getDashboardView(userId, period);
   }
 
   @Post('onboard')
