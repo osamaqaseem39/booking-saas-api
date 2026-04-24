@@ -1,13 +1,7 @@
-import {
-  Body,
-  Controller,
-  HttpException,
-  InternalServerErrorException,
-  Logger,
-  Post,
-} from '@nestjs/common';
+import { Body, Controller, Logger, Post } from '@nestjs/common';
 import { BookingsService } from '../bookings.service';
 import { PlacePadelBookingDto } from '../dto/place-padel-booking.dto';
+import { logBookingsCreateFailure } from '../utils/log-bookings-create-failure';
 
 /**
  * Resolves tenant from venueId; no X-Tenant-Id required.
@@ -23,10 +17,13 @@ export class PlacePadelBookingController {
   async placePadelBooking(@Body() dto: PlacePadelBookingDto) {
     try {
       return await this.bookingsService.placePadelBooking(dto);
-    } catch (e) {
-      if (e instanceof HttpException) throw e;
-      this.logger.error('placePadelBooking failed', e);
-      throw new InternalServerErrorException('Failed to create booking');
+    } catch (err) {
+      logBookingsCreateFailure(
+        this.logger,
+        'POST /placePadelBooking',
+        err,
+      );
+      throw err;
     }
   }
 }

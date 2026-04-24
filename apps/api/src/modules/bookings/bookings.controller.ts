@@ -4,8 +4,6 @@ import {
   Controller,
   Delete,
   Get,
-  HttpException,
-  InternalServerErrorException,
   Logger,
   Param,
   ParseUUIDPipe,
@@ -45,6 +43,7 @@ import { UpdateTimeSlotTemplateDto } from './dto/update-time-slot-template.dto';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
 import { TimeSlotTemplatesService } from './time-slot-templates/time-slot-templates.service';
+import { logBookingsCreateFailure } from './utils/log-bookings-create-failure';
 
 function normalizeKind(kind: string): CourtKind | string {
   if (kind === 'futsal_court' || kind === 'cricket_court') return 'turf_court';
@@ -438,14 +437,20 @@ export class BookingsController {
 
       // Explicit check in controller as requested: block slots if confirmed
       if (result.bookingStatus === 'confirmed') {
-        await this.bookingsService.syncFacilitySlotsStatusById(tenantId, result.bookingId);
+        await this.bookingsService.syncFacilitySlotsStatusById(
+          tenantId,
+          result.bookingId,
+        );
       }
 
       return result;
-    } catch (e) {
-      if (e instanceof HttpException) throw e;
-      this.logger.error('bookings create failed', e);
-      throw new InternalServerErrorException('Failed to create booking');
+    } catch (err) {
+      logBookingsCreateFailure(
+        this.logger,
+        'POST /bookings (create)',
+        err,
+      );
+      throw err;
     }
   }
 
