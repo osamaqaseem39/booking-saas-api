@@ -1329,7 +1329,8 @@ export class BookingsService {
     };
 
     const currentDateSlots = await buildSlotsResponseForDate(date);
-    const additionalDates = [await buildSlotsResponseForDate(addDays(date, 1))];
+    const nextDateSlots = await buildSlotsResponseForDate(addDays(date, 1));
+    const additionalDates = [nextDateSlots];
 
     return {
       date,
@@ -1337,6 +1338,7 @@ export class BookingsService {
       courtType: params.courtType ?? 'all',
       facilities: currentDateSlots.facilities,
       unionSlots: currentDateSlots.unionSlots,
+      nextDateSlots,
       additionalDates,
     };
   }
