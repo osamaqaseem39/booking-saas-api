@@ -1236,81 +1236,112 @@ export class BookingsService {
         })
       : [];
 
-    const facilities: Array<{
-      kind: CourtKind;
-      courtId: string;
-      name: string;
-      price?: number;
-      slots: Array<{ startTime: string; endTime: string; availability: string }>;
-    }> = [];
+    const buildSlotsResponseForDate = async (targetDate: string) => {
+      const facilities: Array<{
+        kind: CourtKind;
+        courtId: string;
+        name: string;
+        price?: number;
+        slots: Array<{ startTime: string; endTime: string; availability: string }>;
+      }> = [];
 
-    for (const court of padelBatch) {
-      const grid = await this.getCourtSlotGrid(court.tenantId, {
-        kind: 'padel_court',
-        courtId: court.id,
-        date,
-        startTime: start,
-        endTime: end,
-        availableOnly: false,
-      });
-      facilities.push({
-        kind: 'padel_court',
-        courtId: court.id,
-        name: court.name,
-        price: Number(court.pricePerSlot || 0),
-        slots: grid.segments.map((s: any) => ({
-          startTime: s.startTime,
-          endTime: s.endTime,
-          availability: s.state === 'free' ? 'available' : s.state,
-        })),
-      });
-    }
+      for (const court of padelBatch) {
+        const grid = await this.getCourtSlotGrid(court.tenantId, {
+          kind: 'padel_court',
+          courtId: court.id,
+          date: targetDate,
+          startTime: start,
+          endTime: end,
+          availableOnly: false,
+        });
+        facilities.push({
+          kind: 'padel_court',
+          courtId: court.id,
+          name: court.name,
+          price: Number(court.pricePerSlot || 0),
+          slots: grid.segments.map((s: any) => ({
+            startTime: s.startTime,
+            endTime: s.endTime,
+            availability: s.state === 'free' ? 'available' : s.state,
+          })),
+        });
+      }
 
-    for (const court of turfBatch) {
-      const isFutsalRequested = (params.courtType || '').toLowerCase().includes('futsal');
-      const isCricketRequested = (params.courtType || '').toLowerCase().includes('cricket');
-      
-      if (isFutsalRequested && !court.supportedSports?.includes('futsal')) continue;
-      if (isCricketRequested && !court.supportedSports?.includes('cricket')) continue;
+      for (const court of turfBatch) {
+        const isFutsalRequested = (params.courtType || '')
+          .toLowerCase()
+          .includes('futsal');
+        const isCricketRequested = (params.courtType || '')
+          .toLowerCase()
+          .includes('cricket');
 
-      const grid = await this.getCourtSlotGrid(court.tenantId, {
-        kind: 'turf_court',
-        courtId: court.id,
-        date,
-        startTime: start,
-        endTime: end,
-        availableOnly: false,
-      });
-      facilities.push({
-        kind: 'turf_court',
-        courtId: court.id,
-        name: court.name,
-        price: this.resolveTurfPrice(court, params.courtType),
-        slots: grid.segments.map((s: any) => ({
-          startTime: s.startTime,
-          endTime: s.endTime,
-          availability: s.state === 'free' ? 'available' : s.state,
-        })),
-      });
-    }
+        if (isFutsalRequested && !court.supportedSports?.includes('futsal'))
+          continue;
+        if (isCricketRequested && !court.supportedSports?.includes('cricket'))
+          continue;
 
-    const unionMap = new Map<string, { startTime: string; endTime: string; availability: string }>();
-    for (const f of facilities) {
-      for (const s of f.slots) {
-        const key = `${s.startTime}\t${s.endTime}`;
-        const existing = unionMap.get(key);
-        if (!existing || (existing.availability === 'blocked' && s.availability === 'available')) {
-          unionMap.set(key, s as any);
+        const grid = await this.getCourtSlotGrid(court.tenantId, {
+          kind: 'turf_court',
+          courtId: court.id,
+          date: targetDate,
+          startTime: start,
+          endTime: end,
+          availableOnly: false,
+        });
+        facilities.push({
+          kind: 'turf_court',
+          courtId: court.id,
+          name: court.name,
+          price: this.resolveTurfPrice(court, params.courtType),
+          slots: grid.segments.map((s: any) => ({
+            startTime: s.startTime,
+            endTime: s.endTime,
+            availability: s.state === 'free' ? 'available' : s.state,
+          })),
+        });
+      }
+
+      const unionMap = new Map<
+        string,
+        { startTime: string; endTime: string; availability: string }
+      >();
+      for (const f of facilities) {
+        for (const s of f.slots) {
+          const key = `${s.startTime}\t${s.endTime}`;
+          const existing = unionMap.get(key);
+          if (
+            !existing ||
+            (existing.availability === 'blocked' &&
+              s.availability === 'available')
+          ) {
+            unionMap.set(key, s as any);
+          }
         }
       }
-    }
+
+      return {
+        date: targetDate,
+        facilities,
+        unionSlots: [...unionMap.values()].sort((a, b) =>
+          a.startTime.localeCompare(b.startTime),
+        ),
+      };
+    };
+
+    const currentDateSlots = await buildSlotsResponseForDate(date);
+    const selectedDayOfMonth = Number(date.slice(8, 10));
+    const additionalDates =
+      selectedDayOfMonth === 25
+        ? [await buildSlotsResponseForDate(addDays(date, 1))]
+        : [];
 
     return {
       date,
       locationId: params.locationId,
       courtType: params.courtType ?? 'all',
-      facilities,
-      unionSlots: [...unionMap.values()].sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      facilities: currentDateSlots.facilities,
+      unionSlots: currentDateSlots.unionSlots,
+      additionalDates,
     };
   }
 
