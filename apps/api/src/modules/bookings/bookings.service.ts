@@ -28,6 +28,12 @@ import type { UpdateBookingDto } from './dto/update-booking.dto';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { Business } from '../businesses/entities/business.entity';
 import type { PlacePadelBookingDto } from './dto/place-padel-booking.dto';
+import type {
+  LiveFacilitiesSlotsPayload,
+  LivePadelCourtDto,
+  LiveTurfCourtDto,
+  LocationLiveFacilitiesView,
+} from './dto/location-live-facilities-view.dto';
 import { CourtFacilitySlot, CourtFacilitySlotStatus } from './entities/court-facility-slot.entity';
 import { BookingItem } from './entities/booking-item.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
@@ -40,6 +46,21 @@ function dec(n: number): string {
 
 function numFromDec(v: string): number {
   return Number.parseFloat(v);
+}
+
+/**
+ * When paid amount matches the order total, mark payment as settled unless already in a terminal failure/refund state.
+ */
+function harmonizePaymentStatusWithAmounts(b: {
+  totalAmount: string;
+  paidAmount: string;
+  paymentStatus: PaymentStatus;
+}): void {
+  if (numFromDec(b.paidAmount) === numFromDec(b.totalAmount)) {
+    if (b.paymentStatus !== 'refunded' && b.paymentStatus !== 'failed') {
+      b.paymentStatus = 'paid';
+    }
+  }
 }
 
 function toMinutes(time: any, isEndTime = false): number {
@@ -65,6 +86,16 @@ function addDays(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+function getCurrentDateInKarachi(): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Karachi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  return formatter.format(new Date());
 }
 
 export type BookingApiRow = {
@@ -138,6 +169,21 @@ export class BookingsService {
   ) {}
 
   private readonly logger = new Logger(BookingsService.name);
+  private static readonly MAX_BOOKING_DAYS_AHEAD = 14;
+
+  private assertBookingDateInAllowedWindow(bookingDate: string): void {
+    const requested = formatDateOnly(bookingDate);
+    const today = getCurrentDateInKarachi();
+    const lastAllowed = addDays(
+      today,
+      BookingsService.MAX_BOOKING_DAYS_AHEAD - 1,
+    );
+    if (requested < today || requested > lastAllowed) {
+      throw new BadRequestException(
+        `Bookings are allowed only from ${today} to ${lastAllowed}`,
+      );
+    }
+  }
 
   async resolveTenantIdByCourt(
     kind: CourtKind,
@@ -538,6 +584,8 @@ export class BookingsService {
     tenantId: string,
     dto: CreateBookingDto,
   ): Promise<BookingApiRow> {
+    this.assertBookingDateInAllowedWindow(dto.bookingDate);
+
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new BadRequestException(`User ${dto.userId} not found`);
 
@@ -600,6 +648,9 @@ export class BookingsService {
       notes: dto.notes,
       items: itemsPayload,
     };
+    harmonizePaymentStatusWithAmounts(
+      bookingPayload as Pick<Booking, 'totalAmount' | 'paidAmount' | 'paymentStatus'>,
+    );
     const booking = this.bookingRepo.create(bookingPayload);
 
     const saved = await this.bookingRepo.save(booking);
@@ -1340,6 +1391,129 @@ export class BookingsService {
       unionSlots: currentDateSlots.unionSlots,
       nextDateSlots,
       additionalDates,
+    };
+  }
+
+  private mapPadelToLiveDto(c: PadelCourt): LivePadelCourtDto {
+    return {
+      id: c.id,
+      tenantId: c.tenantId,
+      businessLocationId: c.businessLocationId ?? null,
+      name: c.name,
+      arenaLabel: c.arenaLabel ?? null,
+      courtStatus: c.courtStatus,
+      pricePerSlot: Number(c.pricePerSlot || 0),
+      imageUrls: c.imageUrls ?? null,
+      slotDurationMinutes: c.slotDurationMinutes ?? null,
+      timeSlotTemplateId: c.timeSlotTemplateId,
+      isActive: c.isActive,
+    };
+  }
+
+  private mapTurfToLiveDto(t: TurfCourt): LiveTurfCourtDto {
+    return {
+      id: t.id,
+      tenantId: t.tenantId,
+      branchId: t.branchId,
+      name: t.name,
+      status: t.status,
+      supportedSports: t.supportedSports ?? [],
+      length: t.length ?? null,
+      width: t.width ?? null,
+      coveredType: t.coveredType,
+      surfaceType: t.surfaceType ?? null,
+      slotDuration: t.slotDuration,
+      bufferTime: t.bufferTime,
+      timeSlotTemplateId: t.timeSlotTemplateId,
+      pricing: t.pricing,
+      sportConfig: t.sportConfig,
+    };
+  }
+
+  private async assertCanReadLiveFacilities(
+    requesterUserId: string,
+    tenantId: string | undefined,
+    locationId: string,
+  ): Promise<void> {
+    const isPlatformOwner = await this.iamService.hasAnyRole(
+      requesterUserId,
+      ['platform-owner'],
+    );
+    const constraint = await this.iamService.getLocationAdminConstraint(
+      requesterUserId,
+    );
+    if (constraint && constraint !== locationId) {
+      throw new ForbiddenException('Not allowed to view this location');
+    }
+    if (!isPlatformOwner && !tenantId) {
+      throw new UnauthorizedException('Tenant ID is required');
+    }
+    const loc = await this.locationRepo.findOne({
+      where: { id: locationId },
+      relations: ['business'],
+    });
+    if (!loc) {
+      throw new NotFoundException(`Location ${locationId} not found`);
+    }
+    if (tenantId && loc.business?.tenantId !== tenantId) {
+      throw new ForbiddenException('Location does not belong to this tenant');
+    }
+  }
+
+  /**
+   * One payload for the mobile “Live facilities” page: padel + turf (futsal/cricket) catalog
+   * plus the same day slot grid as `getLocationFacilitiesAvailableSlots` (replaces
+   * separate `/arena/turf-courts` and `/facilities/available-slots` for that screen).
+   */
+  async getLocationLiveFacilities(params: {
+    requesterUserId: string;
+    tenantId?: string;
+    locationId: string;
+    date: string;
+    startTime?: string;
+    endTime?: string;
+    courtType?: string;
+  }): Promise<LocationLiveFacilitiesView> {
+    await this.assertCanReadLiveFacilities(
+      params.requesterUserId,
+      params.tenantId,
+      params.locationId,
+    );
+    const [slotsPayload, padelRows, turfRows] = await Promise.all([
+      this.getLocationFacilitiesAvailableSlots({
+        locationId: params.locationId,
+        date: params.date,
+        startTime: params.startTime,
+        endTime: params.endTime,
+        courtType: params.courtType,
+      }),
+      this.padelRepo.find({
+        where: {
+          businessLocationId: params.locationId,
+          isActive: true,
+          courtStatus: In(['active', 'draft']) as any,
+        },
+        order: { name: 'ASC' },
+      }),
+      this.turfRepo.find({
+        where: { branchId: params.locationId, status: 'active' },
+        order: { name: 'ASC' },
+      }),
+    ]);
+    const futsal: LiveTurfCourtDto[] = [];
+    const cricket: LiveTurfCourtDto[] = [];
+    for (const t of turfRows) {
+      const d = this.mapTurfToLiveDto(t);
+      if (t.supportedSports?.includes('futsal')) futsal.push(d);
+      if (t.supportedSports?.includes('cricket')) cricket.push(d);
+    }
+    const liveSlots = slotsPayload as LiveFacilitiesSlotsPayload;
+    return {
+      locationId: params.locationId,
+      generatedAt: new Date().toISOString(),
+      padelCourts: padelRows.map((c) => this.mapPadelToLiveDto(c)),
+      turfCourts: { futsal, cricket },
+      liveSlots,
     };
   }
 

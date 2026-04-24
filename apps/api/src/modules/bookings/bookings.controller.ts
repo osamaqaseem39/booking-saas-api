@@ -26,6 +26,8 @@ import { CourtSlotGridQueryDto } from './dto/court-slot-grid-query.dto';
 import { CourtSlotsQueryDto } from './dto/court-slots-query.dto';
 import { LocationFacilitySlotsQueryDto } from './dto/location-facility-slots-query.dto';
 import { LocationFacilitySlotPickQueryDto } from './dto/location-facility-slot-pick-query.dto';
+import { LocationLiveFacilitiesQueryDto } from './dto/location-live-facilities-query.dto';
+import type { LocationLiveFacilitiesView } from './dto/location-live-facilities-view.dto';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
 import { BookingsService, BookingApiRow } from './bookings.service';
@@ -250,6 +252,30 @@ export class BookingsController {
       startTime: query.startTime,
       endTime: query.endTime,
       availableOnly: query.availableOnly === 'true',
+    });
+  }
+
+  @Get('locations/:locationId/facilities/live')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  async locationLiveFacilities(
+    @Req() req: Request,
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Query() query: LocationLiveFacilitiesQueryDto,
+    @CurrentTenant() tenant: TenantContext,
+  ): Promise<LocationLiveFacilitiesView> {
+    const userId = (req as Request & { userId?: string }).userId?.trim();
+    if (!userId) {
+      throw new UnauthorizedException('Missing user');
+    }
+    return this.bookingsService.getLocationLiveFacilities({
+      requesterUserId: userId,
+      tenantId: this.getTenantUuidOrNull(tenant) ?? undefined,
+      locationId,
+      date: query.date,
+      startTime: query.startTime,
+      endTime: query.endTime,
+      courtType: query.courtType,
     });
   }
 
