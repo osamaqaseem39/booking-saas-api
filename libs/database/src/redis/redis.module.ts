@@ -24,7 +24,7 @@ const redisLogger = new Logger('RedisModule');
         }
 
         const commonOptions = {
-          maxRetriesPerRequest: null as const,
+          maxRetriesPerRequest: null,
           lazyConnect: true,
         };
 
