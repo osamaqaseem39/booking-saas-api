@@ -1,9 +1,11 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -30,6 +32,11 @@ export class CreateTableTennisCourtDto {
   description?: string;
 
   @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  imageUrls?: string[];
+
+  @IsOptional()
   @Type(() => Number)
   @IsNumber()
   pricePerSlot?: number;
@@ -53,4 +60,8 @@ export class CreateTableTennisCourtDto {
   @ValidateIf((_, v) => v != null && v !== '')
   @IsUUID('4')
   timeSlotTemplateId?: string | null;
+
+  @IsOptional()
+  @IsObject()
+  meta?: Record<string, unknown>;
 }

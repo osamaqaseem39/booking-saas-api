@@ -98,11 +98,13 @@ export class TableTennisCourtService {
       name: dto.name,
       courtStatus,
       description: dto.description,
+      imageUrls: dto.imageUrls?.length ? dto.imageUrls : undefined,
       pricePerSlot: dec(dto.pricePerSlot),
       slotDurationMinutes: dto.slotDurationMinutes,
       bufferBetweenSlotsMinutes: dto.bufferBetweenSlotsMinutes,
       isActive,
       timeSlotTemplateId,
+      meta: dto.meta ?? undefined,
     });
     const saved = await this.repo.save(row);
     if (saved.timeSlotTemplateId) {
@@ -140,6 +142,9 @@ export class TableTennisCourtService {
 
     if (dto.name !== undefined) row.name = dto.name;
     if (dto.description !== undefined) row.description = dto.description;
+    if (dto.imageUrls !== undefined)
+      row.imageUrls = dto.imageUrls?.length ? dto.imageUrls : [];
+    if (dto.meta !== undefined) row.meta = dto.meta ?? null;
     if (dto.pricePerSlot !== undefined)
       row.pricePerSlot = dec(dto.pricePerSlot);
     if (dto.slotDurationMinutes !== undefined)

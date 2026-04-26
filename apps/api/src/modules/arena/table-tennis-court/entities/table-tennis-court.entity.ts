@@ -53,6 +53,10 @@ export class TableTennisCourt {
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;
 
+  /** Free-form JSON for venue UI (play area, brand, amenities, rules). */
+  @Column({ type: 'jsonb', nullable: true })
+  meta?: Record<string, unknown> | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 
