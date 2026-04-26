@@ -30,6 +30,19 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
   const allowedOrigins = hasEnvOrigins
     ? [...new Set([...DEFAULT_CORS_ORIGINS, ...fromEnv])]
     : [];
+  const allowVercelPreviews =
+    (process.env.CORS_ALLOW_VERCEL_PREVIEWS ?? 'true').toLowerCase() !== 'false';
+
+  function isAllowedOrigin(origin: string): boolean {
+    if (!origin) return false;
+    if (allowedOrigins.length === 0) return true;
+    if (allowedOrigins.includes(origin)) return true;
+    if (/^https?:\/\/localhost(?::\d+)?$/i.test(origin)) return true;
+    if (allowVercelPreviews && /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) {
+      return true;
+    }
+    return false;
+  }
 
   // Explicit CORS middleware to ensure preflight `OPTIONS` requests
   // never hit a 404/route-miss without `Access-Control-Allow-Origin`.
@@ -37,9 +50,7 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
     const origin = req.headers.origin as string | undefined;
 
     if (origin) {
-      // If no CORS env is configured, reflect the request origin.
-      const allowOrigin =
-        allowedOrigins.length === 0 || allowedOrigins.includes(origin);
+      const allowOrigin = isAllowedOrigin(origin);
       res.setHeader(
         'Access-Control-Allow-Origin',
         allowOrigin ? origin : 'null',
