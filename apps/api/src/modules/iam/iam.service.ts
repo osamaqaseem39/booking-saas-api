@@ -471,6 +471,17 @@ export class IamService implements OnModuleInit {
     let existing = await this.userRolesRepository.findOne({
       where: { userId, roleCode },
     });
+
+    if (roleCode === 'location-admin') {
+      const effectiveLoc = (opts?.locationId ?? existing?.locationId ?? '')
+        .toString()
+        .trim();
+      if (!effectiveLoc) {
+        throw new BadRequestException(
+          'locationId is required when assigning location-admin',
+        );
+      }
+    }
     
     if (existing) {
       if (opts?.locationId && existing.locationId !== opts.locationId) {
