@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
+import { TableTennisCourt } from '../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
 import { User } from '../iam/entities/user.entity';
 import { BookingsController } from './bookings.controller';
@@ -30,6 +31,7 @@ import { BookingsSlotsTask } from './tasks/bookings-slots.task';
       User,
       PadelCourt,
       TurfCourt,
+      TableTennisCourt,
       BusinessLocation,
       Business,
       CourtSlotBookingBlock,

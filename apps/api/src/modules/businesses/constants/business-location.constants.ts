@@ -13,6 +13,7 @@ export type BusinessLocationTypeCode =
 export const BUSINESS_LOCATION_FACILITY_TYPE_CODES = [
   'turf',
   'padel',
+  'table-tennis',
 ] as const;
 
 export type BusinessLocationFacilityTypeCode =
@@ -77,6 +78,12 @@ export function normalizeLocationFacilityTypesForApi(
       out.add('turf');
     } else if (trimmed === 'padel-court' || trimmed === 'padel') {
       out.add('padel');
+    } else if (
+      trimmed === 'table-tennis' ||
+      trimmed === 'table-tennis-table' ||
+      trimmed === 'table-tennis-court'
+    ) {
+      out.add('table-tennis');
     } else {
       // Preserve unknown/new facility types for forward compatibility.
       out.add(trimmed);

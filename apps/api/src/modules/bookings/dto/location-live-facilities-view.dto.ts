@@ -86,6 +86,8 @@ export type LocationLiveFacilitiesView = {
   timeZone: string;
   /** All active padel courts for this business location. */
   padelCourts: LivePadelCourtDto[];
+  /** Table tennis tables (same row shape as padel for pricing / template). */
+  tableTennisCourts: LivePadelCourtDto[];
   /** Turf catalog split by sport (same as filtering `turf_courts` by supportedSports). */
   turfCourts: {
     futsal: LiveTurfCourtDto[];

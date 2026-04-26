@@ -4,6 +4,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, LessThanOrEqual, Repository } from 'typeorm';
 import { BookingsService } from '../bookings.service';
 import { PadelCourt } from '../../arena/padel-court/entities/padel-court.entity';
+import { TableTennisCourt } from '../../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { TurfCourt } from '../../arena/turf/entities/turf-court.entity';
 import { CourtFacilitySlot } from '../entities/court-facility-slot.entity';
 
@@ -18,6 +19,8 @@ export class BookingsSlotsTask {
     private readonly padelRepo: Repository<PadelCourt>,
     @InjectRepository(TurfCourt)
     private readonly turfRepo: Repository<TurfCourt>,
+    @InjectRepository(TableTennisCourt)
+    private readonly tableTennisRepo: Repository<TableTennisCourt>,
     @InjectRepository(CourtFacilitySlot)
     private readonly facilitySlotRepo: Repository<CourtFacilitySlot>,
   ) {}
@@ -169,6 +172,11 @@ export class BookingsSlotsTask {
         select: ['id', 'tenantId', 'timeSlotTemplateId'],
       });
 
+      const tableTennisCourts = await this.tableTennisRepo.find({
+        where: { isActive: true, courtStatus: 'active' },
+        select: ['id', 'tenantId', 'timeSlotTemplateId'],
+      });
+
       const datesToGenerate = this.getRollingZonedDateStrings(30);
 
       let totalUpserted = 0;
@@ -211,6 +219,27 @@ export class BookingsSlotsTask {
           } catch (slotErr) {
             this.logger.error(
               `Failed to generate slots for Turf court ${court.id} on ${date}`,
+              slotErr,
+            );
+          }
+        }
+      }
+
+      for (const court of tableTennisCourts) {
+        for (const date of datesToGenerate) {
+          try {
+            const res = await this.bookingsService.generateDayFacilitySlots(
+              court.tenantId,
+              {
+                kind: 'table_tennis_court',
+                courtId: court.id,
+                date,
+              },
+            );
+            totalUpserted += res.upserted;
+          } catch (slotErr) {
+            this.logger.error(
+              `Failed to generate slots for table tennis table ${court.id} on ${date}`,
               slotErr,
             );
           }

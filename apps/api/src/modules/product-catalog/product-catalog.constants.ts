@@ -22,4 +22,4 @@ export const GAMING_ZONE_SUB_TYPES = [
 ] as const;
 
 // These are not subtypes but separate main types
-export const UPCOMING_TYPES = ['snooker', 'table-tennis'] as const;
+export const UPCOMING_TYPES = ['snooker'] as const;

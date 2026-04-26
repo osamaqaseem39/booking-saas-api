@@ -10,6 +10,7 @@ import type { UpdateTimeSlotTemplateDto } from '../dto/update-time-slot-template
 import { TenantTimeSlotTemplate } from '../entities/tenant-time-slot-template.entity';
 import { TenantTimeSlotTemplateLine } from '../entities/tenant-time-slot-template-line.entity';
 import { PadelCourt } from '../../arena/padel-court/entities/padel-court.entity';
+import { TableTennisCourt } from '../../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { TurfCourt } from '../../arena/turf/entities/turf-court.entity';
 import { CourtFacilitySlot } from '../entities/court-facility-slot.entity';
 import { BookingItem } from '../entities/booking-item.entity';
@@ -57,6 +58,8 @@ export class TimeSlotTemplatesService {
     private readonly padelRepo: Repository<PadelCourt>,
     @InjectRepository(TurfCourt)
     private readonly turfRepo: Repository<TurfCourt>,
+    @InjectRepository(TableTennisCourt)
+    private readonly tableTennisRepo: Repository<TableTennisCourt>,
     @InjectRepository(CourtFacilitySlot)
     private readonly facilitySlotRepo: Repository<CourtFacilitySlot>,
     @InjectRepository(BookingItem)
@@ -68,7 +71,7 @@ export class TimeSlotTemplatesService {
     templateId: string,
     slotLines: TenantTimeSlotTemplateLine[],
   ): Promise<void> {
-    const [padelCourts, turfCourts] = await Promise.all([
+    const [padelCourts, turfCourts, tableTennisCourts] = await Promise.all([
       this.padelRepo.find({
         where: { tenantId, timeSlotTemplateId: templateId },
         select: ['id'],
@@ -77,11 +80,17 @@ export class TimeSlotTemplatesService {
         where: { tenantId, timeSlotTemplateId: templateId },
         select: ['id'],
       }),
+      this.tableTennisRepo.find({
+        where: { tenantId, timeSlotTemplateId: templateId },
+        select: ['id'],
+      }),
     ]);
 
     const padelCourtIds = padelCourts.map((c) => c.id);
     const turfCourtIds = turfCourts.map((c) => c.id);
-    if (!padelCourtIds.length && !turfCourtIds.length) return;
+    const tableTennisIds = tableTennisCourts.map((c) => c.id);
+    if (!padelCourtIds.length && !turfCourtIds.length && !tableTennisIds.length)
+      return;
 
     const today = new Date().toISOString().slice(0, 10);
     const dates: string[] = [];
@@ -104,6 +113,14 @@ export class TimeSlotTemplatesService {
         tenantId,
         courtKind: 'turf_court',
         courtId: In(turfCourtIds),
+        slotDate: MoreThanOrEqual(today),
+      });
+    }
+    if (tableTennisIds.length) {
+      await this.facilitySlotRepo.delete({
+        tenantId,
+        courtKind: 'table_tennis_court',
+        courtId: In(tableTennisIds),
         slotDate: MoreThanOrEqual(today),
       });
     }
@@ -139,6 +156,19 @@ export class TimeSlotTemplatesService {
             }),
           );
         }
+        for (const courtId of tableTennisIds) {
+          values.push(
+            this.facilitySlotRepo.create({
+              tenantId,
+              courtKind: 'table_tennis_court',
+              courtId,
+              slotDate,
+              startTime: line.startTime,
+              endTime: line.endTime,
+              status: line.status,
+            }),
+          );
+        }
       }
     }
 
@@ -150,7 +180,11 @@ export class TimeSlotTemplatesService {
       }
     }
 
-    const affectedCourtIds = [...padelCourtIds, ...turfCourtIds];
+    const affectedCourtIds = [
+      ...padelCourtIds,
+      ...turfCourtIds,
+      ...tableTennisIds,
+    ];
     if (!affectedCourtIds.length) return;
 
     const activeBookingItems = await this.bookingItemRepo
@@ -172,7 +206,7 @@ export class TimeSlotTemplatesService {
         'item.endDatetime AS "endDatetime"',
       ])
       .getRawMany<{
-        courtKind: 'padel_court' | 'turf_court';
+        courtKind: 'padel_court' | 'turf_court' | 'table_tennis_court';
         courtId: string;
         startDatetime: string;
         endDatetime: string;

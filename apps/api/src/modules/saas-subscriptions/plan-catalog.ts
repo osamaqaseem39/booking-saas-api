@@ -8,6 +8,7 @@ type PlanEntitlements = {
 const enterpriseAll: Record<SaasFeature, boolean> = {
   padel_module: true,
   turf_module: true,
+  table_tennis_module: true,
   gaming_module: true,
   analytics_dashboard: true,
   public_api_access: true,
@@ -22,6 +23,7 @@ export const PLAN_ENTITLEMENTS: Record<SaasPlanId, PlanEntitlements> = {
     features: {
       padel_module: true,
       turf_module: false,
+      table_tennis_module: true,
       gaming_module: false,
       analytics_dashboard: false,
       public_api_access: false,
@@ -32,6 +34,7 @@ export const PLAN_ENTITLEMENTS: Record<SaasPlanId, PlanEntitlements> = {
     features: {
       padel_module: true,
       turf_module: true,
+      table_tennis_module: true,
       gaming_module: false,
       analytics_dashboard: true,
       public_api_access: false,
@@ -42,6 +45,7 @@ export const PLAN_ENTITLEMENTS: Record<SaasPlanId, PlanEntitlements> = {
     features: {
       padel_module: true,
       turf_module: true,
+      table_tennis_module: true,
       gaming_module: true,
       analytics_dashboard: true,
       public_api_access: true,

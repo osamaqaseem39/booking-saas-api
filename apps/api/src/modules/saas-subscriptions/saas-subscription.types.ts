@@ -1,6 +1,7 @@
 export const SAAS_FEATURES = [
   'padel_module',
   'turf_module',
+  'table_tennis_module',
   'gaming_module',
   'analytics_dashboard',
   'public_api_access',

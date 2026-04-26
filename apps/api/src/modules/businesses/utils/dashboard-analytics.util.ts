@@ -101,12 +101,14 @@ const SPORT_ICONS: Record<BookingSportType, string> = {
   futsal: 'soccer',
   cricket: 'cricket',
   padel: 'tennis',
+  'table-tennis': 'tennis',
 };
 
 const SPORT_LABEL: Record<BookingSportType, string> = {
   futsal: 'Futsal',
   cricket: 'Cricket',
   padel: 'Padel',
+  'table-tennis': 'Table tennis',
 };
 
 export function sportLabel(sport: string): string {

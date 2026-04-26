@@ -10,6 +10,7 @@ import { IamService } from '../iam/iam.service';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, DeepPartial, In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
+import { TableTennisCourt } from '../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
 import { User } from '../iam/entities/user.entity';
 import { TenantTimeSlotTemplateLine } from './entities/tenant-time-slot-template-line.entity';
@@ -159,6 +160,8 @@ export class BookingsService {
     private readonly padelRepo: Repository<PadelCourt>,
     @InjectRepository(TurfCourt)
     private readonly turfRepo: Repository<TurfCourt>,
+    @InjectRepository(TableTennisCourt)
+    private readonly tableTennisRepo: Repository<TableTennisCourt>,
     @InjectRepository(BusinessLocation)
     private readonly locationRepo: Repository<BusinessLocation>,
     @InjectRepository(Business)
@@ -209,6 +212,13 @@ export class BookingsService {
       });
       return row?.tenantId ?? null;
     }
+    if (kind === 'table_tennis_court') {
+      const row = await this.tableTennisRepo.findOne({
+        where: { id: courtId },
+        select: ['tenantId'],
+      });
+      return row?.tenantId ?? null;
+    }
     return null;
   }
 
@@ -252,11 +262,14 @@ export class BookingsService {
 
     const padelIds = new Set<string>();
     const turfIds = new Set<string>();
+    const tableTennisIds = new Set<string>();
 
     for (const b of bookings) {
       for (const item of b.items || []) {
         if (item.courtKind === 'padel_court') padelIds.add(item.courtId);
         else if (item.courtKind === 'turf_court') turfIds.add(item.courtId);
+        else if (item.courtKind === 'table_tennis_court')
+          tableTennisIds.add(item.courtId);
       }
     }
 
@@ -278,6 +291,16 @@ export class BookingsService {
       });
       for (const t of turfs) {
         if (t.branchId) courtToLocationMap[t.id] = t.branchId;
+      }
+    }
+
+    if (tableTennisIds.size > 0) {
+      const rows = await this.tableTennisRepo.find({
+        where: { id: In([...tableTennisIds]) },
+        select: ['id', 'businessLocationId'],
+      });
+      for (const t of rows) {
+        if (t.businessLocationId) courtToLocationMap[t.id] = t.businessLocationId;
       }
     }
 
@@ -501,6 +524,23 @@ export class BookingsService {
     return turf;
   }
 
+  private async assertTableTennisCourtExists(
+    tenantId: string,
+    courtId: string,
+  ): Promise<TableTennisCourt> {
+    const court = await this.tableTennisRepo.findOne({
+      where: { id: courtId, tenantId },
+    });
+    if (!court)
+      throw new BadRequestException(
+        `Table tennis table ${courtId} not found for this tenant`,
+      );
+    if (court.courtStatus !== 'active' || court.isActive === false) {
+      throw new BadRequestException('Selected table is not available');
+    }
+    return court;
+  }
+
   private toSlotDateTimes(
     bookingDate: string,
     startTime: string,
@@ -545,9 +585,13 @@ export class BookingsService {
   }
 
   private assertBookingItem(item: CreateBookingItemDto): void {
-    if (item.courtKind !== 'padel_court' && item.courtKind !== 'turf_court') {
+    if (
+      item.courtKind !== 'padel_court' &&
+      item.courtKind !== 'turf_court' &&
+      item.courtKind !== 'table_tennis_court'
+    ) {
       throw new BadRequestException(
-        'Only padel_court and turf_court are supported',
+        'Only padel_court, turf_court, and table_tennis_court are supported',
       );
     }
     if (toMinutes(item.endTime) === toMinutes(item.startTime)) {
@@ -618,6 +662,14 @@ export class BookingsService {
         if (!turf.supportedSports.includes(dto.sportType)) {
           throw new BadRequestException(
             `Selected turf does not support ${dto.sportType}`,
+          );
+        }
+      }
+      if (item.courtKind === 'table_tennis_court') {
+        await this.assertTableTennisCourtExists(tenantId, item.courtId);
+        if (dto.sportType !== 'table-tennis') {
+          throw new BadRequestException(
+            'table_tennis_court requires sportType=table-tennis',
           );
         }
       }
@@ -783,6 +835,7 @@ export class BookingsService {
     const nextDate = addDays(date, 1);
     const sport = params.sportType ?? 'padel';
     const isTurf = sport === 'futsal' || sport === 'cricket';
+    const isTableTennis = sport === 'table-tennis';
 
     // --- Fetch the right courts based on sportType ---
     type CourtRow = {
@@ -790,7 +843,7 @@ export class BookingsService {
       name: string;
       pricePerSlot: string | null;
       slotDurationMinutes: number | null;
-      courtKind: 'padel_court' | 'turf_court';
+      courtKind: 'padel_court' | 'turf_court' | 'table_tennis_court';
     };
 
     let allCourts: CourtRow[];
@@ -810,6 +863,18 @@ export class BookingsService {
           slotDurationMinutes: t.slotDuration ?? null,
           courtKind: 'turf_court' as const,
         }));
+    } else if (isTableTennis) {
+      const rows = await this.tableTennisRepo.find({
+        where: { tenantId, isActive: true, courtStatus: 'active' },
+        select: ['id', 'name', 'pricePerSlot', 'slotDurationMinutes'],
+      });
+      allCourts = rows.map((c) => ({
+        id: c.id,
+        name: c.name,
+        pricePerSlot: c.pricePerSlot ?? null,
+        slotDurationMinutes: c.slotDurationMinutes ?? null,
+        courtKind: 'table_tennis_court' as const,
+      }));
     } else {
       const padelRows = await this.padelRepo.find({
         where: { tenantId, isActive: true, courtStatus: 'active' },
@@ -825,7 +890,11 @@ export class BookingsService {
     }
 
     // --- Find booked slots that overlap the requested window ---
-    const courtKindFilter = isTurf ? 'turf_court' : 'padel_court';
+    const courtKindFilter: CourtKind = isTurf
+      ? 'turf_court'
+      : isTableTennis
+        ? 'table_tennis_court'
+        : 'padel_court';
     const queryStart = new Date(`${date}T00:00:00.000Z`);
     queryStart.setUTCMinutes(toMinutes(params.startTime, false));
     const queryEnd = new Date(`${date}T00:00:00.000Z`);
@@ -935,6 +1004,8 @@ export class BookingsService {
       await this.assertPadelCourtExists(tenantId, params.courtId);
     } else if (params.kind === 'turf_court') {
       await this.assertTurfCourtExists(tenantId, params.courtId);
+    } else if (params.kind === 'table_tennis_court') {
+      await this.assertTableTennisCourtExists(tenantId, params.courtId);
     } else {
       throw new BadRequestException('Unsupported court kind');
     }
@@ -1142,6 +1213,12 @@ export class BookingsService {
     } else if (params.kind === 'turf_court') {
       const court = await this.assertTurfCourtExists(tenantId, params.courtId);
       templateId = court.timeSlotTemplateId;
+    } else if (params.kind === 'table_tennis_court') {
+      const court = await this.assertTableTennisCourtExists(
+        tenantId,
+        params.courtId,
+      );
+      templateId = court.timeSlotTemplateId;
     } else {
       throw new BadRequestException('Unsupported court kind');
     }
@@ -1207,6 +1284,8 @@ export class BookingsService {
       await this.assertPadelCourtExists(tenantId, params.courtId);
     } else if (params.kind === 'turf_court') {
       await this.assertTurfCourtExists(tenantId, params.courtId);
+    } else if (params.kind === 'table_tennis_court') {
+      await this.assertTableTennisCourtExists(tenantId, params.courtId);
     } else {
       throw new BadRequestException('Unsupported court kind');
     }
@@ -1263,6 +1342,8 @@ export class BookingsService {
       await this.assertPadelCourtExists(tenantId, params.courtId);
     } else if (params.kind === 'turf_court') {
       await this.assertTurfCourtExists(tenantId, params.courtId);
+    } else if (params.kind === 'table_tennis_court') {
+      await this.assertTableTennisCourtExists(tenantId, params.courtId);
     } else {
       throw new BadRequestException('Unsupported court kind');
     }
@@ -1306,6 +1387,17 @@ export class BookingsService {
       ? await this.turfRepo.find({
           where: { branchId: params.locationId, status: 'active' },
           select: ['id', 'name', 'tenantId', 'pricing', 'supportedSports'],
+        })
+      : [];
+
+    const tableTennisBatch = kinds.includes('table_tennis_court')
+      ? await this.tableTennisRepo.find({
+          where: {
+            businessLocationId: params.locationId,
+            isActive: true,
+            courtStatus: In(['active', 'draft']) as any,
+          },
+          select: ['id', 'name', 'tenantId', 'pricePerSlot'],
         })
       : [];
 
@@ -1374,6 +1466,28 @@ export class BookingsService {
         });
       }
 
+      for (const court of tableTennisBatch) {
+        const grid = await this.getCourtSlotGrid(court.tenantId, {
+          kind: 'table_tennis_court',
+          courtId: court.id,
+          date: targetDate,
+          startTime: start,
+          endTime: end,
+          availableOnly: false,
+        });
+        facilities.push({
+          kind: 'table_tennis_court',
+          courtId: court.id,
+          name: court.name,
+          price: Number(court.pricePerSlot || 0),
+          slots: grid.segments.map((s: any) => ({
+            startTime: s.startTime,
+            endTime: s.endTime,
+            availability: s.state === 'free' ? 'available' : s.state,
+          })),
+        });
+      }
+
       const unionMap = new Map<
         string,
         { startTime: string; endTime: string; availability: string }
@@ -1423,6 +1537,22 @@ export class BookingsService {
       businessLocationId: c.businessLocationId ?? null,
       name: c.name,
       arenaLabel: c.arenaLabel ?? null,
+      courtStatus: c.courtStatus,
+      pricePerSlot: Number(c.pricePerSlot || 0),
+      imageUrls: c.imageUrls ?? null,
+      slotDurationMinutes: c.slotDurationMinutes ?? null,
+      timeSlotTemplateId: c.timeSlotTemplateId,
+      isActive: c.isActive,
+    };
+  }
+
+  private mapTableTennisToLiveDto(c: TableTennisCourt): LivePadelCourtDto {
+    return {
+      id: c.id,
+      tenantId: c.tenantId,
+      businessLocationId: c.businessLocationId ?? null,
+      name: c.name,
+      arenaLabel: null,
       courtStatus: c.courtStatus,
       pricePerSlot: Number(c.pricePerSlot || 0),
       imageUrls: c.imageUrls ?? null,
@@ -1505,27 +1635,36 @@ export class BookingsService {
     const timeZone = (loc.timezone || '').trim() || 'Asia/Karachi';
     const tenantIdForBookings = loc.business?.tenantId;
 
-    const [slotsPayload, padelRows, turfRows] = await Promise.all([
-      this.getLocationFacilitiesAvailableSlots({
-        locationId: params.locationId,
-        date: params.date,
-        startTime: params.startTime,
-        endTime: params.endTime,
-        courtType: params.courtType,
-      }),
-      this.padelRepo.find({
-        where: {
-          businessLocationId: params.locationId,
-          isActive: true,
-          courtStatus: In(['active', 'draft']) as any,
-        },
-        order: { name: 'ASC' },
-      }),
-      this.turfRepo.find({
-        where: { branchId: params.locationId, status: 'active' },
-        order: { name: 'ASC' },
-      }),
-    ]);
+    const [slotsPayload, padelRows, turfRows, tableTennisRows] =
+      await Promise.all([
+        this.getLocationFacilitiesAvailableSlots({
+          locationId: params.locationId,
+          date: params.date,
+          startTime: params.startTime,
+          endTime: params.endTime,
+          courtType: params.courtType,
+        }),
+        this.padelRepo.find({
+          where: {
+            businessLocationId: params.locationId,
+            isActive: true,
+            courtStatus: In(['active', 'draft']) as any,
+          },
+          order: { name: 'ASC' },
+        }),
+        this.turfRepo.find({
+          where: { branchId: params.locationId, status: 'active' },
+          order: { name: 'ASC' },
+        }),
+        this.tableTennisRepo.find({
+          where: {
+            businessLocationId: params.locationId,
+            isActive: true,
+            courtStatus: In(['active', 'draft']) as any,
+          },
+          order: { name: 'ASC' },
+        }),
+      ]);
     const futsal: LiveTurfCourtDto[] = [];
     const cricket: LiveTurfCourtDto[] = [];
     for (const t of turfRows) {
@@ -1538,6 +1677,7 @@ export class BookingsService {
     const allCourtIds = [
       ...padelRows.map((p) => p.id),
       ...turfRows.map((t) => t.id),
+      ...tableTennisRows.map((t) => t.id),
     ];
 
     let liveBookings: Booking[] = [];
@@ -1583,6 +1723,21 @@ export class BookingsService {
         }),
       );
     }
+    for (const t of tableTennisRows) {
+      facilityPlayStatus.push(
+        buildPlaySnapshot(
+          liveBookings,
+          'table_tennis_court',
+          t.id,
+          t.name,
+          {
+            timeZone,
+            facilityActive: Boolean(t.isActive) && t.courtStatus !== 'maintenance',
+            statusRaw: t.courtStatus,
+          },
+        ),
+      );
+    }
 
     return {
       locationId: params.locationId,
@@ -1590,6 +1745,7 @@ export class BookingsService {
       timeZone,
       facilityPlayStatus,
       padelCourts: padelRows.map((c) => this.mapPadelToLiveDto(c)),
+      tableTennisCourts: tableTennisRows.map((c) => this.mapTableTennisToLiveDto(c)),
       turfCourts: { futsal, cricket },
       liveSlots,
     };
@@ -1644,6 +1800,17 @@ export class BookingsService {
         })
       : [];
 
+    const tableTennisAvailBatch = kinds.includes('table_tennis_court')
+      ? await this.tableTennisRepo.find({
+          where: {
+            businessLocationId: params.locationId,
+            isActive: true,
+            courtStatus: In(['active', 'draft']) as any,
+          },
+          select: ['id', 'name', 'tenantId', 'pricePerSlot'],
+        })
+      : [];
+
     const allCourts = [
       ...padelBatch.map((c) => ({ ...c, kind: 'padel_court' as const })),
       ...turfBatch
@@ -1656,6 +1823,10 @@ export class BookingsService {
           return true;
         })
         .map((c) => ({ ...c, kind: 'turf_court' as const })),
+      ...tableTennisAvailBatch.map((c) => ({
+        ...c,
+        kind: 'table_tennis_court' as const,
+      })),
     ];
 
     const getFacilitiesForDate = async (targetDate: string) => {
@@ -1682,7 +1853,9 @@ export class BookingsService {
                 price:
                   c.kind === 'padel_court'
                     ? Number((c as any).pricePerSlot ?? 0)
-                    : this.resolveTurfPrice(c, params.courtType),
+                    : c.kind === 'table_tennis_court'
+                      ? Number((c as any).pricePerSlot ?? 0)
+                      : this.resolveTurfPrice(c, params.courtType),
               }
             : null;
         }),
@@ -1723,6 +1896,14 @@ export class BookingsService {
     if (s === 'padel' || s === 'padel_court') return ['padel_court'];
     if (s === 'futsal' || s === 'cricket' || s === 'turf' || s === 'turf_court')
       return ['turf_court'];
+    if (
+      s === 'table-tennis' ||
+      s === 'table_tennis' ||
+      s === 'table_tennis_court' ||
+      s === 'tabletennis'
+    ) {
+      return ['table_tennis_court'];
+    }
     return ['padel_court', 'turf_court'];
   }
 

@@ -1,4 +1,9 @@
-export const BOOKING_SPORT_TYPES = ['padel', 'futsal', 'cricket'] as const;
+export const BOOKING_SPORT_TYPES = [
+  'padel',
+  'futsal',
+  'cricket',
+  'table-tennis',
+] as const;
 export type BookingSportType = (typeof BOOKING_SPORT_TYPES)[number];
 
 export const BOOKING_ITEM_STATUSES = [
@@ -38,6 +43,7 @@ export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 export const COURT_KINDS = [
   'padel_court',
   'turf_court',
+  'table_tennis_court',
 ] as const;
 
 /** Booking calendar grid: slot grid, facility rows, blocks, and template starts use this step. */
