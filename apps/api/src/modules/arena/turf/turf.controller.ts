@@ -15,6 +15,8 @@ import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../../tenancy/tenant-context.interface';
 import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
+import { RequireSaasFeatures } from '../../saas-subscriptions/require-saas-feature.decorator';
+import { SaasFeatureGuard } from '../../saas-subscriptions/saas-feature.guard';
 import { TurfService } from './turf.service';
 import { TURF_SPORT_TYPES, TurfSportType } from './turf.types';
 
@@ -49,7 +51,8 @@ export class TurfController {
   }
 
   @Get()
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, SaasFeatureGuard)
+  @RequireSaasFeatures('turf_module')
   list(
     @CurrentTenant() tenant: TenantContext,
     @Query() query: ListTurfCourtsQueryDto,
@@ -62,14 +65,16 @@ export class TurfController {
   }
 
   @Post()
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, SaasFeatureGuard)
+  @RequireSaasFeatures('turf_module')
   @Roles('platform-owner', 'business-admin', 'location-admin')
   create(@CurrentTenant() tenant: TenantContext, @Body() body: Record<string, unknown>) {
     return this.turfService.createByTenant(tenant.tenantId, body);
   }
 
   @Get(':id')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, SaasFeatureGuard)
+  @RequireSaasFeatures('turf_module')
   one(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -78,7 +83,8 @@ export class TurfController {
   }
 
   @Patch(':id')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, SaasFeatureGuard)
+  @RequireSaasFeatures('turf_module')
   @Roles('platform-owner', 'business-admin', 'location-admin')
   patch(
     @CurrentTenant() tenant: TenantContext,
@@ -89,7 +95,8 @@ export class TurfController {
   }
 
   @Delete(':id')
-  @UseGuards(RolesGuard)
+  @UseGuards(RolesGuard, SaasFeatureGuard)
+  @RequireSaasFeatures('turf_module')
   @Roles('platform-owner', 'business-admin', 'location-admin')
   remove(
     @CurrentTenant() tenant: TenantContext,

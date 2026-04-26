@@ -10,6 +10,7 @@ import { BusinessLocation } from './entities/business-location.entity';
 import { BusinessMembership } from './entities/business-membership.entity';
 import { Business } from './entities/business.entity';
 import { BusinessesService } from './businesses.service';
+import { SaasSubscriptionsModule } from '../saas-subscriptions/saas-subscriptions.module';
 
 import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
 import { GamingStation } from '../arena/gaming-station/entities/gaming-station.entity';
@@ -17,6 +18,7 @@ import { GamingStation } from '../arena/gaming-station/entities/gaming-station.e
 @Module({
   imports: [
     IamModule,
+    SaasSubscriptionsModule,
     TypeOrmModule.forFeature([
       Business,
       BusinessMembership,

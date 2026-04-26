@@ -1072,7 +1072,8 @@ export class BookingsService {
     if (date < todayStr) {
       slots = [];
     } else if (date === todayStr) {
-      slots = slots.filter((s) => s.startTime >= currentTimeStr);
+      // Keep the current in-progress slot visible; hide only slots that already ended.
+      slots = slots.filter((s) => s.endTime > currentTimeStr);
     }
 
     return { date, kind: params.kind, courtId: params.courtId, slots };
@@ -1209,16 +1210,30 @@ export class BookingsService {
     } else {
       throw new BadRequestException('Unsupported court kind');
     }
+    const slotDate = formatDateOnly(params.date);
+    const existing = await this.facilitySlotRepo.findOne({
+      where: {
+        tenantId,
+        courtKind: params.kind,
+        courtId: params.courtId,
+        slotDate,
+        startTime: params.startTime,
+      },
+      select: ['endTime'],
+    });
+    const endTime =
+      existing?.endTime ??
+      minutesToTimeString(
+        toMinutes(params.startTime) + COURT_SLOT_GRID_STEP_MINUTES,
+      );
     await this.facilitySlotRepo.upsert(
       {
         tenantId,
         courtKind: params.kind,
         courtId: params.courtId,
-        slotDate: formatDateOnly(params.date),
+        slotDate,
         startTime: params.startTime,
-        endTime: minutesToTimeString(
-          toMinutes(params.startTime) + COURT_SLOT_GRID_STEP_MINUTES,
-        ),
+        endTime,
         status: params.status,
       },
       {

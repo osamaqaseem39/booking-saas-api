@@ -3,7 +3,6 @@ import {
   IsLongitude,
   IsObject,
   IsArray,
-  IsIn,
   IsOptional,
   IsString,
   IsUUID,
@@ -11,10 +10,6 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import {
-  ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES,
-  BUSINESS_LOCATION_TYPE_CODES,
-} from '../constants/business-location.constants';
 
 class CoordinatesDto {
   @IsLatitude()
@@ -92,13 +87,12 @@ export class CreateBusinessLocationDto {
   /** Drives facility vertical (arena vs gaming-zone, etc.); required on create. */
   @IsString()
   @MaxLength(80)
-  @IsIn(BUSINESS_LOCATION_TYPE_CODES)
   locationType!: string;
 
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @IsIn([...ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES], { each: true })
+  @MaxLength(80, { each: true })
   facilityTypes?: string[];
 
   @IsOptional()

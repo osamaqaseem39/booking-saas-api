@@ -14,6 +14,7 @@ import { GamingStation } from '../arena/gaming-station/entities/gaming-station.e
 import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { IamService } from '../iam/iam.service';
+import { EntitlementsService } from '../saas-subscriptions/entitlements.service';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { ListLocationCitiesDto } from './dto/list-location-cities.dto';
@@ -46,6 +47,7 @@ import {
 export class BusinessesService {
   constructor(
     private readonly iamService: IamService,
+    private readonly entitlementsService: EntitlementsService,
     @InjectRepository(Business)
     private readonly businessesRepository: Repository<Business>,
     @InjectRepository(BusinessMembership)
@@ -756,6 +758,11 @@ export class BusinessesService {
     await this.iamService.assertRequesterActive(requesterUserId);
     const business = await this.businessesRepository.findOne({ where: { id: dto.businessId } });
     if (!business) throw new NotFoundException(`Business ${dto.businessId} not found`);
+
+    await this.entitlementsService.assertCanCreateBusinessLocation(
+      requesterUserId,
+      dto.businessId,
+    );
 
     const row = this.locationsRepository.create({
       businessId: dto.businessId,

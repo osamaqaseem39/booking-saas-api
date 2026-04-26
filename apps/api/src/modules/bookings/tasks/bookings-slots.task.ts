@@ -45,6 +45,82 @@ export class BookingsSlotsTask {
     };
   }
 
+  /** First UTC instant (ms) that falls on `ymd` in `timeZone` (start of that local calendar day). */
+  private zonedDayStartUtcMs(ymd: string, timeZone: string): number {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const [yStr, mStr, dStr] = ymd.split('-');
+    const y = Number(yStr);
+    const mo = Number(mStr);
+    const da = Number(dStr);
+    let probe = Date.UTC(y, mo - 1, da, 12, 0, 0);
+    let found = false;
+    for (let k = -14; k <= 14; k++) {
+      const p = Date.UTC(y, mo - 1, da + k, 12, 0, 0);
+      if (formatter.format(new Date(p)) === ymd) {
+        probe = p;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      throw new Error(
+        `zonedDayStartUtcMs: could not locate ${ymd} in ${timeZone}`,
+      );
+    }
+    let t = probe;
+    const minuteMs = 60 * 1000;
+    while (
+      t > probe - 50 * 3600000 &&
+      formatter.format(new Date(t)) === ymd
+    ) {
+      t -= minuteMs;
+    }
+    const start = t + minuteMs;
+    if (formatter.format(new Date(start)) !== ymd) {
+      throw new Error(
+        `zonedDayStartUtcMs: could not resolve start of ${ymd} in ${timeZone}`,
+      );
+    }
+    return start;
+  }
+
+  /** Next calendar date after `ymd` in `timeZone` (YYYY-MM-DD). */
+  private addCalendarDaysOne(ymd: string, timeZone: string): string {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
+    const start = this.zonedDayStartUtcMs(ymd, timeZone);
+    for (let h = 1; h <= 50; h++) {
+      const next = formatter.format(new Date(start + h * 3600000));
+      if (next !== ymd) return next;
+    }
+    throw new Error(
+      `addCalendarDaysOne: could not advance from ${ymd} in ${timeZone}`,
+    );
+  }
+
+  /** Rolling window of calendar dates in `slotsTimeZone`, aligned with cleanup logic. */
+  private getRollingZonedDateStrings(count: number): string[] {
+    const { today } = this.getCurrentSlotDateTime();
+    const dates: string[] = [];
+    let cur = today;
+    for (let i = 0; i < count; i++) {
+      dates.push(cur);
+      if (i < count - 1) {
+        cur = this.addCalendarDaysOne(cur, this.slotsTimeZone);
+      }
+    }
+    return dates;
+  }
+
   private async cleanupPastFacilitySlots(includePastTimesToday = false) {
     const { today, currentTime } = this.getCurrentSlotDateTime();
     const deleteOlderDateResult = await this.facilitySlotRepo.delete({
@@ -93,18 +169,12 @@ export class BookingsSlotsTask {
         select: ['id', 'tenantId', 'timeSlotTemplateId'],
       });
 
-      const datesToGenerate: string[] = [];
-      for (let i = 0; i < 30; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() + i);
-        datesToGenerate.push(d.toISOString().slice(0, 10));
-      }
+      const datesToGenerate = this.getRollingZonedDateStrings(30);
 
       let totalUpserted = 0;
 
-      // Process Padel Courts
+      // Process Padel Courts (template optional — service falls back to default grid)
       for (const court of padelCourts) {
-        if (!court.timeSlotTemplateId) continue;
         for (const date of datesToGenerate) {
           try {
             const res = await this.bookingsService.generateDayFacilitySlots(
@@ -127,7 +197,6 @@ export class BookingsSlotsTask {
 
       // Process Turf Courts
       for (const court of turfCourts) {
-        if (!court.timeSlotTemplateId) continue;
         for (const date of datesToGenerate) {
           try {
             const res = await this.bookingsService.generateDayFacilitySlots(

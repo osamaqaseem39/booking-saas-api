@@ -46,6 +46,8 @@ export type TimeSlotTemplateApiRow = {
 
 @Injectable()
 export class TimeSlotTemplatesService {
+  private static readonly FACILITY_SLOT_INSERT_BATCH_SIZE = 2000;
+
   constructor(
     @InjectRepository(TenantTimeSlotTemplate)
     private readonly templateRepo: Repository<TenantTimeSlotTemplate>,
@@ -141,7 +143,11 @@ export class TimeSlotTemplatesService {
     }
 
     if (values.length) {
-      await this.facilitySlotRepo.insert(values);
+      const batchSize = TimeSlotTemplatesService.FACILITY_SLOT_INSERT_BATCH_SIZE;
+      for (let i = 0; i < values.length; i += batchSize) {
+        const batch = values.slice(i, i + batchSize);
+        await this.facilitySlotRepo.insert(batch);
+      }
     }
 
     const affectedCourtIds = [...padelCourtIds, ...turfCourtIds];

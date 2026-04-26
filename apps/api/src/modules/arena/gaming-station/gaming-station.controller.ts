@@ -15,6 +15,8 @@ import {
 import { Request } from 'express';
 import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
+import { RequireSaasFeatures } from '../../saas-subscriptions/require-saas-feature.decorator';
+import { SaasFeatureGuard } from '../../saas-subscriptions/saas-feature.guard';
 import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../../tenancy/tenant-context.interface';
 import { CreateGamingStationDto } from './dto/create-gaming-station.dto';
@@ -23,7 +25,8 @@ import { GamingStationService } from './gaming-station.service';
 import { GamingSetupCode } from './entities/gaming-station.entity';
 
 @Controller('gaming/stations')
-@UseGuards(RolesGuard)
+@UseGuards(RolesGuard, SaasFeatureGuard)
+@RequireSaasFeatures('gaming_module')
 export class GamingStationController {
   constructor(private readonly service: GamingStationService) {}
 
@@ -97,7 +100,8 @@ function setupCodeFromRequestPath(pathname: string): GamingSetupCode {
 }
 
 @Controller()
-@UseGuards(RolesGuard)
+@UseGuards(RolesGuard, SaasFeatureGuard)
+@RequireSaasFeatures('gaming_module')
 export class TypedGamingStationController {
   constructor(private readonly service: GamingStationService) {}
 

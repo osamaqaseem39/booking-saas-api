@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BusinessesModule } from '../../businesses/businesses.module';
 import { IamModule } from '../../iam/iam.module';
+import { SaasSubscriptionsModule } from '../../saas-subscriptions/saas-subscriptions.module';
 import {
   GamingStationController,
   TypedGamingStationController,
@@ -13,6 +14,7 @@ import { GamingStation } from './entities/gaming-station.entity';
   imports: [
     TypeOrmModule.forFeature([GamingStation]),
     IamModule,
+    SaasSubscriptionsModule,
     BusinessesModule,
   ],
   controllers: [GamingStationController, TypedGamingStationController],

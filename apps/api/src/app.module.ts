@@ -13,9 +13,13 @@ import { FacilityCatalogModule } from './modules/facility-catalog/facility-catal
 import { AuthModule } from './modules/auth/auth.module';
 import { IamModule } from './modules/iam/iam.module';
 import { PaymentsModule } from './modules/payments/payments.module';
+import { SaasSubscriptionsModule } from './modules/saas-subscriptions/saas-subscriptions.module';
 
 import { TenancyModule } from './tenancy/tenancy.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { RedisModule } from '@libs/database/redis/redis.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { HttpMetricsModule } from './observability/http-metrics.module';
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
   const poolMax = resolvePoolMax();
@@ -142,6 +146,9 @@ function sslModeFromEnv() {
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    RedisModule,
+    HttpMetricsModule,
+    AuditModule,
     ScheduleModule.forRoot(),
     JwtModule.register({
       secret:
@@ -164,6 +171,7 @@ function sslModeFromEnv() {
     BillingModule,
     BusinessesModule,
     PaymentsModule,
+    SaasSubscriptionsModule,
   ],
 })
 export class AppModule {}

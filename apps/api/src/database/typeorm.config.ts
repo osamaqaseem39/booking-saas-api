@@ -11,6 +11,7 @@ import { Business } from '../modules/businesses/entities/business.entity';
 import { Role } from '../modules/iam/entities/role.entity';
 import { UserRole } from '../modules/iam/entities/user-role.entity';
 import { User } from '../modules/iam/entities/user.entity';
+import { AuditEvent } from '../modules/audit/audit-event.entity';
 
 function createTypeOrmOptions(): DataSourceOptions {
   const poolMax = resolvePoolMax();
@@ -95,6 +96,7 @@ export const typeOrmOptions: DataSourceOptions = {
     Booking,
     BookingItem,
     CourtFacilitySlot,
+    AuditEvent,
   ],
   // Resolved from this file's directory (same for Nest and `migration:run -d dist/.../typeorm.config.js`).
   // Do not add a second glob to `dist/.../migrations` from `process.cwd()` — it matches the same files and

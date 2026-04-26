@@ -1,6 +1,5 @@
 import {
   IsArray,
-  IsIn,
   IsLatitude,
   IsLongitude,
   IsObject,
@@ -10,10 +9,6 @@ import {
   MaxLength,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import {
-  ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES,
-  BUSINESS_LOCATION_TYPE_CODES,
-} from '../constants/business-location.constants';
 
 class CoordinatesDto {
   @IsOptional()
@@ -90,13 +85,12 @@ export class UpdateBusinessLocationDto {
   @IsOptional()
   @IsString()
   @MaxLength(80)
-  @IsIn(BUSINESS_LOCATION_TYPE_CODES)
   locationType?: string;
 
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  @IsIn([...ALL_ACCEPTED_BUSINESS_LOCATION_FACILITY_CODES], { each: true })
+  @MaxLength(80, { each: true })
   facilityTypes?: string[];
 
   @IsOptional()

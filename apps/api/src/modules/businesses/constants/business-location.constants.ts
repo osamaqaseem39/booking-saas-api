@@ -57,23 +57,29 @@ export function normalizeLocationFacilityTypesForApi(
   if (!raw?.length) return [];
   const out = new Set<string>();
   for (const t of raw) {
+    const trimmed = (t ?? '').trim();
+    if (!trimmed) continue;
+
     if (
-      (GAMING_LOCATION_FACILITY_TYPE_CODES as readonly string[]).includes(t)
+      (GAMING_LOCATION_FACILITY_TYPE_CODES as readonly string[]).includes(trimmed)
     ) {
-      out.add(t);
+      out.add(trimmed);
     } else if (
-      t === 'turf' ||
-      t === 'futsal' ||
-      t === 'cricket' ||
-      t === 'futsal-field' ||
-      t === 'cricket-indoor' ||
-      t === 'turf-court' ||
-      t === 'turf-court-futsal' ||
-      t === 'turf-court-cricket'
+      trimmed === 'turf' ||
+      trimmed === 'futsal' ||
+      trimmed === 'cricket' ||
+      trimmed === 'futsal-field' ||
+      trimmed === 'cricket-indoor' ||
+      trimmed === 'turf-court' ||
+      trimmed === 'turf-court-futsal' ||
+      trimmed === 'turf-court-cricket'
     ) {
       out.add('turf');
-    } else if (t === 'padel-court' || t === 'padel') {
+    } else if (trimmed === 'padel-court' || trimmed === 'padel') {
       out.add('padel');
+    } else {
+      // Preserve unknown/new facility types for forward compatibility.
+      out.add(trimmed);
     }
   }
   return [...out].sort();
