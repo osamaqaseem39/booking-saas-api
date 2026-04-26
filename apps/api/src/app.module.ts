@@ -17,7 +17,7 @@ import { SaasSubscriptionsModule } from './modules/saas-subscriptions/saas-subsc
 
 import { TenancyModule } from './tenancy/tenancy.module';
 import { ScheduleModule } from '@nestjs/schedule';
-import { RedisModule } from '@libs/database/redis/redis.module';
+import { RedisModule } from '../../../libs/database/src/redis/redis.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { HttpMetricsModule } from './observability/http-metrics.module';
 

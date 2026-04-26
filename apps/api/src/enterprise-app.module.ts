@@ -4,7 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { DatabaseModule } from '@libs/database/database.module';
-import { RedisModule } from '@libs/database/redis/redis.module';
+import { RedisModule } from '../../../libs/database/src/redis/redis.module';
 import { AuthModule } from '@libs/auth/auth.module';
 import { QueueModule } from './infrastructure/queue/queue.module';
 import { MetricsModule } from './infrastructure/metrics/metrics.module';
