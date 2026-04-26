@@ -26,21 +26,14 @@ export class RolesGuard implements CanActivate {
     @Optional() private readonly jwtService?: JwtService,
   ) {}
 
-  async canActivate(context: ExecutionContext): Promise<boolean> {
-    const requiredRoles = this.reflector.getAllAndOverride<SystemRole[]>(
-      ROLES_KEY,
-      [context.getHandler(), context.getClass()],
-    );
-    if (!requiredRoles || requiredRoles.length === 0) {
-      return true;
-    }
-
-    const request = context.switchToHttp().getRequest<Request>();
-    const requestMethod = request.method?.toUpperCase();
-    const rolesToCheck: SystemRole[] =
-      requestMethod === 'GET' && !requiredRoles.includes('customer-end-user')
-        ? [...requiredRoles, 'customer-end-user']
-        : requiredRoles;
+  /**
+   * Resolves the caller from Authorization (or optional dev header) and sets
+   * `request.userId` so other guards (e.g. SaasFeatureGuard) can run even when
+   * this route has no `@Roles` requirement.
+   */
+  private async resolveUserId(
+    request: Request,
+  ): Promise<string | undefined> {
     const authHeader = request.header('Authorization')?.trim();
     let userId: string | undefined;
 
@@ -76,12 +69,39 @@ export class RolesGuard implements CanActivate {
       userId = request.header('x-user-id')?.trim();
     }
 
+    return userId;
+  }
+
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const request = context.switchToHttp().getRequest<Request>();
+    const ext = request as Request & { userId?: string };
+
+    const requiredRoles = this.reflector.getAllAndOverride<SystemRole[]>(
+      ROLES_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+
+    if (!ext.userId?.trim()) {
+      const userId = await this.resolveUserId(request);
+      if (userId) {
+        ext.userId = userId;
+      }
+    }
+
+    if (!requiredRoles || requiredRoles.length === 0) {
+      return true;
+    }
+
+    const userId = ext.userId?.trim();
+    const requestMethod = request.method?.toUpperCase();
+    const rolesToCheck: SystemRole[] =
+      requestMethod === 'GET' && !requiredRoles.includes('customer-end-user')
+        ? [...requiredRoles, 'customer-end-user']
+        : requiredRoles;
+
     if (!userId) {
       throw new UnauthorizedException('Missing authentication');
     }
-
-    // Attach for downstream controllers.
-    (request as Request & { userId?: string }).userId = userId;
 
     if (!this.iamService) {
       throw new InternalServerErrorException(
