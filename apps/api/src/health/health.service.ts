@@ -1,6 +1,8 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import type Redis from 'ioredis';
-import { REDIS_CLIENT } from '@libs/database/redis/redis.module';
+
+// Keep token local here to avoid runtime path-alias resolution issues in serverless bundles.
+const REDIS_CLIENT = 'REDIS_CLIENT';
 
 @Injectable()
 export class HealthService {
