@@ -37,6 +37,15 @@ export class PublicDiscoveryController {
     return this.businessesService.listVenueMarkersPublic('cricket');
   }
 
+  @Get([
+    'venues/markers/table-tennis',
+    '/getVenues/table-tennis',
+    '/getVenue/table-tennis',
+  ])
+  markersTableTennis() {
+    return this.businessesService.listVenueMarkersPublic('table-tennis');
+  }
+
   @Get(['venues/markers', '/getVenues'])
   markersAll() {
     return this.businessesService.listVenueMarkersPublic('all');
@@ -47,7 +56,11 @@ export class PublicDiscoveryController {
     return this.businessesService.listVenueMarkersPublicWithFilters(query);
   }
 
-  @Get(['venues/:venueId', '/getVenueDetails/:venueId', '/getVenue/:venueId'])
+  @Get([
+    'venues/:venueId([0-9a-fA-F-]{36})',
+    '/getVenueDetails/:venueId([0-9a-fA-F-]{36})',
+    '/getVenue/:venueId([0-9a-fA-F-]{36})',
+  ])
   venueProfile(@Param('venueId', ParseUUIDPipe) venueId: string) {
     return this.businessesService.getVenueDetailsPublic(venueId);
   }
@@ -93,6 +106,11 @@ export class PublicRootDiscoveryController {
     return this.businessesService.listVenueMarkersPublic('cricket');
   }
 
+  @Get(['getVenues/table-tennis', 'getVenue/table-tennis'])
+  markersTableTennis() {
+    return this.businessesService.listVenueMarkersPublic('table-tennis');
+  }
+
   @Get(['getVenues/turf'])
   markersTurf() {
     return this.businessesService.listVenueMarkersPublic('turf');
@@ -108,7 +126,10 @@ export class PublicRootDiscoveryController {
     return this.businessesService.listVenueMarkersPublicWithFilters(query);
   }
 
-  @Get(['getVenueDetails/:venueId', 'getVenue/:venueId'])
+  @Get([
+    'getVenueDetails/:venueId([0-9a-fA-F-]{36})',
+    'getVenue/:venueId([0-9a-fA-F-]{36})',
+  ])
   venueProfile(@Param('venueId', ParseUUIDPipe) venueId: string) {
     return this.businessesService.getVenueDetailsPublic(venueId);
   }
