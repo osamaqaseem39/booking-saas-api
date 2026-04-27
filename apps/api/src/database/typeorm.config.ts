@@ -69,8 +69,25 @@ function toPositiveInt(raw: string | undefined, fallback: number): number {
 }
 
 function pickDatabaseUrl(): string | undefined {
+  const isTypeOrmCliMigration = process.argv.some((arg) =>
+    /migration:(run|revert|show|generate|create)$/i.test(arg),
+  );
+
+  if (isTypeOrmCliMigration) {
+    // DDL/migrations are more stable on direct (session) connections.
+    return (
+      process.env.POSTGRES_URL_NON_POOLING ??
+      process.env.DATABASE_URL ??
+      process.env.POSTGRES_URL
+    );
+  }
+
   // Runtime should prefer pooled URL in serverless environments.
-  return process.env.POSTGRES_URL ?? process.env.POSTGRES_URL_NON_POOLING;
+  return (
+    process.env.POSTGRES_URL ??
+    process.env.DATABASE_URL ??
+    process.env.POSTGRES_URL_NON_POOLING
+  );
 }
 
 function resolvePoolMax(): number {
