@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, QueryFailedError, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { TableTennisCourt } from '../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
@@ -46,6 +46,32 @@ import {
 
 @Injectable()
 export class BusinessesService {
+  private isTransientDbDisconnect(error: unknown): boolean {
+    if (!(error instanceof QueryFailedError)) return false;
+    const message = `${error.message ?? ''}`.toLowerCase();
+    return (
+      message.includes('connection terminated unexpectedly') ||
+      message.includes('connection terminated') ||
+      message.includes('terminating connection') ||
+      message.includes('econnreset') ||
+      message.includes('server closed the connection unexpectedly')
+    );
+  }
+
+  private async runWithDbDisconnectRetry<T>(run: () => Promise<T>): Promise<T> {
+    try {
+      return await run();
+    } catch (error) {
+      if (!this.isTransientDbDisconnect(error)) {
+        throw error;
+      }
+
+      // Small backoff helps recover after serverless cold starts / stale pooled sockets.
+      await new Promise((resolve) => setTimeout(resolve, 120));
+      return run();
+    }
+  }
+
   constructor(
     private readonly iamService: IamService,
     private readonly entitlementsService: EntitlementsService,
@@ -542,156 +568,157 @@ export class BusinessesService {
   }
 
   async listAllLocationsPublic(nameFilter?: string | null) {
-    const locations = await this.locationsRepository.find({ order: { createdAt: 'DESC' } });
-    const businesses = await this.businessesRepository.find();
-    const businessById = new Map(businesses.map((b) => [b.id, b]));
-    const locationIds = locations.map((l) => l.id);
-    const [padelCourts, turfCourts, tableTennisCourts, gamingStations] =
-      locationIds.length
-      ? await Promise.all([
-          this.padelCourtRepository.find({
-            where: {
-              businessLocationId: In(locationIds),
-              isActive: true,
-              courtStatus: 'active',
-            },
-            select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
-          }),
-          this.turfCourtRepository.find({
-            where: { branchId: In(locationIds), status: 'active' },
-            select: ['id', 'name', 'branchId', 'pricing', 'supportedSports'],
-          }),
-          this.tableTennisCourtRepository.find({
-            where: {
-              businessLocationId: In(locationIds),
-              isActive: true,
-              courtStatus: 'active',
-            },
-            select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
-          }),
-          this.gamingStationRepository.find({
-            where: {
-              businessLocationId: In(locationIds),
-              isActive: true,
-              unitStatus: 'active',
-            },
-            select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
-          }),
-        ])
-      : [[], [], [], []];
+    return this.runWithDbDisconnectRetry(async () => {
+      const locations = await this.locationsRepository.find({ order: { createdAt: 'DESC' } });
+      const businesses = await this.businessesRepository.find();
+      const businessById = new Map(businesses.map((b) => [b.id, b]));
+      const locationIds = locations.map((l) => l.id);
+      const [padelCourts, turfCourts, tableTennisCourts, gamingStations] =
+        locationIds.length
+        ? await Promise.all([
+            this.padelCourtRepository.find({
+              where: {
+                businessLocationId: In(locationIds),
+                isActive: true,
+                courtStatus: 'active',
+              },
+              select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
+            }),
+            this.turfCourtRepository.find({
+              where: { branchId: In(locationIds), status: 'active' },
+              select: ['id', 'name', 'branchId', 'pricing', 'supportedSports'],
+            }),
+            this.tableTennisCourtRepository.find({
+              where: {
+                businessLocationId: In(locationIds),
+                isActive: true,
+                courtStatus: 'active',
+              },
+              select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
+            }),
+            this.gamingStationRepository.find({
+              where: {
+                businessLocationId: In(locationIds),
+                isActive: true,
+                unitStatus: 'active',
+              },
+              select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
+            }),
+          ])
+        : [[], [], [], []];
 
-    const facilityCourtsByLocation = new Map<
-      string,
-      Array<{
-        facilityType: 'padel' | 'turf' | 'table-tennis' | 'gaming';
-        id: string;
-        name: string;
-        price?: number;
-        pricing?: TurfPricingConfig;
-        supportedSports?: string[];
-      }>
-    >();
-    
+      const facilityCourtsByLocation = new Map<
+        string,
+        Array<{
+          facilityType: 'padel' | 'turf' | 'table-tennis' | 'gaming';
+          id: string;
+          name: string;
+          price?: number;
+          pricing?: TurfPricingConfig;
+          supportedSports?: string[];
+        }>
+      >();
 
-    for (const c of padelCourts) {
-      const key = c.businessLocationId ?? '';
-      const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({
-        facilityType: 'padel',
-        id: c.id,
-        name: c.name,
-        price: parseFloat(c.pricePerSlot ?? '0'),
-      });
-      facilityCourtsByLocation.set(key, rows);
-    }
-    for (const c of turfCourts) {
-      const key = c.branchId ?? '';
-      const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({
-        facilityType: 'turf',
-        id: c.id,
-        name: c.name,
-        price:
-          c.pricing?.futsal?.basePrice ?? c.pricing?.cricket?.basePrice ?? 0,
-        pricing: c.pricing,
-        supportedSports: c.supportedSports,
-      });
-      facilityCourtsByLocation.set(key, rows);
-    }
-    for (const c of tableTennisCourts) {
-      const key = c.businessLocationId ?? '';
-      const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({
-        facilityType: 'table-tennis',
-        id: c.id,
-        name: c.name,
-        price: parseFloat(c.pricePerSlot ?? '0'),
-      });
-      facilityCourtsByLocation.set(key, rows);
-    }
-    for (const c of gamingStations) {
-      const key = c.businessLocationId ?? '';
-      const rows = facilityCourtsByLocation.get(key) ?? [];
-      rows.push({
-        facilityType: 'gaming',
-        id: c.id,
-        name: c.name,
-        price: parseFloat(c.pricePerSlot ?? '0'),
-      });
-      facilityCourtsByLocation.set(key, rows);
-    }
+      for (const c of padelCourts) {
+        const key = c.businessLocationId ?? '';
+        const rows = facilityCourtsByLocation.get(key) ?? [];
+        rows.push({
+          facilityType: 'padel',
+          id: c.id,
+          name: c.name,
+          price: parseFloat(c.pricePerSlot ?? '0'),
+        });
+        facilityCourtsByLocation.set(key, rows);
+      }
+      for (const c of turfCourts) {
+        const key = c.branchId ?? '';
+        const rows = facilityCourtsByLocation.get(key) ?? [];
+        rows.push({
+          facilityType: 'turf',
+          id: c.id,
+          name: c.name,
+          price:
+            c.pricing?.futsal?.basePrice ?? c.pricing?.cricket?.basePrice ?? 0,
+          pricing: c.pricing,
+          supportedSports: c.supportedSports,
+        });
+        facilityCourtsByLocation.set(key, rows);
+      }
+      for (const c of tableTennisCourts) {
+        const key = c.businessLocationId ?? '';
+        const rows = facilityCourtsByLocation.get(key) ?? [];
+        rows.push({
+          facilityType: 'table-tennis',
+          id: c.id,
+          name: c.name,
+          price: parseFloat(c.pricePerSlot ?? '0'),
+        });
+        facilityCourtsByLocation.set(key, rows);
+      }
+      for (const c of gamingStations) {
+        const key = c.businessLocationId ?? '';
+        const rows = facilityCourtsByLocation.get(key) ?? [];
+        rows.push({
+          facilityType: 'gaming',
+          id: c.id,
+          name: c.name,
+          price: parseFloat(c.pricePerSlot ?? '0'),
+        });
+        facilityCourtsByLocation.set(key, rows);
+      }
 
-    const rows = locations.map((loc) => {
-      const business = businessById.get(loc.businessId);
-      const facilityCourts = facilityCourtsByLocation.get(loc.id) ?? [];
-      const padelCount = facilityCourts.filter((f) => f.facilityType === 'padel').length;
-      const turfCount = facilityCourts.filter((f) => f.facilityType === 'turf').length;
-      const tableTennisCount = facilityCourts.filter((f) => f.facilityType === 'table-tennis').length;
-      const gamingCount = facilityCourts.filter((f) => f.facilityType === 'gaming').length;
+      const rows = locations.map((loc) => {
+        const business = businessById.get(loc.businessId);
+        const facilityCourts = facilityCourtsByLocation.get(loc.id) ?? [];
+        const padelCount = facilityCourts.filter((f) => f.facilityType === 'padel').length;
+        const turfCount = facilityCourts.filter((f) => f.facilityType === 'turf').length;
+        const tableTennisCount = facilityCourts.filter((f) => f.facilityType === 'table-tennis').length;
+        const gamingCount = facilityCourts.filter((f) => f.facilityType === 'gaming').length;
 
-      return {
-        id: loc.id,
-        businessId: loc.businessId,
-        locationType: loc.locationType,
-        facilityTypes: normalizeLocationFacilityTypesForApi(loc.facilityTypes),
-        name: loc.name,
-        addressLine: loc.addressLine,
-        details: loc.details ?? null,
-        city: loc.city,
-        area: loc.area,
-        country: loc.country,
-        latitude: loc.latitude ?? null,
-        longitude: loc.longitude ?? null,
-        phone: loc.phone,
-        manager: loc.manager,
-        workingHours: loc.workingHours,
-        timezone: loc.timezone,
-        currency: loc.currency,
-        logo: loc.logo ?? null,
-        bannerImage: loc.bannerImage ?? null,
-        gallery: loc.gallery ?? [],
-        status: loc.status,
-        isActive: loc.isActive,
-        createdAt: loc.createdAt,
-        business: business
-          ? { id: business.id, businessName: business.businessName, tenantId: business.tenantId }
-          : null,
-        facilityCounts: {
-          padel: padelCount,
-          turf: turfCount,
-          tableTennis: tableTennisCount,
-          gaming: gamingCount,
-        },
-        facilityCourts,
-        price: (() => {
-          const prices = facilityCourts
-            .map((f) => f.price)
-            .filter((p): p is number => typeof p === 'number' && p > 0 && !isNaN(p));
-          return prices.length > 0 ? Math.min(...prices) : 0;
-        })(),
-      };
+        return {
+          id: loc.id,
+          businessId: loc.businessId,
+          locationType: loc.locationType,
+          facilityTypes: normalizeLocationFacilityTypesForApi(loc.facilityTypes),
+          name: loc.name,
+          addressLine: loc.addressLine,
+          details: loc.details ?? null,
+          city: loc.city,
+          area: loc.area,
+          country: loc.country,
+          latitude: loc.latitude ?? null,
+          longitude: loc.longitude ?? null,
+          phone: loc.phone,
+          manager: loc.manager,
+          workingHours: loc.workingHours,
+          timezone: loc.timezone,
+          currency: loc.currency,
+          logo: loc.logo ?? null,
+          bannerImage: loc.bannerImage ?? null,
+          gallery: loc.gallery ?? [],
+          status: loc.status,
+          isActive: loc.isActive,
+          createdAt: loc.createdAt,
+          business: business
+            ? { id: business.id, businessName: business.businessName, tenantId: business.tenantId }
+            : null,
+          facilityCounts: {
+            padel: padelCount,
+            turf: turfCount,
+            tableTennis: tableTennisCount,
+            gaming: gamingCount,
+          },
+          facilityCourts,
+          price: (() => {
+            const prices = facilityCourts
+              .map((f) => f.price)
+              .filter((p): p is number => typeof p === 'number' && p > 0 && !isNaN(p));
+            return prices.length > 0 ? Math.min(...prices) : 0;
+          })(),
+        };
+      });
+      return this.filterLocationRowsByName(rows, nameFilter);
     });
-    return this.filterLocationRowsByName(rows, nameFilter);
   }
 
   async listLocationsWithFacilityCountsPublic() {
