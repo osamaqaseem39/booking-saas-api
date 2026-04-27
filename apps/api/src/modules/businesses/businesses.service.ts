@@ -49,6 +49,7 @@ export class BusinessesService {
   private publicLocationsCache:
     | { rows: any[]; expiresAtMs: number }
     | null = null;
+  private publicLocationsLoadPromise: Promise<any[]> | null = null;
 
   private getPublicLocationsCacheTtlMs(): number {
     const raw = Number(process.env.PUBLIC_LOCATIONS_CACHE_TTL_MS ?? 15000);
@@ -58,6 +59,7 @@ export class BusinessesService {
 
   private invalidatePublicLocationsCache(): void {
     this.publicLocationsCache = null;
+    this.publicLocationsLoadPromise = null;
   }
 
   private isTransientDbDisconnect(error: unknown): boolean {
@@ -588,16 +590,20 @@ export class BusinessesService {
     if (cached && cached.expiresAtMs > now) {
       return this.filterLocationRowsByName(cached.rows, nameFilter);
     }
+    if (this.publicLocationsLoadPromise) {
+      const rows = await this.publicLocationsLoadPromise;
+      return this.filterLocationRowsByName(rows, nameFilter);
+    }
 
-    return this.runWithDbDisconnectRetry(async () => {
+    this.publicLocationsLoadPromise = this.runWithDbDisconnectRetry(async () => {
       const locations = await this.locationsRepository.find({ order: { createdAt: 'DESC' } });
       const businesses = await this.businessesRepository.find();
       const businessById = new Map(businesses.map((b) => [b.id, b]));
       const locationIds = locations.map((l) => l.id);
       const [padelCourts, turfCourts, tableTennisCourts, gamingStations] =
         locationIds.length
-        ? await Promise.all([
-            this.padelCourtRepository.find({
+        ? [
+            await this.padelCourtRepository.find({
               where: {
                 businessLocationId: In(locationIds),
                 isActive: true,
@@ -605,11 +611,11 @@ export class BusinessesService {
               },
               select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
             }),
-            this.turfCourtRepository.find({
+            await this.turfCourtRepository.find({
               where: { branchId: In(locationIds), status: 'active' },
               select: ['id', 'name', 'branchId', 'pricing', 'supportedSports'],
             }),
-            this.tableTennisCourtRepository.find({
+            await this.tableTennisCourtRepository.find({
               where: {
                 businessLocationId: In(locationIds),
                 isActive: true,
@@ -617,7 +623,7 @@ export class BusinessesService {
               },
               select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
             }),
-            this.gamingStationRepository.find({
+            await this.gamingStationRepository.find({
               where: {
                 businessLocationId: In(locationIds),
                 isActive: true,
@@ -625,7 +631,7 @@ export class BusinessesService {
               },
               select: ['id', 'name', 'businessLocationId', 'pricePerSlot'],
             }),
-          ])
+          ]
         : [[], [], [], []];
 
       const facilityCourtsByLocation = new Map<
@@ -742,8 +748,15 @@ export class BusinessesService {
         rows,
         expiresAtMs: Date.now() + ttlMs,
       };
-      return this.filterLocationRowsByName(rows, nameFilter);
+      return rows;
     });
+
+    try {
+      const rows = await this.publicLocationsLoadPromise;
+      return this.filterLocationRowsByName(rows, nameFilter);
+    } finally {
+      this.publicLocationsLoadPromise = null;
+    }
   }
 
   async listLocationsWithFacilityCountsPublic() {

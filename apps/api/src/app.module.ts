@@ -128,12 +128,12 @@ function pickDatabaseUrl(): string | undefined {
 }
 
 function resolvePoolMax(): number {
-  const configured = toPositiveInt(process.env.DB_POOL_MAX, 1);
+  const configured = toPositiveInt(process.env.DB_POOL_MAX, 3);
   const isServerless =
     process.env.VERCEL === '1' ||
     process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
   // Keep each warm instance tiny; concurrency scales by instances, not per-instance pool.
-  const hardCap = isServerless ? 1 : 5;
+  const hardCap = isServerless ? 3 : 10;
   return Math.max(1, Math.min(configured, hardCap));
 }
 
