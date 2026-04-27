@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
+import { TableTennisCourt } from '../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { IamModule } from '../iam/iam.module';
@@ -24,6 +25,7 @@ import { GamingStation } from '../arena/gaming-station/entities/gaming-station.e
       BusinessMembership,
       BusinessLocation,
       PadelCourt,
+      TableTennisCourt,
       TurfCourt,
       GamingStation,
       Booking,
