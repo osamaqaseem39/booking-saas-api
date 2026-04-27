@@ -13,6 +13,24 @@ import type { Request, Response } from 'express';
 export class ApiExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(ApiExceptionFilter.name);
 
+  private isDatabasePoolTimeout(exception: unknown): boolean {
+    if (!exception || typeof exception !== 'object') return false;
+    const maybe = exception as {
+      message?: unknown;
+      code?: unknown;
+      driverError?: { message?: unknown; code?: unknown };
+    };
+    const message = String(maybe.message ?? '').toLowerCase();
+    const driverMessage = String(maybe.driverError?.message ?? '').toLowerCase();
+    const code = String(maybe.code ?? maybe.driverError?.code ?? '').toUpperCase();
+    return (
+      message.includes('timeout exceeded when trying to connect') ||
+      message.includes('unable to check out connection from the pool') ||
+      driverMessage.includes('unable to check out connection from the pool') ||
+      code === 'ECHECKOUTTIMEOUT'
+    );
+  }
+
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const req = ctx.getRequest<Request>();
@@ -68,6 +86,17 @@ export class ApiExceptionFilter implements ExceptionFilter {
       `Unhandled exception on ${req.method} ${req.url}`,
       exception instanceof Error ? exception.stack : undefined,
     );
+
+    if (this.isDatabasePoolTimeout(exception)) {
+      res.status(HttpStatus.SERVICE_UNAVAILABLE).json({
+        statusCode: HttpStatus.SERVICE_UNAVAILABLE,
+        error: 'Service Unavailable',
+        message: 'Database is temporarily busy. Please retry shortly.',
+        timestamp: new Date().toISOString(),
+        path: req.url,
+      });
+      return;
+    }
 
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
