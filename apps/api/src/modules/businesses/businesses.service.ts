@@ -46,6 +46,20 @@ import {
 
 @Injectable()
 export class BusinessesService {
+  private publicLocationsCache:
+    | { rows: any[]; expiresAtMs: number }
+    | null = null;
+
+  private getPublicLocationsCacheTtlMs(): number {
+    const raw = Number(process.env.PUBLIC_LOCATIONS_CACHE_TTL_MS ?? 15000);
+    if (!Number.isFinite(raw) || raw < 0) return 15000;
+    return Math.floor(raw);
+  }
+
+  private invalidatePublicLocationsCache(): void {
+    this.publicLocationsCache = null;
+  }
+
   private isTransientDbDisconnect(error: unknown): boolean {
     if (!(error instanceof QueryFailedError)) return false;
     const message = `${error.message ?? ''}`.toLowerCase();
@@ -568,6 +582,13 @@ export class BusinessesService {
   }
 
   async listAllLocationsPublic(nameFilter?: string | null) {
+    const ttlMs = this.getPublicLocationsCacheTtlMs();
+    const now = Date.now();
+    const cached = this.publicLocationsCache;
+    if (cached && cached.expiresAtMs > now) {
+      return this.filterLocationRowsByName(cached.rows, nameFilter);
+    }
+
     return this.runWithDbDisconnectRetry(async () => {
       const locations = await this.locationsRepository.find({ order: { createdAt: 'DESC' } });
       const businesses = await this.businessesRepository.find();
@@ -717,6 +738,10 @@ export class BusinessesService {
           })(),
         };
       });
+      this.publicLocationsCache = {
+        rows,
+        expiresAtMs: Date.now() + ttlMs,
+      };
       return this.filterLocationRowsByName(rows, nameFilter);
     });
   }
@@ -854,7 +879,9 @@ export class BusinessesService {
       status: (dto.status ?? 'active').toLowerCase() === 'inactive' ? 'inactive' : 'active',
       isActive: (dto.status ?? 'active').toLowerCase() !== 'inactive',
     });
-    return this.locationsRepository.save(row);
+    const saved = await this.locationsRepository.save(row);
+    this.invalidatePublicLocationsCache();
+    return saved;
   }
 
   async updateBusiness(requesterUserId: string, businessId: string, dto: UpdateBusinessDto): Promise<Business> {
@@ -862,7 +889,9 @@ export class BusinessesService {
     const business = await this.businessesRepository.findOne({ where: { id: businessId } });
     if (!business) throw new NotFoundException(`Business ${businessId} not found`);
     Object.assign(business, dto);
-    return this.businessesRepository.save(business);
+    const saved = await this.businessesRepository.save(business);
+    this.invalidatePublicLocationsCache();
+    return saved;
   }
 
   async updateLocation(requesterUserId: string, locationId: string, dto: UpdateBusinessLocationDto): Promise<BusinessLocation> {
@@ -896,18 +925,22 @@ export class BusinessesService {
       location.status = dto.status;
       location.isActive = dto.status.toLowerCase() !== 'inactive';
     }
-    return this.locationsRepository.save(location);
+    const saved = await this.locationsRepository.save(location);
+    this.invalidatePublicLocationsCache();
+    return saved;
   }
 
   async deleteBusiness(requesterUserId: string, businessId: string): Promise<{ deleted: true; businessId: string }> {
     await this.iamService.assertRequesterActive(requesterUserId);
     await this.businessesRepository.delete({ id: businessId });
+    this.invalidatePublicLocationsCache();
     return { deleted: true, businessId };
   }
 
   async deleteLocation(requesterUserId: string, locationId: string): Promise<{ deleted: true; locationId: string }> {
     await this.iamService.assertRequesterActive(requesterUserId);
     await this.locationsRepository.delete({ id: locationId });
+    this.invalidatePublicLocationsCache();
     return { deleted: true, locationId };
   }
 

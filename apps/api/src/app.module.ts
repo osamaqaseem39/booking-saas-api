@@ -120,7 +120,11 @@ function toPositiveInt(raw: string | undefined, fallback: number): number {
 
 function pickDatabaseUrl(): string | undefined {
   // Runtime should prefer pooled URL in serverless environments.
-  return process.env.POSTGRES_URL ?? process.env.POSTGRES_URL_NON_POOLING;
+  return (
+    process.env.POSTGRES_URL ??
+    process.env.DATABASE_URL ??
+    process.env.POSTGRES_URL_NON_POOLING
+  );
 }
 
 function resolvePoolMax(): number {
