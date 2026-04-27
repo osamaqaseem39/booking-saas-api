@@ -68,6 +68,15 @@ function createTypeOrmConfig(): TypeOrmModuleOptions {
     return cfg;
   }
 
+  const isServerless =
+    process.env.VERCEL === '1' ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined;
+  if (isServerless) {
+    throw new Error(
+      '[DB] Missing POSTGRES_URL/DATABASE_URL in serverless environment. Refusing localhost fallback; configure a managed Postgres URL (typically with sslmode=require).',
+    );
+  }
+
   // Fallback: explicit DB_* vars
   const cfg: TypeOrmModuleOptions = {
     type: 'postgres',
