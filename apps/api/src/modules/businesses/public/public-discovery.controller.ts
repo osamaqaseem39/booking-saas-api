@@ -56,11 +56,7 @@ export class PublicDiscoveryController {
     return this.businessesService.listVenueMarkersPublicWithFilters(query);
   }
 
-  @Get([
-    'venues/:venueId([0-9a-fA-F-]{36})',
-    '/getVenueDetails/:venueId([0-9a-fA-F-]{36})',
-    '/getVenue/:venueId([0-9a-fA-F-]{36})',
-  ])
+  @Get(['venues/:venueId', '/getVenueDetails/:venueId', '/getVenue/:venueId'])
   venueProfile(@Param('venueId', ParseUUIDPipe) venueId: string) {
     return this.businessesService.getVenueDetailsPublic(venueId);
   }
@@ -126,10 +122,7 @@ export class PublicRootDiscoveryController {
     return this.businessesService.listVenueMarkersPublicWithFilters(query);
   }
 
-  @Get([
-    'getVenueDetails/:venueId([0-9a-fA-F-]{36})',
-    'getVenue/:venueId([0-9a-fA-F-]{36})',
-  ])
+  @Get(['getVenueDetails/:venueId', 'getVenue/:venueId'])
   venueProfile(@Param('venueId', ParseUUIDPipe) venueId: string) {
     return this.businessesService.getVenueDetailsPublic(venueId);
   }
