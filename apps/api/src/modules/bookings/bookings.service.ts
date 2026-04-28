@@ -998,16 +998,19 @@ export class BookingsService {
       startTime?: string;
       endTime?: string;
       availableOnly?: boolean;
+      skipCourtCheck?: boolean;
     },
   ) {
-    if (params.kind === 'padel_court') {
-      await this.assertPadelCourtExists(tenantId, params.courtId);
-    } else if (params.kind === 'turf_court') {
-      await this.assertTurfCourtExists(tenantId, params.courtId);
-    } else if (params.kind === 'table_tennis_court') {
-      await this.assertTableTennisCourtExists(tenantId, params.courtId);
-    } else {
-      throw new BadRequestException('Unsupported court kind');
+    if (!params.skipCourtCheck) {
+      if (params.kind === 'padel_court') {
+        await this.assertPadelCourtExists(tenantId, params.courtId);
+      } else if (params.kind === 'turf_court') {
+        await this.assertTurfCourtExists(tenantId, params.courtId);
+      } else if (params.kind === 'table_tennis_court') {
+        await this.assertTableTennisCourtExists(tenantId, params.courtId);
+      } else {
+        throw new BadRequestException('Unsupported court kind');
+      }
     }
     const date = formatDateOnly(params.date);
     const start = toMinutes(params.startTime ?? '00:00', false);
@@ -1159,6 +1162,7 @@ export class BookingsService {
       startTime?: string;
       endTime?: string;
       availableOnly?: boolean;
+      skipCourtCheck?: boolean;
     },
   ) {
     const data = await this.getCourtSlots(tenantId, {
@@ -1410,83 +1414,101 @@ export class BookingsService {
         slots: Array<{ startTime: string; endTime: string; availability: string }>;
       }> = [];
 
-      for (const court of padelBatch) {
-        const grid = await this.getCourtSlotGrid(court.tenantId, {
-          kind: 'padel_court',
-          courtId: court.id,
-          date: targetDate,
-          startTime: start,
-          endTime: end,
-          availableOnly: false,
-        });
-        facilities.push({
-          kind: 'padel_court',
-          courtId: court.id,
-          name: court.name,
-          price: Number(court.pricePerSlot || 0),
-          slots: grid.segments.map((s: any) => ({
-            startTime: s.startTime,
-            endTime: s.endTime,
-            availability: s.state === 'free' ? 'available' : s.state,
-          })),
-        });
-      }
+      const requestedType = (params.courtType || '').toLowerCase();
+      const isFutsalRequested = requestedType.includes('futsal');
+      const isCricketRequested = requestedType.includes('cricket');
 
-      for (const court of turfBatch) {
-        const isFutsalRequested = (params.courtType || '')
-          .toLowerCase()
-          .includes('futsal');
-        const isCricketRequested = (params.courtType || '')
-          .toLowerCase()
-          .includes('cricket');
+      const [padelFacilities, turfFacilities, tableTennisFacilities] =
+        await Promise.all([
+          Promise.all(
+            padelBatch.map(async (court) => {
+              const grid = await this.getCourtSlotGrid(court.tenantId, {
+                kind: 'padel_court',
+                courtId: court.id,
+                date: targetDate,
+                startTime: start,
+                endTime: end,
+                availableOnly: false,
+                skipCourtCheck: true,
+              });
+              return {
+                kind: 'padel_court' as const,
+                courtId: court.id,
+                name: court.name,
+                price: Number(court.pricePerSlot || 0),
+                slots: grid.segments.map((s: any) => ({
+                  startTime: s.startTime,
+                  endTime: s.endTime,
+                  availability: s.state === 'free' ? 'available' : s.state,
+                })),
+              };
+            }),
+          ),
+          Promise.all(
+            turfBatch
+              .filter((court) => {
+                if (
+                  isFutsalRequested &&
+                  !court.supportedSports?.includes('futsal')
+                )
+                  return false;
+                if (
+                  isCricketRequested &&
+                  !court.supportedSports?.includes('cricket')
+                )
+                  return false;
+                return true;
+              })
+              .map(async (court) => {
+                const grid = await this.getCourtSlotGrid(court.tenantId, {
+                  kind: 'turf_court',
+                  courtId: court.id,
+                  date: targetDate,
+                  startTime: start,
+                  endTime: end,
+                  availableOnly: false,
+                  skipCourtCheck: true,
+                });
+                return {
+                  kind: 'turf_court' as const,
+                  courtId: court.id,
+                  name: court.name,
+                  price: this.resolveTurfPrice(court, params.courtType),
+                  slots: grid.segments.map((s: any) => ({
+                    startTime: s.startTime,
+                    endTime: s.endTime,
+                    availability: s.state === 'free' ? 'available' : s.state,
+                  })),
+                };
+              }),
+          ),
+          Promise.all(
+            tableTennisBatch.map(async (court) => {
+              const grid = await this.getCourtSlotGrid(court.tenantId, {
+                kind: 'table_tennis_court',
+                courtId: court.id,
+                date: targetDate,
+                startTime: start,
+                endTime: end,
+                availableOnly: false,
+                skipCourtCheck: true,
+              });
+              return {
+                kind: 'table_tennis_court' as const,
+                courtId: court.id,
+                name: court.name,
+                price: Number(court.pricePerSlot || 0),
+                slots: grid.segments.map((s: any) => ({
+                  startTime: s.startTime,
+                  endTime: s.endTime,
+                  availability: s.state === 'free' ? 'available' : s.state,
+                })),
+              };
+            }),
+          ),
+        ]);
 
-        if (isFutsalRequested && !court.supportedSports?.includes('futsal'))
-          continue;
-        if (isCricketRequested && !court.supportedSports?.includes('cricket'))
-          continue;
-
-        const grid = await this.getCourtSlotGrid(court.tenantId, {
-          kind: 'turf_court',
-          courtId: court.id,
-          date: targetDate,
-          startTime: start,
-          endTime: end,
-          availableOnly: false,
-        });
-        facilities.push({
-          kind: 'turf_court',
-          courtId: court.id,
-          name: court.name,
-          price: this.resolveTurfPrice(court, params.courtType),
-          slots: grid.segments.map((s: any) => ({
-            startTime: s.startTime,
-            endTime: s.endTime,
-            availability: s.state === 'free' ? 'available' : s.state,
-          })),
-        });
-      }
-
-      for (const court of tableTennisBatch) {
-        const grid = await this.getCourtSlotGrid(court.tenantId, {
-          kind: 'table_tennis_court',
-          courtId: court.id,
-          date: targetDate,
-          startTime: start,
-          endTime: end,
-          availableOnly: false,
-        });
-        facilities.push({
-          kind: 'table_tennis_court',
-          courtId: court.id,
-          name: court.name,
-          price: Number(court.pricePerSlot || 0),
-          slots: grid.segments.map((s: any) => ({
-            startTime: s.startTime,
-            endTime: s.endTime,
-            availability: s.state === 'free' ? 'available' : s.state,
-          })),
-        });
-      }
+      facilities.push(...padelFacilities, ...turfFacilities, ...tableTennisFacilities);
 
       const unionMap = new Map<
         string,
