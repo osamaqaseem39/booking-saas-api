@@ -8,7 +8,6 @@ import {
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
 
-
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(ApiExceptionFilter.name);
