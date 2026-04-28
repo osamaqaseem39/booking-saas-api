@@ -19,7 +19,6 @@ import type { Request } from 'express';
 import { isUUID } from 'class-validator';
 import {
   COURT_KINDS,
-  COURT_SLOT_GRID_STEP_MINUTES,
   type CourtKind,
 } from './types/booking.types';
 import { BookingAvailabilityQueryDto } from './dto/booking-availability-query.dto';
@@ -243,7 +242,6 @@ export class BookingsController {
         date: query.date,
         kind: courtKind as CourtKind,
         courtId,
-        segmentMinutes: COURT_SLOT_GRID_STEP_MINUTES,
         gridStartTime: query.startTime ?? '00:00',
         gridEndTime: query.endTime ?? '24:00',
         segments: [],

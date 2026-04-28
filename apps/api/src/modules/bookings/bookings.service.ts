@@ -15,7 +15,6 @@ import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
 import { User } from '../iam/entities/user.entity';
 import { TenantTimeSlotTemplateLine } from './entities/tenant-time-slot-template-line.entity';
 import {
-  COURT_SLOT_GRID_STEP_MINUTES,
   type BookingItemStatus,
   type BookingSportType,
   type BookingStatus,
@@ -179,6 +178,7 @@ export class BookingsService {
 
   private readonly logger = new Logger(BookingsService.name);
   private static readonly MAX_BOOKING_DAYS_AHEAD = 14;
+  private static readonly DEFAULT_SLOT_STEP_MINUTES = 60;
 
   private assertBookingDateInAllowedWindow(bookingDate: string): void {
     const requested = formatDateOnly(bookingDate);
@@ -539,6 +539,55 @@ export class BookingsService {
       throw new BadRequestException('Selected table is not available');
     }
     return court;
+  }
+
+  private inferStepMinutesFromSlots(
+    slots: Array<{ startTime: string }>,
+  ): number | null {
+    const minutes = slots
+      .map((s) => toMinutes(s.startTime, false))
+      .sort((a, b) => a - b);
+    let minDiff: number | null = null;
+    for (let i = 1; i < minutes.length; i += 1) {
+      const diff = minutes[i] - minutes[i - 1];
+      if (diff > 0 && (minDiff === null || diff < minDiff)) {
+        minDiff = diff;
+      }
+    }
+    return minDiff;
+  }
+
+  private async resolveCourtSlotStepMinutes(
+    tenantId: string,
+    kind: CourtKind,
+    courtId: string,
+  ): Promise<number> {
+    if (kind === 'padel_court') {
+      const row = await this.padelRepo.findOne({
+        where: { tenantId, id: courtId },
+        select: ['slotDurationMinutes'],
+      });
+      if (row?.slotDurationMinutes && row.slotDurationMinutes > 0) {
+        return row.slotDurationMinutes;
+      }
+    } else if (kind === 'table_tennis_court') {
+      const row = await this.tableTennisRepo.findOne({
+        where: { tenantId, id: courtId },
+        select: ['slotDurationMinutes'],
+      });
+      if (row?.slotDurationMinutes && row.slotDurationMinutes > 0) {
+        return row.slotDurationMinutes;
+      }
+    } else if (kind === 'turf_court') {
+      const row = await this.turfRepo.findOne({
+        where: { tenantId, id: courtId },
+        select: ['slotDuration'],
+      });
+      if (row?.slotDuration && row.slotDuration > 0) {
+        return row.slotDuration;
+      }
+    }
+    return BookingsService.DEFAULT_SLOT_STEP_MINUTES;
   }
 
   private toSlotDateTimes(
@@ -1016,8 +1065,14 @@ export class BookingsService {
     const start = toMinutes(params.startTime ?? '00:00', false);
     const end = toMinutes(params.endTime ?? '24:00', true);
 
+    const slotStepMinutes = await this.resolveCourtSlotStepMinutes(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+
     // Instead of completely generating grid steps, we will read the real slots from court_facility_slots
-    // if they exist for this court and date, falling back to the 60 min loop if nothing exists.
+    // if they exist for this court and date, falling back to the configured grid loop if nothing exists.
     const facilitySlots = await this.facilitySlotRepo.find({
       where: {
         tenantId,
@@ -1095,9 +1150,9 @@ export class BookingsService {
       }
     } else {
       // Fallback if no template slots were created
-      for (let m = start; m < end; m += COURT_SLOT_GRID_STEP_MINUTES) {
+      for (let m = start; m < end; m += slotStepMinutes) {
         const s = minutesToTimeString(m);
-        const e = minutesToTimeString(m + COURT_SLOT_GRID_STEP_MINUTES);
+        const e = minutesToTimeString(m + slotStepMinutes);
         const hit = rows.find(
           (r) =>
             toMinutes(r.startTime, false) < toMinutes(e, true) &&
@@ -1198,7 +1253,13 @@ export class BookingsService {
       date: data.date,
       kind: data.kind,
       courtId: data.courtId,
-      segmentMinutes: COURT_SLOT_GRID_STEP_MINUTES,
+      segmentMinutes:
+        this.inferStepMinutesFromSlots(data.slots) ??
+        (await this.resolveCourtSlotStepMinutes(
+          tenantId,
+          params.kind,
+          params.courtId,
+        )),
       gridStartTime: params.startTime ?? '00:00',
       gridEndTime: params.endTime ?? '24:00',
       availableOnly: params.availableOnly || undefined,
@@ -1250,14 +1311,19 @@ export class BookingsService {
         });
       }
     } else {
-      for (let m = 0; m < 24 * 60; m += COURT_SLOT_GRID_STEP_MINUTES) {
+      const slotStepMinutes = await this.resolveCourtSlotStepMinutes(
+        tenantId,
+        params.kind,
+        params.courtId,
+      );
+      for (let m = 0; m < 24 * 60; m += slotStepMinutes) {
         values.push({
           tenantId,
           courtKind: params.kind,
           courtId: params.courtId,
           slotDate: date,
           startTime: minutesToTimeString(m),
-          endTime: minutesToTimeString(m + COURT_SLOT_GRID_STEP_MINUTES),
+          endTime: minutesToTimeString(m + slotStepMinutes),
           status: 'available',
         });
       }
@@ -1307,7 +1373,12 @@ export class BookingsService {
     const endTime =
       existing?.endTime ??
       minutesToTimeString(
-        toMinutes(params.startTime) + COURT_SLOT_GRID_STEP_MINUTES,
+        toMinutes(params.startTime) +
+          (await this.resolveCourtSlotStepMinutes(
+            tenantId,
+            params.kind,
+            params.courtId,
+          )),
       );
     await this.facilitySlotRepo.upsert(
       {
@@ -1800,7 +1871,9 @@ export class BookingsService {
     const start = params.startTime ?? '09:00';
     const end =
       params.endTime ??
-      minutesToTimeString(toMinutes(start, false) + COURT_SLOT_GRID_STEP_MINUTES);
+      minutesToTimeString(
+        toMinutes(start, false) + BookingsService.DEFAULT_SLOT_STEP_MINUTES,
+      );
 
     const kinds = this.normalizeKindForAvail(params.courtType);
 

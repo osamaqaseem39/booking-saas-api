@@ -124,8 +124,8 @@ export class CreatePadelCourtDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @IsIn([60])
-  slotDurationMinutes?: 60;
+  @IsIn([30, 60])
+  slotDurationMinutes?: 30 | 60;
 
   @IsOptional()
   @Type(() => Number)

@@ -14,7 +14,6 @@ import { TableTennisCourt } from '../../arena/table-tennis-court/entities/table-
 import { TurfCourt } from '../../arena/turf/entities/turf-court.entity';
 import { CourtFacilitySlot } from '../entities/court-facility-slot.entity';
 import { BookingItem } from '../entities/booking-item.entity';
-import { COURT_SLOT_GRID_STEP_MINUTES } from '../types/booking.types';
 
 function toMinutes(time: string, isEndTime = false): number {
   if (time === '24:00' || (time === '00:00' && isEndTime)) return 24 * 60;
@@ -251,11 +250,6 @@ export class TimeSlotTemplatesService {
       if (m < 0 || m >= 24 * 60) {
         throw new BadRequestException(`Invalid slot start time: ${t}`);
       }
-      if (m % COURT_SLOT_GRID_STEP_MINUTES !== 0) {
-        throw new BadRequestException(
-          `Slot starts must fall on ${COURT_SLOT_GRID_STEP_MINUTES}-minute boundaries: ${t}`,
-        );
-      }
       if (seen.has(m)) continue;
       seen.add(m);
       out.push(m);
@@ -310,14 +304,6 @@ export class TimeSlotTemplatesService {
             `Invalid slot line time range: ${startTime}-${endTime}`,
           );
         }
-        if (
-          startMin % COURT_SLOT_GRID_STEP_MINUTES !== 0 ||
-          endMin % COURT_SLOT_GRID_STEP_MINUTES !== 0
-        ) {
-          throw new BadRequestException(
-            `Slot lines must follow ${COURT_SLOT_GRID_STEP_MINUTES}-minute boundaries`,
-          );
-        }
         if (endMin <= startMin) {
           throw new BadRequestException(
             `slot line endTime must be after startTime: ${startTime}`,
@@ -354,8 +340,12 @@ export class TimeSlotTemplatesService {
       .slice(1)
       .map((m, idx) => m - startMinutes[idx])
       .filter((d) => d > 0);
-    const inferredDuration =
-      diffs.length > 0 ? Math.min(...diffs) : COURT_SLOT_GRID_STEP_MINUTES;
+    if (diffs.length === 0) {
+      throw new BadRequestException(
+        'When using slotStarts, provide at least two starts or use slotLines with explicit endTime',
+      );
+    }
+    const inferredDuration = Math.min(...diffs);
     return starts.map((startTime, idx) => {
       const start = toMinutes(startTime, false);
       const nextStart = startMinutes[idx + 1];
