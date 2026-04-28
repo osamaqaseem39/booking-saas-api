@@ -292,6 +292,7 @@ export class BookingsController {
       startTime: query.startTime,
       endTime: query.endTime,
       courtType: query.courtType,
+      tableTennisPlayType: query.tableTennisPlayType,
     });
   }
 
@@ -306,6 +307,7 @@ export class BookingsController {
       startTime: query.startTime,
       endTime: query.endTime,
       courtType: query.courtType,
+      tableTennisPlayType: query.tableTennisPlayType,
     });
   }
 

@@ -94,6 +94,8 @@ function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+type TableTennisPlayType = 'singles' | 'doubles';
+
 function getCurrentDateInKarachi(): string {
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Karachi',
@@ -1445,6 +1447,7 @@ export class BookingsService {
     startTime?: string;
     endTime?: string;
     courtType?: string;
+    tableTennisPlayType?: string;
   }) {
     const date = formatDateOnly(params.date);
     const start = params.startTime ?? '00:00';
@@ -1472,7 +1475,7 @@ export class BookingsService {
             isActive: true,
             courtStatus: In(['active', 'draft']) as any,
           },
-          select: ['id', 'name', 'tenantId', 'pricePerSlot'],
+          select: ['id', 'name', 'tenantId', 'pricePerSlot', 'meta'],
         })
       : [];
 
@@ -1568,7 +1571,10 @@ export class BookingsService {
                 kind: 'table_tennis_court' as const,
                 courtId: court.id,
                 name: court.name,
-                price: Number(court.pricePerSlot || 0),
+                price: this.resolveTableTennisPrice(
+                  court,
+                  params.tableTennisPlayType,
+                ),
                 slots: grid.segments.map((s: any) => ({
                   startTime: s.startTime,
                   endTime: s.endTime,
@@ -1859,12 +1865,43 @@ export class BookingsService {
     return Number(priceObj?.basePrice ?? 0);
   }
 
+  private normalizeTableTennisPlayType(
+    raw?: string,
+  ): TableTennisPlayType | null {
+    const s = (raw || '').trim().toLowerCase();
+    if (s === 'singles') return 'singles';
+    if (s === 'doubles') return 'doubles';
+    return null;
+  }
+
+  private resolveTableTennisPrice(
+    court: { pricePerSlot?: string | null; meta?: Record<string, unknown> | null },
+    playType?: string,
+  ): number {
+    const meta = (court.meta || {}) as Record<string, unknown>;
+    const normalized = this.normalizeTableTennisPlayType(playType);
+    const parsePrice = (value: unknown): number | null => {
+      const n = Number(value);
+      return Number.isFinite(n) && n >= 0 ? n : null;
+    };
+    if (normalized === 'singles') {
+      const p = parsePrice(meta.singlesPricePerSlot ?? meta.singlesPricePerHour);
+      if (p !== null) return p;
+    }
+    if (normalized === 'doubles') {
+      const p = parsePrice(meta.doublesPricePerSlot ?? meta.doublesPricePerHour);
+      if (p !== null) return p;
+    }
+    return Number(court.pricePerSlot || 0);
+  }
+
   async getLocationFacilitiesAvailableForSlot(params: {
     locationId: string;
     date: string;
     startTime: string;
     endTime?: string;
     courtType?: string;
+    tableTennisPlayType?: string;
   }) {
     const date = formatDateOnly(params.date);
     const nextDate = addDays(date, 1);
@@ -1902,7 +1939,7 @@ export class BookingsService {
             isActive: true,
             courtStatus: In(['active', 'draft']) as any,
           },
-          select: ['id', 'name', 'tenantId', 'pricePerSlot'],
+          select: ['id', 'name', 'tenantId', 'pricePerSlot', 'meta'],
         })
       : [];
 
@@ -1949,7 +1986,10 @@ export class BookingsService {
                   c.kind === 'padel_court'
                     ? Number((c as any).pricePerSlot ?? 0)
                     : c.kind === 'table_tennis_court'
-                      ? Number((c as any).pricePerSlot ?? 0)
+                      ? this.resolveTableTennisPrice(
+                          c as any,
+                          params.tableTennisPlayType,
+                        )
                       : this.resolveTurfPrice(c, params.courtType),
               }
             : null;

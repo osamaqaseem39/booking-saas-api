@@ -34,6 +34,13 @@ export class LocationFacilitySlotPickQueryDto {
   )
   courtType?: string;
 
+  /** Table tennis mode for price selection. */
+  @IsOptional()
+  @Matches(/^(singles|doubles)$/i, {
+    message: 'tableTennisPlayType must be singles or doubles',
+  })
+  tableTennisPlayType?: string;
+
   /** Cache-buster (timestamp) */
   @IsOptional()
   _t?: string;
