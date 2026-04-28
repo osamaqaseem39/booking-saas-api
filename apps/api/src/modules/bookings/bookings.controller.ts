@@ -27,6 +27,7 @@ import { CourtSlotsQueryDto } from './dto/court-slots-query.dto';
 import { LocationFacilitySlotsQueryDto } from './dto/location-facility-slots-query.dto';
 import { LocationFacilitySlotPickQueryDto } from './dto/location-facility-slot-pick-query.dto';
 import { LocationLiveFacilitiesQueryDto } from './dto/location-live-facilities-query.dto';
+import { LocationEmptySlots30DaysQueryDto } from './dto/location-empty-slots-30-days-query.dto';
 import type { LocationLiveFacilitiesView } from './dto/location-live-facilities-view.dto';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
@@ -308,6 +309,17 @@ export class BookingsController {
       endTime: query.endTime,
       courtType: query.courtType,
       tableTennisPlayType: query.tableTennisPlayType,
+    });
+  }
+
+  @Get('locations/:locationId/facilities/empty-slots-30-days')
+  async locationEmptySlots30Days(
+    @Param('locationId', ParseUUIDPipe) locationId: string,
+    @Query() query: LocationEmptySlots30DaysQueryDto,
+  ) {
+    return this.bookingsService.getLocationEmptySlots30Days({
+      locationId,
+      courtType: query.courtType,
     });
   }
 

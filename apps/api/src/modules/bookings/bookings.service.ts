@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { IamService } from '../iam/iam.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, DeepPartial, In, Repository } from 'typeorm';
+import { Between, Brackets, DeepPartial, In, Repository } from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { TableTennisCourt } from '../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
@@ -2017,6 +2017,116 @@ export class BookingsService {
     };
   }
 
+  async getLocationEmptySlots30Days(params: {
+    locationId: string;
+    courtType?: string;
+  }) {
+    const startDate = getCurrentDateInKarachi();
+    const endDate = addDays(startDate, 29);
+    const days: string[] = Array.from({ length: 30 }, (_, i) =>
+      addDays(startDate, i),
+    );
+
+    const kinds = this.normalizeKindForEmptySlotCounts(params.courtType);
+    const includePadel = kinds.includes('padel_court');
+    const includeTurf = kinds.includes('turf_court');
+    const includeTableTennis = kinds.includes('table_tennis_court');
+
+    const [padelBatch, turfBatch, tableTennisBatch] = await Promise.all([
+      includePadel
+        ? this.padelRepo.find({
+            where: {
+              businessLocationId: params.locationId,
+              isActive: true,
+              courtStatus: In(['active', 'draft']) as any,
+            },
+            select: ['id'],
+          })
+        : Promise.resolve([]),
+      includeTurf
+        ? this.turfRepo.find({
+            where: { branchId: params.locationId, status: 'active' },
+            select: ['id'],
+          })
+        : Promise.resolve([]),
+      includeTableTennis
+        ? this.tableTennisRepo.find({
+            where: {
+              businessLocationId: params.locationId,
+              isActive: true,
+              courtStatus: In(['active', 'draft']) as any,
+            },
+            select: ['id'],
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const courtPairs: Array<{ kind: CourtKind; courtId: string }> = [
+      ...padelBatch.map((c) => ({ kind: 'padel_court' as const, courtId: c.id })),
+      ...turfBatch.map((c) => ({ kind: 'turf_court' as const, courtId: c.id })),
+      ...tableTennisBatch.map((c) => ({
+        kind: 'table_tennis_court' as const,
+        courtId: c.id,
+      })),
+    ];
+
+    if (courtPairs.length === 0) {
+      return {
+        locationId: params.locationId,
+        startDate,
+        endDate,
+        courtType: params.courtType ?? 'all',
+        daily: days.map((date) => ({ date, emptySlots: 0 })),
+      };
+    }
+
+    const qb = this.facilitySlotRepo
+      .createQueryBuilder('fs')
+      .select('fs.slotDate', 'slotDate')
+      .addSelect('COUNT(*)::int', 'emptySlots')
+      .where('fs.slotDate BETWEEN :startDate AND :endDate', {
+        startDate,
+        endDate,
+      })
+      .andWhere("fs.status = 'available'");
+
+    qb.andWhere(
+      new Brackets((subQb) => {
+        courtPairs.forEach((pair, idx) => {
+          const kindKey = `kind${idx}`;
+          const courtIdKey = `courtId${idx}`;
+          subQb.orWhere(
+            `(fs.courtKind = :${kindKey} AND fs.courtId = :${courtIdKey})`,
+            {
+              [kindKey]: pair.kind,
+              [courtIdKey]: pair.courtId,
+            },
+          );
+        });
+      }),
+    );
+
+    const rows = await qb
+      .groupBy('fs.slotDate')
+      .orderBy('fs.slotDate', 'ASC')
+      .getRawMany<{ slotDate: string; emptySlots: string }>();
+
+    const countByDate = new Map<string, number>(
+      rows.map((row) => [row.slotDate, Number(row.emptySlots) || 0]),
+    );
+
+    return {
+      locationId: params.locationId,
+      startDate,
+      endDate,
+      courtType: params.courtType ?? 'all',
+      daily: days.map((date) => ({
+        date,
+        emptySlots: countByDate.get(date) ?? 0,
+      })),
+    };
+  }
+
   private normalizePadelFacilityToCourtKind(raw: string): CourtKind {
     const s = raw.trim().toLowerCase().replace(/-/g, '_');
     if (s === 'padel' || s === 'padel_court') return 'padel_court';
@@ -2040,6 +2150,23 @@ export class BookingsService {
       return ['table_tennis_court'];
     }
     return ['padel_court', 'turf_court'];
+  }
+
+  private normalizeKindForEmptySlotCounts(raw?: string): CourtKind[] {
+    if (!raw) return ['padel_court', 'turf_court', 'table_tennis_court'];
+    const s = raw.toLowerCase().trim();
+    if (s === 'padel' || s === 'padel_court') return ['padel_court'];
+    if (s === 'futsal' || s === 'cricket' || s === 'turf' || s === 'turf_court')
+      return ['turf_court'];
+    if (
+      s === 'table-tennis' ||
+      s === 'table_tennis' ||
+      s === 'table_tennis_court' ||
+      s === 'tabletennis'
+    ) {
+      return ['table_tennis_court'];
+    }
+    return ['padel_court', 'turf_court', 'table_tennis_court'];
   }
 
   async placePadelBooking(
