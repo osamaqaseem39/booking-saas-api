@@ -30,6 +30,9 @@ export class BookingItem {
   @Column({ type: 'varchar', length: 120, nullable: true })
   slotId?: string;
 
+  @Column({ type: 'date', nullable: true })
+  date?: string;
+
   @Column({ type: 'varchar', length: 5 })
   startTime!: string;
 

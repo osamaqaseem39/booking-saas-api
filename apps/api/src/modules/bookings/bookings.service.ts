@@ -95,6 +95,13 @@ function addDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function diffMinutes(startTime: string, endTime: string): number {
+  const start = toMinutes(startTime, false);
+  let end = toMinutes(endTime, true);
+  if (end <= start) end += 24 * 60;
+  return end - start;
+}
+
 type TableTennisPlayType = 'singles' | 'doubles';
 
 function getCurrentDateInKarachi(): string {
@@ -121,6 +128,7 @@ export type BookingApiRow = {
   bookingDate: string;
   items: Array<{
     id: string;
+    date?: string;
     courtKind: CourtKind;
     courtId: string;
     slotId?: string;
@@ -354,6 +362,7 @@ export class BookingsService {
       bookingDate: formatDateOnly(booking.bookingDate),
       items: (booking.items ?? []).map((it) => ({
         id: it.id,
+        date: it.date,
         courtKind: it.courtKind,
         courtId: it.courtId,
         slotId: it.slotId,
@@ -655,6 +664,48 @@ export class BookingsService {
     });
   }
 
+  private expandBookingItems(
+    bookingDate: string,
+    items: CreateBookingItemDto[],
+  ): Array<CreateBookingItemDto & { date: string }> {
+    const derivedDates = this.resolveItemBookingDates(bookingDate, items);
+    const expanded: Array<CreateBookingItemDto & { date: string }> = [];
+
+    for (const [idx, item] of items.entries()) {
+      const itemDate = formatDateOnly(item.date ?? derivedDates[idx]);
+      const isOvernight = toMinutes(item.endTime, true) <= toMinutes(item.startTime, false);
+
+      if (!isOvernight) {
+        expanded.push({ ...item, date: itemDate });
+        continue;
+      }
+
+      const firstEnd = '24:00';
+      const secondDate = addDays(itemDate, 1);
+      const secondStart = '00:00';
+      const totalMinutes = diffMinutes(item.startTime, item.endTime);
+      const firstMinutes = diffMinutes(item.startTime, firstEnd);
+      const secondMinutes = diffMinutes(secondStart, item.endTime);
+      const firstPrice = Number(((item.price * firstMinutes) / totalMinutes).toFixed(2));
+      const secondPrice = Number((item.price - firstPrice).toFixed(2));
+
+      expanded.push({
+        ...item,
+        date: itemDate,
+        endTime: firstEnd,
+        price: firstPrice,
+      });
+      expanded.push({
+        ...item,
+        date: secondDate,
+        startTime: secondStart,
+        price: secondPrice,
+      });
+    }
+
+    return expanded;
+  }
+
   private assertBookingItem(item: CreateBookingItemDto): void {
     if (
       item.courtKind !== 'padel_court' &&
@@ -710,12 +761,12 @@ export class BookingsService {
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new BadRequestException(`User ${dto.userId} not found`);
 
-    const itemBookingDates = this.resolveItemBookingDates(
+    const expandedItems = this.expandBookingItems(
       dto.bookingDate,
       dto.items,
     );
 
-    for (const [idx, item] of dto.items.entries()) {
+    for (const item of expandedItems) {
       this.assertBookingItem(item);
       if (item.courtKind === 'padel_court') {
         await this.assertPadelCourtExists(tenantId, item.courtId);
@@ -744,16 +795,17 @@ export class BookingsService {
           );
         }
       }
-      await this.assertNoOverlap(tenantId, itemBookingDates[idx], item);
+      await this.assertNoOverlap(tenantId, item.date, item);
     }
 
-    const itemsPayload: DeepPartial<BookingItem>[] = dto.items.map((i, idx) => ({
+    const itemsPayload: DeepPartial<BookingItem>[] = expandedItems.map((i) => ({
       courtKind: i.courtKind,
       courtId: i.courtId,
       slotId: i.slotId,
+      date: i.date,
       startTime: i.startTime,
       endTime: i.endTime,
-      ...this.toSlotDateTimes(itemBookingDates[idx], i.startTime, i.endTime),
+      ...this.toSlotDateTimes(i.date, i.startTime, i.endTime),
       price: dec(i.price),
       currency: i.currency ?? 'PKR',
       itemStatus: i.status ?? 'confirmed',

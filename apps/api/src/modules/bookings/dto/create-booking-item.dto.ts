@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsDateString,
   IsIn,
   IsNumber,
   IsOptional,
@@ -16,6 +17,10 @@ import {
 } from '../types/booking.types';
 
 export class CreateBookingItemDto {
+  @IsOptional()
+  @IsDateString()
+  date?: string;
+
   @Transform(({ value }) => {
     if (value === 'futsal_court' || value === 'cricket_court')
       return 'turf_court';
