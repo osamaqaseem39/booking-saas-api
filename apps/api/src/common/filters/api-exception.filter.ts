@@ -14,7 +14,7 @@ export class ApiExceptionFilter implements ExceptionFilter {
 
   private isDatabasePoolTimeout(exception: unknown): boolean {
     if (!exception || typeof exception !== 'object') return false;
-    const maybe = exception as {
+    const maybe = exception as {  
       message?: unknown;
       code?: unknown;
       driverError?: { message?: unknown; code?: unknown };
