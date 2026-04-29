@@ -814,7 +814,7 @@ export class BusinessesService {
             t === 'table_tennis' ||
             t === 'tabletennis' ||
             t === 'table-tennis-court') &&
-            ((r.facilityCounts as any).tableTennis ?? 0) > 0),
+            this.hasTableTennisFacility(r)),
       );
     }
 
@@ -1025,6 +1025,21 @@ export class BusinessesService {
     };
   }
 
+  private hasTableTennisFacility(row: any): boolean {
+    const countBased = ((row?.facilityCounts as any)?.tableTennis ?? 0) > 0;
+    if (countBased) return true;
+    const rawTypes = Array.isArray(row?.facilityTypes) ? row.facilityTypes : [];
+    return rawTypes.some((t: unknown) => {
+      const v = String(t ?? '').trim().toLowerCase();
+      return (
+        v === 'table-tennis' ||
+        v === 'table_tennis' ||
+        v === 'tabletennis' ||
+        v === 'table-tennis-court'
+      );
+    });
+  }
+
   async listVenueMarkersPublic(category: string): Promise<any[]> {
     const rows = (await this.listAllLocationsPublic()).filter((r) => r.isActive);
     const cat = category.toLowerCase().trim();
@@ -1052,7 +1067,7 @@ export class BusinessesService {
       cat === 'table_tennis' ||
       cat === 'tabletennis'
     ) {
-      picked = rows.filter((r) => ((r.facilityCounts as any).tableTennis ?? 0) > 0);
+      picked = rows.filter((r) => this.hasTableTennisFacility(r));
     }
     return picked.map((r) => this.toVenueMapMarker(r, category));
   }
@@ -1083,7 +1098,7 @@ export class BusinessesService {
       category === 'table_tennis' ||
       category === 'tabletennis'
     ) {
-      rows = rows.filter((r) => ((r.facilityCounts as any).tableTennis ?? 0) > 0);
+      rows = rows.filter((r) => this.hasTableTennisFacility(r));
     }
     if (dto.city?.trim()) {
       const wanted = new Set(dto.city.split(',').map((x) => x.trim().toLowerCase()).filter(Boolean));
