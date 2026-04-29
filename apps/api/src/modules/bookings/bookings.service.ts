@@ -18,6 +18,7 @@ import {
   type BookingItemStatus,
   type BookingSportType,
   type BookingStatus,
+  type BookingViewStatus,
   type CourtKind,
   type PaymentMethod,
   type PaymentStatus,
@@ -143,7 +144,7 @@ export type BookingApiRow = {
     paidAmount: number;
     remainingAmount: number;
   };
-  bookingStatus: BookingStatus;
+  bookingStatus: BookingViewStatus;
   notes?: string;
   cancellationReason?: string;
   createdAt: string;
@@ -376,12 +377,31 @@ export class BookingsService {
         paidAmount: numFromDec(booking.paidAmount),
         remainingAmount: numFromDec(booking.totalAmount) - numFromDec(booking.paidAmount),
       },
-      bookingStatus: booking.bookingStatus,
+      bookingStatus: this.resolveBookingViewStatus(booking),
       notes: booking.notes,
       cancellationReason: booking.cancellationReason,
       createdAt: booking.createdAt.toISOString(),
       updatedAt: booking.updatedAt.toISOString(),
     };
+  }
+
+  private resolveBookingViewStatus(booking: Booking): BookingViewStatus {
+    if (
+      booking.bookingStatus !== 'confirmed' &&
+      booking.bookingStatus !== 'pending'
+    ) {
+      return booking.bookingStatus;
+    }
+
+    const nowMs = Date.now();
+    const activeItem = (booking.items ?? []).some((item) => {
+      if (item.itemStatus === 'cancelled') return false;
+      if (!item.startDatetime || !item.endDatetime) return false;
+      const startMs = item.startDatetime.getTime();
+      const endMs = item.endDatetime.getTime();
+      return startMs <= nowMs && nowMs < endMs;
+    });
+    return activeItem ? 'live' : booking.bookingStatus;
   }
 
   async list(requesterUserId: string, tenantId?: string, locationId?: string): Promise<BookingApiRow[]> {
@@ -1199,12 +1219,24 @@ export class BookingsService {
 
     const todayStr = `${y}-${m}-${d}`;
     const currentTimeStr = `${hh}:${mm}`;
+    const currentHour = Number(hh);
+    const currentMinute = Number(mm);
 
     if (date < todayStr) {
       slots = [];
     } else if (date === todayStr) {
       // Keep the current in-progress slot visible; hide only slots that already ended.
       slots = slots.filter((s) => s.endTime > currentTimeStr);
+
+      // Current-hour slots should only be shown in the first 29 minutes.
+      if (currentMinute > 29) {
+        const currentHourStart = currentHour * 60;
+        const nextHourStart = (currentHour + 1) * 60;
+        slots = slots.filter((s) => {
+          const slotStart = toMinutes(s.startTime, false);
+          return slotStart < currentHourStart || slotStart >= nextHourStart;
+        });
+      }
     }
 
     return { date, kind: params.kind, courtId: params.courtId, slots };
