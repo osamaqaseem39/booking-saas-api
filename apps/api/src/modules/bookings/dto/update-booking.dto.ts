@@ -1,7 +1,8 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsDateString,
   IsIn,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -36,7 +37,38 @@ export class UpdateBookingPaymentDto {
   paidAt?: string;
 
   @IsOptional()
+  @IsNumber()
   paidAmount?: number;
+
+  /**
+   * Accepted for backward compatibility with older mobile payloads.
+   * Server derives/stores this from totalAmount - paidAmount.
+   */
+  @IsOptional()
+  @IsNumber()
+  remainingAmount?: number;
+}
+
+export class UpdateBookingPricingDto {
+  /**
+   * Accepted for backward compatibility with older mobile payloads.
+   * PATCH /bookings currently does not update pricing totals from this object.
+   */
+  @IsOptional()
+  @IsNumber()
+  subTotal?: number;
+
+  @IsOptional()
+  @IsNumber()
+  discount?: number;
+
+  @IsOptional()
+  @IsNumber()
+  tax?: number;
+
+  @IsOptional()
+  @IsNumber()
+  totalAmount?: number;
 }
 
 export class UpdateBookingItemStatusDto {
@@ -48,6 +80,11 @@ export class UpdateBookingItemStatusDto {
 }
 
 export class UpdateBookingDto {
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.toLowerCase() === 'cancel'
+      ? 'cancelled'
+      : value,
+  )
   @IsOptional()
   @IsIn([...BOOKING_STATUSES])
   bookingStatus?: BookingStatus;
@@ -64,6 +101,11 @@ export class UpdateBookingDto {
   @ValidateNested()
   @Type(() => UpdateBookingPaymentDto)
   payment?: UpdateBookingPaymentDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => UpdateBookingPricingDto)
+  pricing?: UpdateBookingPricingDto;
 
   @IsOptional()
   @ValidateNested({ each: true })
