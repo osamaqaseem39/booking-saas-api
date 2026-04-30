@@ -2357,30 +2357,40 @@ export class BookingsService {
       const targetStatus: CourtFacilitySlotStatus =
         isBookingActive && isItemActive ? 'blocked' : 'available';
 
-      const startDateIso = item.startDatetime
-        ? formatDateOnly(item.startDatetime)
-        : formatDateOnly(booking.bookingDate);
-      const endDateIso = item.endDatetime
-        ? formatDateOnly(item.endDatetime)
-        : startDateIso;
-      const startTimeValue =
-        item.startDatetime &&
-        formatDateOnly(item.startDatetime) !== formatDateOnly(booking.bookingDate)
-          ? item.startDatetime.toISOString().slice(11, 16)
-          : item.startTime;
-      const endTimeValue =
-        item.endDatetime &&
-        formatDateOnly(item.endDatetime) !== formatDateOnly(booking.bookingDate)
-          ? item.endDatetime.toISOString().slice(11, 16)
-          : item.endTime;
+      const fallbackDate = formatDateOnly(item.date ?? booking.bookingDate);
+      const itemWindow = this.toSlotDateTimes(
+        fallbackDate,
+        item.startTime,
+        item.endTime,
+      );
+      const itemStart = item.startDatetime ?? itemWindow.startDatetime;
+      const itemEnd = item.endDatetime ?? itemWindow.endDatetime;
+
+      const startDateIso = formatDateOnly(itemStart);
+      const endDateIso = formatDateOnly(itemEnd);
 
       let totalAffected = 0;
-      const touchedDates = new Set<string>([startDateIso, endDateIso]);
-
-      for (const slotDate of touchedDates) {
-        const windowStart = slotDate === startDateIso ? startTimeValue : '00:00';
-        const windowEnd = slotDate === endDateIso ? endTimeValue : '24:00';
-        const effectiveEnd = windowEnd === '00:00' ? '24:00' : windowEnd;
+      for (
+        let slotDate = startDateIso;
+        slotDate <= endDateIso;
+        slotDate = addDays(slotDate, 1)
+      ) {
+        const dayStart = new Date(`${slotDate}T00:00:00Z`);
+        const nextDay = addDays(slotDate, 1);
+        const dayEnd = new Date(`${nextDay}T00:00:00Z`);
+        const windowStartDate = new Date(
+          Math.max(itemStart.getTime(), dayStart.getTime()),
+        );
+        const windowEndDate = new Date(
+          Math.min(itemEnd.getTime(), dayEnd.getTime()),
+        );
+        if (windowEndDate <= windowStartDate) continue;
+        const windowStart = windowStartDate.toISOString().slice(11, 16);
+        const windowEnd = windowEndDate.toISOString().slice(11, 16);
+        const effectiveEnd =
+          windowEnd === '00:00' && windowEndDate.getTime() === dayEnd.getTime()
+            ? '24:00'
+            : windowEnd;
 
         const updateResult = await this.facilitySlotRepo
           .createQueryBuilder()
