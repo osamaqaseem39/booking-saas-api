@@ -1551,13 +1551,15 @@ export class BookingsService {
 
   async getLocationFacilitiesAvailableSlots(params: {
     locationId: string;
-    date: string;
+    date?: string;
     startTime?: string;
     endTime?: string;
     courtType?: string;
     tableTennisPlayType?: string;
   }) {
-    const date = formatDateOnly(params.date);
+    const date = params.date
+      ? formatDateOnly(params.date)
+      : getCurrentDateInKarachi();
     const start = params.startTime ?? '00:00';
     const end = params.endTime ?? '24:00';
     const kinds = this.normalizeKindForAvail(params.courtType);
@@ -1730,6 +1732,14 @@ export class BookingsService {
       ),
     );
     const nextDateSlots = additionalDates[0] ?? null;
+    const unionSlotsAll = [currentDateSlots, ...additionalDates].flatMap((day) =>
+      day.unionSlots.map((slot) => ({
+        date: day.date,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        availability: slot.availability,
+      })),
+    );
 
     return {
       date,
@@ -1737,6 +1747,7 @@ export class BookingsService {
       courtType: params.courtType ?? 'all',
       facilities: currentDateSlots.facilities,
       unionSlots: currentDateSlots.unionSlots,
+      unionSlotsAll,
       nextDateSlots,
       additionalDates,
     };

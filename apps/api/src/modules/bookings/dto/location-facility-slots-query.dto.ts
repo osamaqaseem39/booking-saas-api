@@ -1,8 +1,9 @@
 import { IsDateString, IsOptional, Matches } from 'class-validator';
 
 export class LocationFacilitySlotsQueryDto {
+  @IsOptional()
   @IsDateString()
-  date!: string;
+  date?: string;
 
   /** Inclusive grid start (HH:mm, hourly aligned). Default 00:00. */
   @IsOptional()
