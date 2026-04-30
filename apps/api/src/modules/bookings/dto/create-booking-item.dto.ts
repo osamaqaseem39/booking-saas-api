@@ -22,6 +22,11 @@ export class CreateBookingItemDto {
   @IsDateString()
   date?: string;
 
+  @IsOptional()
+  @Transform(({ value, obj }) => value ?? obj?.date)
+  @IsDateString()
+  bookingDate?: string;
+
   @Transform(({ value }) => {
     if (value === 'futsal_court' || value === 'cricket_court')
       return 'turf_court';
