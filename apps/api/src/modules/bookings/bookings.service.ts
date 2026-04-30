@@ -1723,8 +1723,13 @@ export class BookingsService {
     };
 
     const currentDateSlots = await buildSlotsResponseForDate(date);
-    const nextDateSlots = await buildSlotsResponseForDate(addDays(date, 1));
-    const additionalDates = [nextDateSlots];
+    const additionalDates = await Promise.all(
+      Array.from(
+        { length: BookingsService.MAX_BOOKING_DAYS_AHEAD },
+        (_, idx) => buildSlotsResponseForDate(addDays(date, idx + 1)),
+      ),
+    );
+    const nextDateSlots = additionalDates[0] ?? null;
 
     return {
       date,
