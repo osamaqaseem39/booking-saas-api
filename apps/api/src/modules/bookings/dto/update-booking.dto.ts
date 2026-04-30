@@ -81,8 +81,12 @@ export class UpdateBookingItemStatusDto {
 
 export class UpdateBookingDto {
   @Transform(({ value }) =>
-    typeof value === 'string' && value.toLowerCase() === 'cancel'
-      ? 'cancelled'
+    typeof value === 'string'
+      ? value.toLowerCase() === 'cancel'
+        ? 'cancelled'
+        : value.toLowerCase() === 'live'
+          ? 'confirmed'
+          : value
       : value,
   )
   @IsOptional()
