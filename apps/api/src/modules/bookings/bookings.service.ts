@@ -115,6 +115,19 @@ function getCurrentDateInKarachi(): string {
   return formatter.format(new Date());
 }
 
+function getCurrentMinutesInKarachi(): number {
+  const formatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Karachi',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const [hourText = '00', minuteText = '00'] = formatter
+    .format(new Date())
+    .split(':');
+  return Number(hourText) * 60 + Number(minuteText);
+}
+
 export type BookingApiRow = {
   bookingId: string;
   arenaId: string;
@@ -403,13 +416,35 @@ export class BookingsService {
       return booking.bookingStatus;
     }
 
-    const nowMs = Date.now();
+    const todayKarachi = getCurrentDateInKarachi();
+    const nowMinutesKarachi = getCurrentMinutesInKarachi();
     const activeItem = (booking.items ?? []).some((item) => {
       if (item.itemStatus === 'cancelled') return false;
-      if (!item.startDatetime || !item.endDatetime) return false;
-      const startMs = item.startDatetime.getTime();
-      const endMs = item.endDatetime.getTime();
-      return startMs <= nowMs && nowMs < endMs;
+      const itemDate = formatDateOnly(item.date ?? booking.bookingDate);
+      const startMinutes = toMinutes(item.startTime, false);
+      let endMinutes = toMinutes(item.endTime, true);
+      if (!Number.isFinite(startMinutes) || !Number.isFinite(endMinutes)) {
+        return false;
+      }
+
+      // Overnight slot (e.g., 23:00 -> 00:00 or 01:00) spans to next day.
+      if (endMinutes <= startMinutes) {
+        endMinutes += 24 * 60;
+        const nextDay = addDays(itemDate, 1);
+        if (todayKarachi === itemDate) {
+          return nowMinutesKarachi >= startMinutes;
+        }
+        if (todayKarachi === nextDay) {
+          return nowMinutesKarachi < endMinutes - 24 * 60;
+        }
+        return false;
+      }
+
+      return (
+        todayKarachi === itemDate &&
+        startMinutes <= nowMinutesKarachi &&
+        nowMinutesKarachi < endMinutes
+      );
     });
     return activeItem ? 'live' : booking.bookingStatus;
   }
@@ -962,11 +997,109 @@ export class BookingsService {
 
 
   async editBookingFacilitySlots(
-    _tenantId: string,
+    tenantId: string,
     bookingId: string,
     blocked: boolean,
-  ): Promise<{ ok: true; bookingId: string; blocked: boolean }> {
-    return { ok: true, bookingId, blocked };
+    addOnMinutes?: 30 | 60,
+  ): Promise<{ ok: true; bookingId: string; blocked: boolean; extendedBy?: number }> {
+    if (!addOnMinutes) {
+      return { ok: true, bookingId, blocked };
+    }
+
+    const booking = await this.bookingRepo.findOne({
+      where: { id: bookingId, tenantId },
+      relations: ['items'],
+    });
+    if (!booking) {
+      throw new NotFoundException(`Booking ${bookingId} not found`);
+    }
+    if (!booking.items?.length) {
+      throw new BadRequestException('Booking has no items to extend');
+    }
+    if (booking.bookingStatus === 'cancelled' || booking.bookingStatus === 'no_show') {
+      throw new BadRequestException('Only active bookings can be extended');
+    }
+
+    const itemsSorted = [...booking.items].sort((a, b) => {
+      const aStart = (a.startDatetime ?? this.toSlotDateTimes(formatDateOnly(a.date ?? booking.bookingDate), a.startTime, a.endTime).startDatetime).getTime();
+      const bStart = (b.startDatetime ?? this.toSlotDateTimes(formatDateOnly(b.date ?? booking.bookingDate), b.startTime, b.endTime).startDatetime).getTime();
+      return aStart - bStart;
+    });
+    const baseItem = itemsSorted[itemsSorted.length - 1];
+    const baseDate = formatDateOnly(baseItem.date ?? booking.bookingDate);
+    const baseWindow = this.toSlotDateTimes(baseDate, baseItem.startTime, baseItem.endTime);
+    const currentEnd = baseItem.endDatetime ?? baseWindow.endDatetime;
+
+    const checkWindowStart = currentEnd;
+    const checkWindowEnd = new Date(currentEnd.getTime() + 60 * 60 * 1000);
+
+    const overlapCount = await this.bookingRepo
+      .createQueryBuilder('b')
+      .innerJoin('b.items', 'i')
+      .where('b.tenantId = :tenantId', { tenantId })
+      .andWhere('b.id <> :bookingId', { bookingId })
+      .andWhere("b.bookingStatus IN ('pending', 'confirmed', 'completed')")
+      .andWhere("i.itemStatus <> 'cancelled'")
+      .andWhere('i.courtKind = :courtKind', { courtKind: baseItem.courtKind })
+      .andWhere('i.courtId = :courtId', { courtId: baseItem.courtId })
+      .andWhere('i.startDatetime < :checkWindowEnd', {
+        checkWindowEnd: checkWindowEnd.toISOString(),
+      })
+      .andWhere('i.endDatetime > :checkWindowStart', {
+        checkWindowStart: checkWindowStart.toISOString(),
+      })
+      .getCount();
+
+    if (overlapCount > 0) {
+      throw new ConflictException('Upcoming slot is not empty for extension');
+    }
+
+    const extensionStart = currentEnd;
+    const extensionEnd = new Date(currentEnd.getTime() + addOnMinutes * 60 * 1000);
+    const extensionStartTime = extensionStart.toISOString().slice(11, 16);
+    const extensionEndTime = extensionEnd.toISOString().slice(11, 16);
+    const extensionDate = formatDateOnly(extensionStart);
+
+    const baseDurationMinutes = Math.max(
+      1,
+      Math.round((baseWindow.endDatetime.getTime() - baseWindow.startDatetime.getTime()) / 60000),
+    );
+    const basePrice = numFromDec(baseItem.price);
+    const perMinutePrice = basePrice / baseDurationMinutes;
+    const extensionPrice = Number((perMinutePrice * addOnMinutes).toFixed(2));
+
+    const extraItem = this.bookingRepo.manager
+      .getRepository(BookingItem)
+      .create({
+        bookingId: booking.id,
+        courtKind: baseItem.courtKind,
+        courtId: baseItem.courtId,
+        slotId: null,
+        date: extensionDate,
+        startTime: extensionStartTime,
+        endTime: extensionEndTime,
+        startDatetime: extensionStart,
+        endDatetime: extensionEnd,
+        price: dec(extensionPrice),
+        currency: baseItem.currency || 'PKR',
+        itemStatus: baseItem.itemStatus === 'cancelled' ? 'confirmed' : baseItem.itemStatus,
+      });
+    await this.bookingRepo.manager.getRepository(BookingItem).save(extraItem);
+
+    booking.subTotal = dec(numFromDec(booking.subTotal) + extensionPrice);
+    booking.totalAmount = dec(
+      numFromDec(booking.subTotal) - numFromDec(booking.discount) + numFromDec(booking.tax),
+    );
+    harmonizePaymentStatusWithAmounts(booking);
+    await this.bookingRepo.save(booking);
+
+    const full = await this.bookingRepo.findOneOrFail({
+      where: { id: bookingId, tenantId },
+      relations: ['items'],
+    });
+    await this.syncFacilitySlotsStatus(full);
+
+    return { ok: true, bookingId, blocked, extendedBy: addOnMinutes };
   }
 
   async getAvailabilityByTime(

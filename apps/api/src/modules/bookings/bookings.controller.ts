@@ -497,7 +497,8 @@ export class BookingsController {
     return this.bookingsService.editBookingFacilitySlots(
       tenantId,
       bookingId,
-      dto.blocked,
+      dto.blocked ?? false,
+      dto.addOnMinutes,
     );
   }
 
