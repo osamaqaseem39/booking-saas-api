@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   Logger,
@@ -665,14 +666,23 @@ export class BookingsService {
   }
 
   private expandBookingItems(
-    bookingDate: string,
+    bookingDate: string | undefined,
     items: CreateBookingItemDto[],
   ): Array<CreateBookingItemDto & { date: string }> {
-    const derivedDates = this.resolveItemBookingDates(bookingDate, items);
+    const derivedDates = bookingDate
+      ? this.resolveItemBookingDates(bookingDate, items)
+      : [];
     const expanded: Array<CreateBookingItemDto & { date: string }> = [];
 
     for (const [idx, item] of items.entries()) {
-      const itemDate = formatDateOnly(item.date ?? derivedDates[idx]);
+      const fallbackDate = derivedDates[idx];
+      const resolvedDate = item.date ?? fallbackDate;
+      if (!resolvedDate) {
+        throw new BadRequestException(
+          'bookingDate is required at root or per item (items[].date/items[].bookingDate)',
+        );
+      }
+      const itemDate = formatDateOnly(resolvedDate);
       const isOvernight = toMinutes(item.endTime, true) <= toMinutes(item.startTime, false);
 
       if (!isOvernight) {
@@ -716,6 +726,9 @@ export class BookingsService {
         'Only padel_court, turf_court, and table_tennis_court are supported',
       );
     }
+    if (item.startTime === '24:00') {
+      throw new BadRequestException('startTime cannot be 24:00');
+    }
     if (toMinutes(item.endTime) === toMinutes(item.startTime)) {
       throw new BadRequestException('endTime must be different from startTime');
     }
@@ -749,14 +762,22 @@ export class BookingsService {
       .getCount();
 
     if (overlaps > 0)
-      throw new BadRequestException('Selected slot is already booked');
+      throw new ConflictException({
+        bookingDate: date,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        courtId: item.courtId,
+        reason: 'Selected slot is already booked',
+      });
   }
 
   async create(
     tenantId: string,
     dto: CreateBookingDto,
   ): Promise<BookingApiRow> {
-    this.assertBookingDateInAllowedWindow(dto.bookingDate);
+    if (dto.bookingDate) {
+      this.assertBookingDateInAllowedWindow(dto.bookingDate);
+    }
 
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new BadRequestException(`User ${dto.userId} not found`);
@@ -765,6 +786,9 @@ export class BookingsService {
       dto.bookingDate,
       dto.items,
     );
+    for (const item of expandedItems) {
+      this.assertBookingDateInAllowedWindow(item.date);
+    }
 
     for (const item of expandedItems) {
       this.assertBookingItem(item);
@@ -815,7 +839,7 @@ export class BookingsService {
       tenantId,
       userId: dto.userId,
       sportType: dto.sportType,
-      bookingDate: formatDateOnly(dto.bookingDate),
+      bookingDate: formatDateOnly(dto.bookingDate ?? expandedItems[0].date),
       subTotal: dec(dto.pricing.subTotal),
       discount: dec(dto.pricing.discount),
       tax: dec(dto.pricing.tax),

@@ -26,8 +26,9 @@ export class CreateBookingDto {
   @IsIn([...BOOKING_SPORT_TYPES])
   sportType!: BookingSportType;
 
+  @IsOptional()
   @IsDateString()
-  bookingDate!: string;
+  bookingDate?: string;
 
   /**
    * One row per booked window. Multiple slots are supported: e.g. two consecutive

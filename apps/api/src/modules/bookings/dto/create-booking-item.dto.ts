@@ -18,6 +18,7 @@ import {
 
 export class CreateBookingItemDto {
   @IsOptional()
+  @Transform(({ value, obj }) => value ?? obj?.bookingDate)
   @IsDateString()
   date?: string;
 
@@ -57,8 +58,8 @@ export class CreateBookingItemDto {
   })
   startTime!: string;
 
-  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/, {
-    message: 'endTime must be HH:mm (24h)',
+  @Matches(/^(([01]\d|2[0-3]):[0-5]\d|24:00)$/, {
+    message: 'endTime must be HH:mm (24h) or 24:00',
   })
   endTime!: string;
 
