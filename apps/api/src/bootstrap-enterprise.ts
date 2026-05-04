@@ -4,6 +4,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import { EnterpriseAppModule } from './enterprise-app.module';
 import { GlobalExceptionFilter } from '@libs/common/filters/global-exception.filter';
 import { RequestLoggingInterceptor } from '@libs/common/interceptors/request-logging.interceptor';
+import { setupSwaggerIfEnabled } from './swagger.setup';
 
 export async function bootstrapEnterpriseApp(): Promise<void> {
   const app = await NestFactory.create<NestExpressApplication>(EnterpriseAppModule);
@@ -19,6 +20,8 @@ export async function bootstrapEnterpriseApp(): Promise<void> {
   );
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new RequestLoggingInterceptor());
+
+  setupSwaggerIfEnabled(app);
 
   await app.listen(process.env.PORT ?? 3000);
 }

@@ -3,9 +3,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 
 function swaggerEnabled(): boolean {
   const v = process.env.ENABLE_SWAGGER?.trim().toLowerCase();
-  if (v === 'true' || v === '1') return true;
   if (v === 'false' || v === '0') return false;
-  return process.env.NODE_ENV !== 'production';
+  return true;
 }
 
 export function setupSwaggerIfEnabled(app: NestExpressApplication): void {
