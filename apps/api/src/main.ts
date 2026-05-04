@@ -1,8 +1,5 @@
-import { NestFactory } from '@nestjs/core';
-import { NestExpressApplication } from '@nestjs/platform-express';
 import type { Express } from 'express';
-import { AppModule } from './app.module';
-import { applyHttpGlobals, bootstrapHttpApp } from './bootstrap-http';
+import { bootstrapHttpApp, createNestExpressApp, setupSwaggerIfEnabled } from './bootstrap-http';
 import { bootstrapEnterpriseApp } from './bootstrap-enterprise';
 import { shouldRunStartupMigrations } from './database/migration-startup.util';
 
@@ -31,8 +28,8 @@ async function createServer(): Promise<Express> {
       }
     }
 
-    const app = await NestFactory.create<NestExpressApplication>(AppModule);
-    applyHttpGlobals(app);
+    const app = await createNestExpressApp();
+    setupSwaggerIfEnabled(app);
     await app.init();
     cachedServer = app.getHttpAdapter().getInstance();
     return cachedServer;

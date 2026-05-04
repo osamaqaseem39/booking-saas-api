@@ -4,6 +4,7 @@ import { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
+import { setupSwaggerIfEnabled } from './swagger.setup';
 import { DatabaseQueryExceptionFilter } from './common/filters/database-query-exception.filter';
 
 /** Merged with `CORS_ORIGINS` / `CORS_ORIGIN` when set (see `applyHttpGlobals`). */
@@ -105,5 +106,8 @@ export async function createNestExpressApp(): Promise<NestExpressApplication> {
 
 export async function bootstrapHttpApp(): Promise<void> {
   const app = await createNestExpressApp();
+  setupSwaggerIfEnabled(app);
   await app.listen(process.env.PORT ?? 3000);
 }
+
+export { setupSwaggerIfEnabled } from './swagger.setup';
