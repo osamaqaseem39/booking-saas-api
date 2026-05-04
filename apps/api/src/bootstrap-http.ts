@@ -106,6 +106,7 @@ export async function createNestExpressApp(): Promise<NestExpressApplication> {
 
 export async function bootstrapHttpApp(): Promise<void> {
   const app = await createNestExpressApp();
+  await app.init();
   setupSwaggerIfEnabled(app);
   await app.listen(process.env.PORT ?? 3000);
 }

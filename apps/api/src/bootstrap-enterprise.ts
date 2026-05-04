@@ -21,6 +21,7 @@ export async function bootstrapEnterpriseApp(): Promise<void> {
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new RequestLoggingInterceptor());
 
+  await app.init();
   setupSwaggerIfEnabled(app);
 
   await app.listen(process.env.PORT ?? 3000);

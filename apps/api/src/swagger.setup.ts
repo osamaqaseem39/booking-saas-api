@@ -9,6 +9,10 @@ function swaggerEnabled(): boolean {
 
 export function setupSwaggerIfEnabled(app: NestExpressApplication): void {
   if (!swaggerEnabled()) {
+    const v = process.env.ENABLE_SWAGGER?.trim().toLowerCase();
+    if (v === 'false' || v === '0') {
+      console.log('[OpenAPI] Swagger UI disabled (ENABLE_SWAGGER=false).');
+    }
     return;
   }
 
@@ -40,9 +44,15 @@ export function setupSwaggerIfEnabled(app: NestExpressApplication): void {
     )
     .build();
 
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup(path, app, document, {
-    swaggerOptions: { persistAuthorization: true },
-    customSiteTitle: 'Velay API Docs',
-  });
+  try {
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup(path, app, document, {
+      swaggerOptions: { persistAuthorization: true },
+      customSiteTitle: 'Velay API Docs',
+    });
+    const mount = path.startsWith('/') ? path : `/${path}`;
+    console.log(`[OpenAPI] Swagger UI → ${mount} (JSON → ${mount}-json)`);
+  } catch (err) {
+    console.error('[OpenAPI] Swagger setup failed:', err);
+  }
 }

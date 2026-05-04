@@ -29,8 +29,8 @@ async function createServer(): Promise<Express> {
     }
 
     const app = await createNestExpressApp();
-    setupSwaggerIfEnabled(app);
     await app.init();
+    setupSwaggerIfEnabled(app);
     cachedServer = app.getHttpAdapter().getInstance();
     return cachedServer;
   })();
