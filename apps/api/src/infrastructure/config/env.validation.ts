@@ -13,8 +13,20 @@ export const envValidationSchema = Joi.object({
   REDIS_HOST: Joi.string().default('redis'),
   REDIS_PORT: Joi.number().default(6379),
   REDIS_PASSWORD: Joi.string().optional(),
-  JWT_ACCESS_SECRET: Joi.string().required(),
-  JWT_REFRESH_SECRET: Joi.string().required(),
+  JWT_ACCESS_SECRET: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().required().messages({
+      'any.required': `"JWT_ACCESS_SECRET" is required in production`,
+    }),
+    otherwise: Joi.string().default('dev-enterprise-jwt-access-secret'),
+  }),
+  JWT_REFRESH_SECRET: Joi.when('NODE_ENV', {
+    is: 'production',
+    then: Joi.string().required().messages({
+      'any.required': `"JWT_REFRESH_SECRET" is required in production`,
+    }),
+    otherwise: Joi.string().default('dev-enterprise-jwt-refresh-secret'),
+  }),
   JWT_ACCESS_TTL: Joi.string().default('7d'),
   JWT_REFRESH_TTL: Joi.string().default('7d'),
 });
