@@ -1074,7 +1074,7 @@ export class BookingsService {
         bookingId: booking.id,
         courtKind: baseItem.courtKind,
         courtId: baseItem.courtId,
-        slotId: null,
+        slotId: undefined,
         date: extensionDate,
         startTime: extensionStartTime,
         endTime: extensionEndTime,
