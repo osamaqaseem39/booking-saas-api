@@ -1859,9 +1859,8 @@ export class BookingsService {
 
     const currentDateSlots = await buildSlotsResponseForDate(date);
     const additionalDates = await Promise.all(
-      Array.from(
-        { length: BookingsService.MAX_BOOKING_DAYS_AHEAD },
-        (_, idx) => buildSlotsResponseForDate(addDays(date, idx + 1)),
+      Array.from({ length: 1 }, (_, idx) =>
+        buildSlotsResponseForDate(addDays(date, idx + 1)),
       ),
     );
     const nextDateSlots = additionalDates[0] ?? null;
