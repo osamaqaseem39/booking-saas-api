@@ -38,6 +38,7 @@ import type {
 } from './dto/location-live-facilities-view.dto';
 import {
   addDaysYmd,
+  bookingIsInPlayWindowNow,
   buildPlaySnapshot,
   type FacilityPlaySnapshot,
   ymdInTimeZone,
@@ -281,9 +282,11 @@ export class BookingsService {
   private async resolveLocationMappingBatch(bookings: Booking[]): Promise<{
     locationsMap: Record<string, string>;
     courtToLocationMap: Record<string, string>;
+    locationTimeZoneMap: Record<string, string>;
   }> {
     const locationsMap: Record<string, string> = {};
     const courtToLocationMap: Record<string, string> = {};
+    const locationTimeZoneMap: Record<string, string> = {};
 
     const padelIds = new Set<string>();
     const turfIds = new Set<string>();
@@ -333,19 +336,22 @@ export class BookingsService {
     if (locationIds.size > 0) {
       const locations = await this.locationRepo.find({
         where: { id: In([...locationIds]) },
-        select: ['id', 'name'],
+        select: ['id', 'name', 'timezone'],
       });
       for (const loc of locations) {
         locationsMap[loc.id] = loc.name;
+        const tz = loc.timezone?.trim();
+        if (tz) locationTimeZoneMap[loc.id] = tz;
       }
     }
 
-    return { locationsMap, courtToLocationMap };
+    return { locationsMap, courtToLocationMap, locationTimeZoneMap };
   }
 
   private async resolveLocationMapping(booking: Booking): Promise<{
     locationsMap: Record<string, string>;
     courtToLocationMap: Record<string, string>;
+    locationTimeZoneMap: Record<string, string>;
   }> {
     return this.resolveLocationMappingBatch([booking]);
   }
@@ -354,6 +360,7 @@ export class BookingsService {
     booking: Booking,
     locationsMap: Record<string, string> = {},
     courtToLocationMap: Record<string, string> = {},
+    locationTimeZoneMap: Record<string, string> = {},
   ): BookingApiRow {
     const first = booking.items?.[0];
     const courtId = first?.courtId;
@@ -400,7 +407,10 @@ export class BookingsService {
         paidAmount: numFromDec(booking.paidAmount),
         remainingAmount: numFromDec(booking.totalAmount) - numFromDec(booking.paidAmount),
       },
-      bookingStatus: this.resolveBookingViewStatus(booking),
+      bookingStatus: this.resolveBookingViewStatus(
+        booking,
+        locationId ? locationTimeZoneMap[locationId] : undefined,
+      ),
       notes: booking.notes,
       cancellationReason: booking.cancellationReason,
       createdAt: booking.createdAt.toISOString(),
@@ -408,7 +418,11 @@ export class BookingsService {
     };
   }
 
-  private resolveBookingViewStatus(booking: Booking): BookingViewStatus {
+  private resolveBookingViewStatus(
+    booking: Booking,
+    locationTimeZone?: string,
+  ): BookingViewStatus {
+    if (bookingIsInPlayWindowNow(booking, locationTimeZone)) return 'live';
     return booking.bookingStatus;
   }
 
@@ -461,34 +475,12 @@ export class BookingsService {
     qb.orderBy('b.createdAt', 'DESC');
     const rows = await qb.getMany();
 
-    // Fetch location mapping for toApi
-    const locationsMap: Record<string, string> = {};
-    const courtToLocationMap: Record<string, string> = {};
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
+      await this.resolveLocationMappingBatch(rows);
 
-    if (tenantId) {
-      const business = await this.businessRepo.findOne({ where: { tenantId } });
-      if (business) {
-        const locations = await this.locationRepo.find({ where: { businessId: business.id } });
-        for (const loc of locations) locationsMap[loc.id] = loc.name;
-      }
-      
-      const padels = await this.padelRepo.find({ where: { tenantId }, select: ['id', 'businessLocationId'] });
-      for (const p of padels) if (p.businessLocationId) courtToLocationMap[p.id] = p.businessLocationId;
-      
-      const turfs = await this.turfRepo.find({ where: { tenantId }, select: ['id', 'branchId'] });
-      for (const t of turfs) if (t.branchId) courtToLocationMap[t.id] = t.branchId;
-    } else {
-      const locations = await this.locationRepo.find({ select: ['id', 'name'] });
-      for (const loc of locations) locationsMap[loc.id] = loc.name;
-      
-      const padels = await this.padelRepo.find({ select: ['id', 'businessLocationId'] });
-      for (const p of padels) if (p.businessLocationId) courtToLocationMap[p.id] = p.businessLocationId;
-      
-      const turfs = await this.turfRepo.find({ select: ['id', 'branchId'] });
-      for (const t of turfs) if (t.branchId) courtToLocationMap[t.id] = t.branchId;
-    }
-
-    return rows.map((b) => this.toApi(b, locationsMap, courtToLocationMap));
+    return rows.map((b) =>
+      this.toApi(b, locationsMap, courtToLocationMap, locationTimeZoneMap),
+    );
   }
 
   async listByUserForProfile(userId: string): Promise<BookingApiRow[]> {
@@ -498,10 +490,12 @@ export class BookingsService {
       order: { createdAt: 'DESC' },
     });
 
-    const { locationsMap, courtToLocationMap } =
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
       await this.resolveLocationMappingBatch(rows);
 
-    return rows.map((b) => this.toApi(b, locationsMap, courtToLocationMap));
+    return rows.map((b) =>
+      this.toApi(b, locationsMap, courtToLocationMap, locationTimeZoneMap),
+    );
   }
 
   async getOne(tenantId: string, bookingId: string, requesterUserId?: string): Promise<BookingApiRow> {
@@ -530,10 +524,10 @@ export class BookingsService {
       }
     }
 
-    const { locationsMap, courtToLocationMap } =
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
       await this.resolveLocationMapping(row);
 
-    return this.toApi(row, locationsMap, courtToLocationMap);
+    return this.toApi(row, locationsMap, courtToLocationMap, locationTimeZoneMap);
   }
 
   private async assertPadelCourtExists(
@@ -882,9 +876,9 @@ export class BookingsService {
     // Block the slots in the facility slots table
     await this.syncFacilitySlotsStatus(full);
 
-    const { locationsMap, courtToLocationMap } =
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap);
+    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap);
   }
 
   async update(
@@ -950,9 +944,9 @@ export class BookingsService {
 
     await this.syncFacilitySlotsStatus(full);
 
-    const { locationsMap, courtToLocationMap } =
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap);
+    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap);
   }
 
   async remove(tenantId: string, bookingId: string): Promise<{ ok: true }> {
