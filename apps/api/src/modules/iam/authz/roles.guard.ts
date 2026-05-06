@@ -124,7 +124,7 @@ export class RolesGuard implements CanActivate {
     const allowed = await this.iamService.hasAnyRole(userId, rolesToCheck);
     if (!allowed) {
       throw new ForbiddenException(
-        `User ${userId} does not have required role for this endpoint`,
+        `User ${userId} does not have the required role to access this endpoint`,
       );
     }
 
