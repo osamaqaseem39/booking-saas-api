@@ -14,6 +14,12 @@ import { SystemRole } from '../iam.constants';
 import { IamService } from '../iam.service';
 import { ROLES_KEY } from './roles.decorator';
 
+const TENANT_ALLOWED_ROLES: ReadonlyArray<SystemRole> = [
+  'business-admin',
+  'location-admin',
+  'business-staff',
+];
+
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(
@@ -93,11 +99,9 @@ export class RolesGuard implements CanActivate {
     }
 
     const userId = ext.userId?.trim();
-    const requestMethod = request.method?.toUpperCase();
-    const rolesToCheck: SystemRole[] =
-      requestMethod === 'GET' && !requiredRoles.includes('customer-end-user')
-        ? [...requiredRoles, 'customer-end-user']
-        : requiredRoles;
+    const rolesToCheck = requiredRoles.filter((role) =>
+      TENANT_ALLOWED_ROLES.includes(role),
+    );
 
     if (!userId) {
       throw new UnauthorizedException('Missing authentication');
@@ -106,6 +110,12 @@ export class RolesGuard implements CanActivate {
     if (!this.iamService) {
       throw new InternalServerErrorException(
         'Authorization service is not configured on server',
+      );
+    }
+
+    if (rolesToCheck.length === 0) {
+      throw new ForbiddenException(
+        'This API is restricted to business roles only',
       );
     }
 
