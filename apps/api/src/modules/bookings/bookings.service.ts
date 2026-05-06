@@ -437,7 +437,15 @@ export class BookingsService {
         where: { branchId: effectiveLocationId },
         select: ['id'],
       });
-      const courtIds = [...padels.map((p) => p.id), ...turfs.map((t) => t.id)];
+      const tableTennisCourts = await this.tableTennisRepo.find({
+        where: { businessLocationId: effectiveLocationId },
+        select: ['id'],
+      });
+      const courtIds = [
+        ...padels.map((p) => p.id),
+        ...turfs.map((t) => t.id),
+        ...tableTennisCourts.map((t) => t.id),
+      ];
       if (courtIds.length === 0) return [];
       
       qb.andWhere((sub) => {
@@ -508,7 +516,15 @@ export class BookingsService {
       if (constraint) {
         const padels = await this.padelRepo.find({ where: { businessLocationId: constraint }, select: ['id'] });
         const turfs = await this.turfRepo.find({ where: { branchId: constraint }, select: ['id'] });
-        const courtIds = new Set([...padels.map((p) => p.id), ...turfs.map((t) => t.id)]);
+        const tableTennisCourts = await this.tableTennisRepo.find({
+          where: { businessLocationId: constraint },
+          select: ['id'],
+        });
+        const courtIds = new Set([
+          ...padels.map((p) => p.id),
+          ...turfs.map((t) => t.id),
+          ...tableTennisCourts.map((t) => t.id),
+        ]);
         const allowed = row.items?.some((i) => courtIds.has(i.courtId));
         if (!allowed) throw new ForbiddenException('Booking does not belong to your location');
       }

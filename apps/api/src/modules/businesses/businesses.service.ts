@@ -840,7 +840,8 @@ export class BusinessesService {
         } else if (
           t === 'table-tennis' ||
           t === 'table_tennis' ||
-          t === 'tabletennis'
+          t === 'tabletennis' ||
+          t === 'table-tennis-court'
         ) {
           relevant = courts.filter((c) => c.startsWith('table_tennis_court:'));
         }
@@ -1135,7 +1136,8 @@ export class BusinessesService {
         } else if (
           t === 'table-tennis' ||
           t === 'table_tennis' ||
-          t === 'tabletennis'
+          t === 'tabletennis' ||
+          t === 'table-tennis-court'
         ) {
           relevant = courts.filter((c) => c.startsWith('table_tennis_court:'));
         }

@@ -96,6 +96,25 @@ export class BookingsController {
     return this.bookingsService.resolveTenantIdByTimeSlotTemplate(templateId);
   }
 
+  @Get()
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  async list(
+    @Req() req: Request,
+    @CurrentTenant() tenant: TenantContext,
+    @Query('locationId') locationId?: string,
+  ) {
+    const userId = (req as Request & { userId?: string }).userId?.trim();
+    if (!userId) {
+      throw new UnauthorizedException('Missing user');
+    }
+    return this.bookingsService.list(
+      userId,
+      this.getTenantUuidOrNull(tenant) ?? undefined,
+      locationId?.trim() || undefined,
+    );
+  }
+
   @Get('availability')
   availabilityByTime(
     @CurrentTenant() tenant: TenantContext,
