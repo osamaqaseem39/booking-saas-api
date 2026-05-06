@@ -80,13 +80,14 @@ export class UpdateBookingItemStatusDto {
 }
 
 export class UpdateBookingDto {
-  @Transform(({ value }) =>
-    typeof value === 'string'
-      ? value.toLowerCase() === 'cancel'
-        ? 'cancelled'
-        : value
-      : value,
-  )
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value;
+    const v = value.toLowerCase();
+    if (v === 'cancel') return 'cancelled';
+    // View-only status from list/detail; store as confirmed for PATCH.
+    if (v === 'live') return 'confirmed';
+    return value;
+  })
   @IsOptional()
   @IsIn([...BOOKING_STATUSES])
   bookingStatus?: BookingStatus;
