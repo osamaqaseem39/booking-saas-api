@@ -214,14 +214,9 @@ export function buildPlaySnapshot(
     }
   }
 
-  const manuallyLive =
-    windows.find((w) => w.booking.bookingStatus === 'live') ?? null;
-  const ongoing =
-    manuallyLive ??
-    windows.find((w) => w.startMs <= now && now < w.endMs) ??
-    null;
+  const ongoing = windows.find((w) => w.startMs <= now && now < w.endMs) ?? null;
   const future = windows
-    .filter((w) => w.booking.bookingStatus !== 'live' && w.startMs > now)
+    .filter((w) => w.startMs > now)
     .sort((a, b) => a.startMs - b.startMs);
   const next = future[0] ?? null;
 

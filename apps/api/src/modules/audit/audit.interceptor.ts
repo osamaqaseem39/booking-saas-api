@@ -38,7 +38,11 @@ export class AuditInterceptor implements NestInterceptor {
     }
 
     const pathOnly = (req.originalUrl ?? req.url ?? '').split('?')[0] ?? '';
-    if (pathOnly === '/health' || pathOnly === '/metrics') {
+    if (
+      pathOnly === '/health' ||
+      pathOnly === '/metrics' ||
+      pathOnly === '/audit/client-events'
+    ) {
       return next.handle();
     }
 
