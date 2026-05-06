@@ -31,7 +31,7 @@ import { LocationEmptySlots30DaysQueryDto } from './dto/location-empty-slots-30-
 import type { LocationLiveFacilitiesView } from './dto/location-live-facilities-view.dto';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
-import { BookingsService, BookingApiRow } from './bookings.service';
+import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { GenerateFacilitySlotsDto } from './dto/generate-facility-slots.dto';
@@ -94,23 +94,6 @@ export class BookingsController {
     const tenantId = this.getTenantUuidOrNull(tenant);
     if (tenantId) return tenantId;
     return this.bookingsService.resolveTenantIdByTimeSlotTemplate(templateId);
-  }
-
-  @Get()
-  @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
-  list(
-    @Req() req: Request,
-    @CurrentTenant() tenant: TenantContext,
-    @Query('locationId') locationId?: string,
-  ): Promise<BookingApiRow[]> {
-    const userId = (req as Request & { userId?: string }).userId?.trim();
-    if (!userId) throw new UnauthorizedException('Missing user');
-    return this.bookingsService.list(
-      userId,
-      this.getTenantUuidOrNull(tenant) ?? undefined,
-      locationId,
-    );
   }
 
   @Get('availability')

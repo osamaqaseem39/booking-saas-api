@@ -2048,8 +2048,7 @@ export class BookingsService {
           bookingStatus: In([
             'pending',
             'confirmed',
-            'completed',
-            'no_show',
+            'live',
           ] as BookingStatus[]),
         },
         relations: ['items', 'user'],

@@ -32,16 +32,6 @@ export class BusinessesController {
     private readonly jwtService: JwtService,
   ) {}
 
-  @Get()
-  @Roles('platform-owner', 'business-admin', 'location-admin')
-  async list(@Req() req: Request) {
-    const userId = (req as Request & { userId?: string }).userId?.trim();
-    if (!userId) {
-      throw new UnauthorizedException('Missing user');
-    }
-    return this.businessesService.listForRequester(userId);
-  }
-
   @Get('dashboard')
   @Roles('platform-owner', 'business-admin', 'location-admin')
   async dashboard(

@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { IsIn, IsOptional, IsUUID } from 'class-validator';
+import { IsOptional, IsUUID } from 'class-validator';
 import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../../tenancy/tenant-context.interface';
 import { Roles } from '../../iam/authz/roles.decorator';
@@ -18,17 +18,7 @@ import { RolesGuard } from '../../iam/authz/roles.guard';
 import { RequireSaasFeatures } from '../../saas-subscriptions/require-saas-feature.decorator';
 import { SaasFeatureGuard } from '../../saas-subscriptions/saas-feature.guard';
 import { TurfService } from './turf.service';
-import { TURF_SPORT_TYPES, TurfSportType } from './turf.types';
-
-class ListTurfCourtsQueryDto {
-  @IsOptional()
-  @IsUUID('4')
-  businessLocationId?: string;
-
-  @IsOptional()
-  @IsIn(TURF_SPORT_TYPES)
-  sportType?: TurfSportType;
-}
+import { TurfSportType } from './turf.types';
 
 class GetVenueBySportQueryDto {
   @IsOptional()
@@ -48,20 +38,6 @@ export class TurfController {
   @Get('cricket')
   getCricketVenues(@Query() query: GetVenueBySportQueryDto) {
     return this.turfService.listBySport('cricket', query.branchId);
-  }
-
-  @Get()
-  @UseGuards(RolesGuard, SaasFeatureGuard)
-  @RequireSaasFeatures('turf_module')
-  list(
-    @CurrentTenant() tenant: TenantContext,
-    @Query() query: ListTurfCourtsQueryDto,
-  ) {
-    return this.turfService.listByTenant(
-      tenant.tenantId,
-      query.businessLocationId,
-      query.sportType,
-    );
   }
 
   @Post()

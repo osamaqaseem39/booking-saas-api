@@ -8,7 +8,6 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -29,15 +28,6 @@ import { GamingSetupCode } from './entities/gaming-station.entity';
 @RequireSaasFeatures('gaming_module')
 export class GamingStationController {
   constructor(private readonly service: GamingStationService) {}
-
-  @Get()
-  list(
-    @CurrentTenant() tenant: TenantContext,
-    @Query('businessLocationId') businessLocationId?: string,
-    @Query('setupCode') setupCode?: string,
-  ) {
-    return this.service.list(tenant.tenantId, businessLocationId, setupCode);
-  }
 
   @Get(':id')
   one(
@@ -104,16 +94,6 @@ function setupCodeFromRequestPath(pathname: string): GamingSetupCode {
 @RequireSaasFeatures('gaming_module')
 export class TypedGamingStationController {
   constructor(private readonly service: GamingStationService) {}
-
-  @Get(TYPE_BASE_PATHS)
-  list(
-    @CurrentTenant() tenant: TenantContext,
-    @Req() req: Request,
-    @Query('businessLocationId') businessLocationId?: string,
-  ) {
-    const setupCode = setupCodeFromRequestPath(req.path);
-    return this.service.list(tenant.tenantId, businessLocationId, setupCode);
-  }
 
   @Get(TYPE_ID_PATHS)
   one(
