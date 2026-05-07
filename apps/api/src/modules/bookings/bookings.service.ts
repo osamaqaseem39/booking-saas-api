@@ -9,7 +9,14 @@ import {
 } from '@nestjs/common';
 import { IamService } from '../iam/iam.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, Brackets, DeepPartial, In, Repository } from 'typeorm';
+import {
+  Between,
+  Brackets,
+  DeepPartial,
+  In,
+  QueryFailedError,
+  Repository,
+} from 'typeorm';
 import { PadelCourt } from '../arena/padel-court/entities/padel-court.entity';
 import { TableTennisCourt } from '../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { TurfCourt } from '../arena/turf/entities/turf-court.entity';
@@ -1020,7 +1027,24 @@ export class BookingsService {
     );
     const booking = this.bookingRepo.create(bookingPayload);
 
-    const saved = await this.bookingRepo.save(booking);
+    let saved: Booking;
+    try {
+      saved = await this.bookingRepo.save(booking);
+    } catch (error) {
+      if (
+        error instanceof QueryFailedError &&
+        (error as any).driverError?.code === '23505' &&
+        String((error as any).driverError?.constraint || '').includes(
+          'uq_booking_items_court_start_datetime_active',
+        )
+      ) {
+        throw new ConflictException({
+          reason:
+            'Selected slot overlaps with an active booking. Please choose another time.',
+        });
+      }
+      throw error;
+    }
 
     const full = await this.bookingRepo.findOneOrFail({
       where: { id: saved.id },
@@ -3028,6 +3052,7 @@ export class BookingsService {
         item.endDatetime = now;
         item.endTime = now.toISOString().slice(11, 16);
         item.date = now.toISOString().slice(0, 10);
+        item.itemStatus = 'cancelled';
       }
 
       if (extraSubTotal > 0) {
