@@ -202,6 +202,25 @@ export class BookingsService {
   ) {}
 
   private readonly logger = new Logger(BookingsService.name);
+
+  private computePayableAmount(
+    subTotal: number,
+    discount: number,
+    tax: number,
+  ): number {
+    return Math.max(0, Number((subTotal - discount + tax).toFixed(2)));
+  }
+
+  private assertPaidAmountWithinPayable(
+    paidAmount: number,
+    payableAmount: number,
+  ): void {
+    if (paidAmount > payableAmount) {
+      throw new BadRequestException(
+        'paidAmount cannot be greater than payable amount',
+      );
+    }
+  }
   private static readonly MAX_BOOKING_DAYS_AHEAD = 14;
   private static readonly DEFAULT_SLOT_STEP_MINUTES = 60;
 
@@ -782,6 +801,48 @@ export class BookingsService {
       });
   }
 
+  private async assertNoOtherLiveBookingOnFields(
+    tenantId: string,
+    items: Array<{
+      courtKind: CreateBookingItemDto['courtKind'];
+      courtId: string;
+      itemStatus?: BookingItemStatus;
+    }>,
+    excludeBookingId?: string,
+  ): Promise<void> {
+    const uniqueFields = new Map<string, { courtKind: string; courtId: string }>();
+    for (const item of items) {
+      if (item.itemStatus === 'cancelled') continue;
+      const key = `${item.courtKind}:${item.courtId}`;
+      if (!uniqueFields.has(key)) {
+        uniqueFields.set(key, {
+          courtKind: item.courtKind,
+          courtId: item.courtId,
+        });
+      }
+    }
+
+    for (const field of uniqueFields.values()) {
+      const qb = this.bookingRepo
+        .createQueryBuilder('b')
+        .innerJoin('b.items', 'i')
+        .where('b.tenantId = :tenantId', { tenantId })
+        .andWhere("b.bookingStatus = 'live'")
+        .andWhere("i.itemStatus <> 'cancelled'")
+        .andWhere('i.courtKind = :courtKind', { courtKind: field.courtKind })
+        .andWhere('i.courtId = :courtId', { courtId: field.courtId });
+      if (excludeBookingId) {
+        qb.andWhere('b.id <> :excludeBookingId', { excludeBookingId });
+      }
+      const liveCount = await qb.getCount();
+      if (liveCount > 0) {
+        throw new ConflictException(
+          'Field is already live. End the current live booking before starting another one.',
+        );
+      }
+    }
+  }
+
   async create(
     tenantId: string,
     dto: CreateBookingDto,
@@ -846,20 +907,31 @@ export class BookingsService {
       itemStatus: i.status ?? 'confirmed',
     }));
 
+    const pricingSubTotal = Number(dto.pricing.subTotal ?? 0);
+    const pricingDiscount = Number(dto.pricing.discount ?? 0);
+    const pricingTax = Number(dto.pricing.tax ?? 0);
+    const payableAmount = this.computePayableAmount(
+      pricingSubTotal,
+      pricingDiscount,
+      pricingTax,
+    );
+    const paidAmount = Number(dto.payment.paidAmount ?? 0);
+    this.assertPaidAmountWithinPayable(paidAmount, payableAmount);
+
     const bookingPayload: DeepPartial<Booking> = {
       tenantId,
       userId: dto.userId,
       sportType: dto.sportType,
       bookingDate: formatDateOnly(dto.bookingDate ?? expandedItems[0].date),
-      subTotal: dec(dto.pricing.subTotal),
-      discount: dec(dto.pricing.discount),
-      tax: dec(dto.pricing.tax),
-      totalAmount: dec(dto.pricing.totalAmount),
+      subTotal: dec(pricingSubTotal),
+      discount: dec(pricingDiscount),
+      tax: dec(pricingTax),
+      totalAmount: dec(payableAmount),
       paymentStatus: dto.payment.paymentStatus,
       paymentMethod: dto.payment.paymentMethod,
       transactionId: dto.payment.transactionId,
       paidAt: dto.payment.paidAt ? new Date(dto.payment.paidAt) : undefined,
-      paidAmount: dec(dto.payment.paidAmount ?? 0),
+      paidAmount: dec(paidAmount),
       bookingStatus: dto.bookingStatus ?? 'confirmed',
       notes: dto.notes,
       items: itemsPayload,
@@ -898,6 +970,15 @@ export class BookingsService {
     if (dto.bookingStatus !== undefined) {
       const requestedStatus = dto.bookingStatus;
       if (requestedStatus === 'live') {
+        await this.assertNoOtherLiveBookingOnFields(
+          tenantId,
+          booking.items.map((item) => ({
+            courtKind: item.courtKind,
+            courtId: item.courtId,
+            itemStatus: item.itemStatus,
+          })),
+          booking.id,
+        );
         this.applyLiveWindowToBooking(booking);
       } else {
         booking.bookingStatus = requestedStatus;
@@ -917,6 +998,24 @@ export class BookingsService {
     if (dto.notes !== undefined) booking.notes = dto.notes;
     if (dto.cancellationReason !== undefined)
       booking.cancellationReason = dto.cancellationReason;
+    if (dto.pricing) {
+      if (dto.pricing.subTotal !== undefined) {
+        booking.subTotal = dec(dto.pricing.subTotal);
+      }
+      if (dto.pricing.discount !== undefined) {
+        booking.discount = dec(dto.pricing.discount);
+      }
+      if (dto.pricing.tax !== undefined) {
+        booking.tax = dec(dto.pricing.tax);
+      }
+      booking.totalAmount = dec(
+        this.computePayableAmount(
+          numFromDec(booking.subTotal),
+          numFromDec(booking.discount),
+          numFromDec(booking.tax),
+        ),
+      );
+    }
     if (dto.payment?.paymentStatus !== undefined)
       booking.paymentStatus = dto.payment.paymentStatus;
     if (dto.payment?.paymentMethod !== undefined)
@@ -931,6 +1030,10 @@ export class BookingsService {
     if (dto.payment?.paidAmount !== undefined) {
       booking.paidAmount = dec(dto.payment.paidAmount);
     }
+    this.assertPaidAmountWithinPayable(
+      numFromDec(booking.paidAmount),
+      numFromDec(booking.totalAmount),
+    );
     harmonizePaymentStatusWithAmounts(booking);
     if (dto.itemStatuses?.length) {
       const byId = new Map(booking.items.map((i) => [i.id, i]));

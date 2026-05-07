@@ -52,7 +52,7 @@ export class UpdateBookingPaymentDto {
 export class UpdateBookingPricingDto {
   /**
    * Accepted for backward compatibility with older mobile payloads.
-   * PATCH /bookings currently does not update pricing totals from this object.
+   * Server recomputes payable total from subTotal, discount, and tax.
    */
   @IsOptional()
   @IsNumber()
