@@ -779,6 +779,37 @@ export class BookingsService {
     return expanded;
   }
 
+  private applyImmediateStartShift(
+    items: Array<CreateBookingItemDto & { date: string }>,
+  ): Array<CreateBookingItemDto & { date: string }> {
+    const today = getCurrentDateInKarachi();
+    const nowMinutes = getCurrentMinutesInKarachi();
+
+    return items.map((item) => {
+      if (formatDateOnly(item.date) !== today) return item;
+
+      const startMinutes = toMinutes(item.startTime, false);
+      const endMinutes = toMinutes(item.endTime, true);
+      if (nowMinutes <= startMinutes || nowMinutes >= endMinutes) {
+        return item;
+      }
+
+      const durationMinutes = diffMinutes(item.startTime, item.endTime);
+      const shiftedStart = new Date(`${item.date}T00:00:00Z`);
+      shiftedStart.setUTCMinutes(nowMinutes);
+      const shiftedEnd = new Date(
+        shiftedStart.getTime() + durationMinutes * 60 * 1000,
+      );
+
+      return {
+        ...item,
+        date: formatDateOnly(shiftedStart),
+        startTime: shiftedStart.toISOString().slice(11, 16),
+        endTime: shiftedEnd.toISOString().slice(11, 16),
+      };
+    });
+  }
+
   private assertBookingItem(item: CreateBookingItemDto): void {
     if (
       item.courtKind !== 'padel_court' &&
@@ -901,10 +932,11 @@ export class BookingsService {
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new BadRequestException(`User ${dto.userId} not found`);
 
-    const expandedItems = this.expandBookingItems(
+    let expandedItems = this.expandBookingItems(
       dto.bookingDate,
       dto.items,
     );
+    expandedItems = this.applyImmediateStartShift(expandedItems);
     for (const item of expandedItems) {
       this.assertBookingDateInAllowedWindow(item.date);
     }
