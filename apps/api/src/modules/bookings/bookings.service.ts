@@ -1508,7 +1508,7 @@ export class BookingsService {
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .andWhere('b.tenantId = :tenantId', { tenantId })
-      .andWhere("b.bookingStatus IN ('confirmed', 'pending', 'live', 'completed')")
+      .andWhere("b.bookingStatus IN ('confirmed', 'pending', 'live')")
       .andWhere("i.itemStatus <> 'cancelled'")
       .andWhere('i.courtKind = :kind', { kind: params.kind })
       .andWhere('i.courtId = :courtId', { courtId: params.courtId })
@@ -2682,7 +2682,6 @@ export class BookingsService {
       const isBookingActive =
         booking.bookingStatus === 'confirmed' ||
         booking.bookingStatus === 'live' ||
-        booking.bookingStatus === 'completed' ||
         booking.bookingStatus === 'pending';
       
       const isItemActive = item.itemStatus !== 'cancelled';
@@ -2757,7 +2756,9 @@ export class BookingsService {
     if (!items.length) return;
 
     for (const item of items) {
-      const fallbackDate = formatDateOnly(item.date);
+      const fallbackDate = formatDateOnly(
+        item.date ?? item.startDatetime ?? item.endDatetime ?? new Date(),
+      );
       const itemWindow = this.toSlotDateTimes(
         fallbackDate,
         item.startTime,
