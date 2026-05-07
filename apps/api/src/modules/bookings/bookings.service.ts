@@ -38,7 +38,6 @@ import type {
 } from './dto/location-live-facilities-view.dto';
 import {
   addDaysYmd,
-  bookingIsInPlayWindowNow,
   buildPlaySnapshot,
   type FacilityPlaySnapshot,
   ymdInTimeZone,
@@ -426,7 +425,7 @@ export class BookingsService {
     booking: Booking,
     locationTimeZone?: string,
   ): BookingViewStatus {
-    if (bookingIsInPlayWindowNow(booking, locationTimeZone)) return 'live';
+    void locationTimeZone;
     return booking.bookingStatus;
   }
 
@@ -882,10 +881,7 @@ export class BookingsService {
 
     const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, {
-      // PATCH should echo persisted status; "live" is a read-time projection only.
-      projectLiveViewStatus: false,
-    });
+    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap);
   }
 
   async update(
@@ -900,13 +896,18 @@ export class BookingsService {
     if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
 
     if (dto.bookingStatus !== undefined) {
-      booking.bookingStatus = dto.bookingStatus;
+      const requestedStatus = dto.bookingStatus;
+      if (requestedStatus === 'live') {
+        this.applyLiveWindowToBooking(booking);
+      } else {
+        booking.bookingStatus = requestedStatus;
+      }
       // Align every item in memory: subsequent save() cascades to booking_items, and
       // a raw SQL UPDATE would be overwritten by those stale in-memory item rows.
       let targetItemStatus: BookingItemStatus = 'confirmed';
-      if (dto.bookingStatus === 'cancelled' || dto.bookingStatus === 'no_show') {
+      if (requestedStatus === 'cancelled' || requestedStatus === 'no_show') {
         targetItemStatus = 'cancelled';
-      } else if (dto.bookingStatus === 'pending') {
+      } else if (requestedStatus === 'pending') {
         targetItemStatus = 'reserved';
       }
       for (const item of booking.items) {
@@ -953,7 +954,30 @@ export class BookingsService {
 
     const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap);
+    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, {
+      // PATCH should echo persisted status; "live" is a read-time projection only.
+      projectLiveViewStatus: false,
+    });
+  }
+
+  private applyLiveWindowToBooking(booking: Booking): void {
+    const startMinutes = getCurrentMinutesInKarachi();
+    const liveDate = getCurrentDateInKarachi();
+    booking.bookingStatus = 'live';
+    booking.bookingDate = liveDate;
+
+    for (const item of booking.items ?? []) {
+      if (item.itemStatus === 'cancelled') continue;
+      const durationMinutes = Math.max(1, diffMinutes(item.startTime, item.endTime));
+      const liveStart = minutesToTimeString(startMinutes);
+      const liveEnd = minutesToTimeString(startMinutes + durationMinutes);
+      item.date = liveDate;
+      item.startTime = liveStart;
+      item.endTime = liveEnd;
+      const window = this.toSlotDateTimes(liveDate, liveStart, liveEnd);
+      item.startDatetime = window.startDatetime;
+      item.endDatetime = window.endDatetime;
+    }
   }
 
   async remove(tenantId: string, bookingId: string): Promise<{ ok: true }> {
@@ -1018,7 +1042,7 @@ export class BookingsService {
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
       .andWhere('b.id <> :bookingId', { bookingId })
-      .andWhere("b.bookingStatus IN ('pending', 'confirmed', 'completed')")
+      .andWhere("b.bookingStatus IN ('pending', 'confirmed', 'live', 'completed')")
       .andWhere("i.itemStatus <> 'cancelled'")
       .andWhere('i.courtKind = :courtKind', { courtKind: baseItem.courtKind })
       .andWhere('i.courtId = :courtId', { courtId: baseItem.courtId })
@@ -1165,7 +1189,7 @@ export class BookingsService {
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
-      .andWhere("b.bookingStatus IN ('confirmed', 'pending')")
+      .andWhere("b.bookingStatus IN ('confirmed', 'pending', 'live')")
       .andWhere("i.itemStatus IN ('confirmed', 'reserved')")
       .andWhere('i.courtKind = :courtKind', { courtKind: courtKindFilter })
       .andWhere('i.startDatetime < :queryEnd', {
@@ -1303,7 +1327,7 @@ export class BookingsService {
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .andWhere('b.tenantId = :tenantId', { tenantId })
-      .andWhere("b.bookingStatus IN ('confirmed', 'pending', 'completed')")
+      .andWhere("b.bookingStatus IN ('confirmed', 'pending', 'live', 'completed')")
       .andWhere("i.itemStatus <> 'cancelled'")
       .andWhere('i.courtKind = :kind', { kind: params.kind })
       .andWhere('i.courtId = :courtId', { courtId: params.courtId })
@@ -2476,6 +2500,7 @@ export class BookingsService {
       // AND the item itself is not cancelled.
       const isBookingActive =
         booking.bookingStatus === 'confirmed' ||
+        booking.bookingStatus === 'live' ||
         booking.bookingStatus === 'completed' ||
         booking.bookingStatus === 'pending';
       
@@ -2548,7 +2573,7 @@ export class BookingsService {
     const pastBookings = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
-      .where("b.bookingStatus = 'confirmed'")
+      .where("b.bookingStatus IN ('confirmed', 'live')")
       .groupBy('b.id')
       .having('MAX(i.endDatetime) < :now', { now: now.toISOString() })
       .select('b.id', 'id')
@@ -2558,6 +2583,6 @@ export class BookingsService {
 
     const ids = pastBookings.map((b) => b.id);
     await this.bookingRepo.update({ id: In(ids) }, { bookingStatus: 'completed' });
-    this.logger.log(`Marked ${ids.length} confirmed bookings as completed.`);
+    this.logger.log(`Marked ${ids.length} active bookings as completed.`);
   }
 }

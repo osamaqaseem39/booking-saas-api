@@ -84,9 +84,8 @@ export class UpdateBookingDto {
     if (typeof value !== 'string') return value;
     const v = value.toLowerCase();
     if (v === 'cancel') return 'cancelled';
-    // View-only status from list/detail; store as confirmed for PATCH.
-    if (v === 'live') return 'confirmed';
-    return value;
+    if (v === 'live') return 'live';
+    return v;
   })
   @IsOptional()
   @IsIn([...BOOKING_STATUSES])
