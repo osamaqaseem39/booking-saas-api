@@ -228,6 +228,7 @@ export class BookingsService {
   }
   private static readonly MAX_BOOKING_DAYS_AHEAD = 14;
   private static readonly DEFAULT_SLOT_STEP_MINUTES = 60;
+  private static readonly SLOT_OVERLAP_GRACE_MINUTES = 15;
 
   private assertBookingDateInAllowedWindow(bookingDate: string): void {
     const requested = formatDateOnly(bookingDate);
@@ -672,6 +673,33 @@ export class BookingsService {
     };
   }
 
+  private isOverlapBeyondGrace(
+    existingStart: Date,
+    existingEnd: Date,
+    requestedStart: Date,
+    requestedEnd: Date,
+  ): boolean {
+    const overlapStartMs = Math.max(
+      existingStart.getTime(),
+      requestedStart.getTime(),
+    );
+    const overlapEndMs = Math.min(existingEnd.getTime(), requestedEnd.getTime());
+    if (overlapEndMs <= overlapStartMs) return false;
+
+    const overlapMinutes = (overlapEndMs - overlapStartMs) / 60000;
+    if (overlapMinutes > BookingsService.SLOT_OVERLAP_GRACE_MINUTES) {
+      return true;
+    }
+
+    const touchesRequestedStart =
+      existingStart.getTime() < requestedStart.getTime() &&
+      existingEnd.getTime() > requestedStart.getTime();
+    const touchesRequestedEnd =
+      existingStart.getTime() < requestedEnd.getTime() &&
+      existingEnd.getTime() > requestedEnd.getTime();
+    return !(touchesRequestedStart || touchesRequestedEnd);
+  }
+
   private resolveItemBookingDates(
     bookingDate: string,
     items: CreateBookingItemDto[],
@@ -794,9 +822,19 @@ export class BookingsService {
       .andWhere('i.endDatetime > :startDatetime', {
         startDatetime: startDatetime.toISOString(),
       })
-      .getCount();
+      .select(['i.startDatetime AS startDatetime', 'i.endDatetime AS endDatetime'])
+      .getRawMany<{ startDatetime: string; endDatetime: string }>();
 
-    if (overlaps > 0)
+    const hasHardOverlap = overlaps.some((row) =>
+      this.isOverlapBeyondGrace(
+        new Date(row.startDatetime),
+        new Date(row.endDatetime),
+        startDatetime,
+        endDatetime,
+      ),
+    );
+
+    if (hasHardOverlap)
       throw new ConflictException({
         bookingDate: date,
         startTime: item.startTime,
@@ -1525,6 +1563,8 @@ export class BookingsService {
         'i.id AS id',
         'i.startTime AS startTime',
         'i.endTime AS endTime',
+        'i.startDatetime AS startDatetime',
+        'i.endDatetime AS endDatetime',
         'i.itemStatus AS itemStatus',
       ])
       .getRawMany<{
@@ -1532,6 +1572,8 @@ export class BookingsService {
         id: string;
         startTime: string;
         endTime: string;
+        startDatetime: string;
+        endDatetime: string;
         itemStatus: BookingItemStatus;
       }>();
 
@@ -1541,9 +1583,19 @@ export class BookingsService {
         if (toMinutes(fs.startTime, false) >= end || toMinutes(fs.endTime, true) <= start)
           continue;
         const hit = rows.find(
-          (r) =>
-            toMinutes(r.startTime, false) < toMinutes(fs.endTime, true) &&
-            toMinutes(r.endTime, true) > toMinutes(fs.startTime, false),
+          (r) => {
+            const slotWindow = this.toSlotDateTimes(
+              date,
+              fs.startTime,
+              fs.endTime,
+            );
+            return this.isOverlapBeyondGrace(
+              new Date(r.startDatetime),
+              new Date(r.endDatetime),
+              slotWindow.startDatetime,
+              slotWindow.endDatetime,
+            );
+          },
         );
         if (hit) {
           slots.push({
@@ -1574,9 +1626,15 @@ export class BookingsService {
         const s = minutesToTimeString(m);
         const e = minutesToTimeString(m + slotStepMinutes);
         const hit = rows.find(
-          (r) =>
-            toMinutes(r.startTime, false) < toMinutes(e, true) &&
-            toMinutes(r.endTime, true) > toMinutes(s, false),
+          (r) => {
+            const slotWindow = this.toSlotDateTimes(date, s, e);
+            return this.isOverlapBeyondGrace(
+              new Date(r.startDatetime),
+              new Date(r.endDatetime),
+              slotWindow.startDatetime,
+              slotWindow.endDatetime,
+            );
+          },
         );
         if (hit) {
           slots.push({
