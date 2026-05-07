@@ -815,6 +815,7 @@ export class BookingsService {
     }>,
     excludeBookingId?: string,
   ): Promise<void> {
+    const nowIso = new Date().toISOString();
     const uniqueFields = new Map<string, { courtKind: string; courtId: string }>();
     for (const item of items) {
       if (item.itemStatus === 'cancelled') continue;
@@ -834,6 +835,9 @@ export class BookingsService {
         .where('b.tenantId = :tenantId', { tenantId })
         .andWhere("b.bookingStatus = 'live'")
         .andWhere("i.itemStatus <> 'cancelled'")
+        // Guard against stale "live" rows: only block if currently live in time.
+        .andWhere('i.startDatetime <= :nowIso', { nowIso })
+        .andWhere('i.endDatetime > :nowIso', { nowIso })
         .andWhere('i.courtKind = :courtKind', { courtKind: field.courtKind })
         .andWhere('i.courtId = :courtId', { courtId: field.courtId });
       if (excludeBookingId) {
@@ -1671,10 +1675,6 @@ export class BookingsService {
 
     if (params.availableOnly) {
       segments = segments.filter((s: any) => s.state === 'free');
-    } else {
-      // User specifically requested to not show booked slots as part of recent iteration,
-      // ensuring booked slots are purged across the board
-      segments = segments.filter((s: any) => s.state !== 'booked');
     }
 
     return {
@@ -2954,6 +2954,10 @@ export class BookingsService {
       await this.bookingRepo.save(booking);
     }
     await this.bookingRepo.update({ id: In(ids) }, { bookingStatus: 'completed' });
+    for (const booking of liveBookings) {
+      booking.bookingStatus = 'completed';
+      await this.syncFacilitySlotsStatus(booking);
+    }
     this.logger.log(`Marked ${ids.length} active bookings as completed.`);
   }
 }
