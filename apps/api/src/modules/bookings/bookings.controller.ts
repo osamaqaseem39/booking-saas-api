@@ -50,6 +50,11 @@ function normalizeKind(kind: string): CourtKind | string {
   return kind;
 }
 
+function toMinutes(time: string): number {
+  const [h = '0', m = '0'] = time.split(':');
+  return Number(h) * 60 + Number(m);
+}
+
 @Controller('bookings')
 export class BookingsController {
   private readonly logger = new Logger(BookingsController.name);
@@ -94,6 +99,21 @@ export class BookingsController {
     const tenantId = this.getTenantUuidOrNull(tenant);
     if (tenantId) return tenantId;
     return this.bookingsService.resolveTenantIdByTimeSlotTemplate(templateId);
+  }
+
+  private sortCreateItems(dto: CreateBookingDto): void {
+    if (!dto.items?.length) return;
+    dto.items = [...dto.items].sort((a, b) => {
+      const dateA = (a.date ?? '').trim();
+      const dateB = (b.date ?? '').trim();
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      const startDiff = toMinutes(a.startTime) - toMinutes(b.startTime);
+      if (startDiff !== 0) return startDiff;
+      const endDiff = toMinutes(a.endTime) - toMinutes(b.endTime);
+      if (endDiff !== 0) return endDiff;
+      if (a.courtKind !== b.courtKind) return a.courtKind.localeCompare(b.courtKind);
+      return a.courtId.localeCompare(b.courtId);
+    });
   }
 
   @Get()
@@ -433,6 +453,7 @@ export class BookingsController {
     @Body() dto: CreateBookingDto,
   ) {
     try {
+      this.sortCreateItems(dto);
       const tenantIdFromHeader = this.getTenantUuidOrNull(tenant);
       const firstItem = dto.items?.[0];
       const resolvedFromCourt = firstItem

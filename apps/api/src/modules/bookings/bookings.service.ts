@@ -64,10 +64,15 @@ function harmonizePaymentStatusWithAmounts(b: {
   paidAmount: string;
   paymentStatus: PaymentStatus;
 }): void {
-  if (numFromDec(b.paidAmount) === numFromDec(b.totalAmount)) {
-    if (b.paymentStatus !== 'refunded' && b.paymentStatus !== 'failed') {
-      b.paymentStatus = 'paid';
-    }
+  if (b.paymentStatus === 'refunded' || b.paymentStatus === 'failed') return;
+  const total = numFromDec(b.totalAmount);
+  const paid = numFromDec(b.paidAmount);
+  if (paid <= 0) {
+    b.paymentStatus = 'pending';
+  } else if (paid < total) {
+    b.paymentStatus = 'partially_paid';
+  } else if (paid === total) {
+    b.paymentStatus = 'paid';
   }
 }
 
@@ -1068,18 +1073,49 @@ export class BookingsService {
     const liveDate = getCurrentDateInKarachi();
     booking.bookingStatus = 'live';
     booking.bookingDate = liveDate;
+    const activeItems = (booking.items ?? []).filter(
+      (item) => item.itemStatus !== 'cancelled',
+    );
+    if (!activeItems.length) return;
 
-    for (const item of booking.items ?? []) {
-      if (item.itemStatus === 'cancelled') continue;
-      const durationMinutes = Math.max(1, diffMinutes(item.startTime, item.endTime));
-      const liveStart = minutesToTimeString(startMinutes);
-      const liveEnd = minutesToTimeString(startMinutes + durationMinutes);
-      item.date = liveDate;
-      item.startTime = liveStart;
-      item.endTime = liveEnd;
-      const window = this.toSlotDateTimes(liveDate, liveStart, liveEnd);
-      item.startDatetime = window.startDatetime;
-      item.endDatetime = window.endDatetime;
+    const normalizedItems = activeItems.map((item) => {
+      const fallbackDate = formatDateOnly(item.date ?? booking.bookingDate);
+      const originalWindow = this.toSlotDateTimes(
+        fallbackDate,
+        item.startTime,
+        item.endTime,
+      );
+      return {
+        item,
+        originalStart: item.startDatetime ?? originalWindow.startDatetime,
+        originalEnd: item.endDatetime ?? originalWindow.endDatetime,
+      };
+    });
+    const firstStartMs = Math.min(
+      ...normalizedItems.map(({ originalStart }) => originalStart.getTime()),
+    );
+    const liveBase = new Date(`${liveDate}T00:00:00Z`);
+    liveBase.setUTCMinutes(startMinutes);
+    const liveBaseMs = liveBase.getTime();
+
+    for (const row of normalizedItems) {
+      const durationMinutes = Math.max(
+        1,
+        Math.round((row.originalEnd.getTime() - row.originalStart.getTime()) / 60000),
+      );
+      const offsetMinutes = Math.max(
+        0,
+        Math.round((row.originalStart.getTime() - firstStartMs) / 60000),
+      );
+      const liveStartDate = new Date(liveBaseMs + offsetMinutes * 60 * 1000);
+      const liveEndDate = new Date(
+        liveStartDate.getTime() + durationMinutes * 60 * 1000,
+      );
+      row.item.date = formatDateOnly(liveStartDate);
+      row.item.startTime = liveStartDate.toISOString().slice(11, 16);
+      row.item.endTime = liveEndDate.toISOString().slice(11, 16);
+      row.item.startDatetime = liveStartDate;
+      row.item.endDatetime = liveEndDate;
     }
   }
 
@@ -2671,20 +2707,96 @@ export class BookingsService {
 
   async completePastBookings() {
     const now = new Date();
-    
-    // Find confirmed bookings where all items have ended
-    const pastBookings = await this.bookingRepo
+
+    // Auto-cancel bookings that never started (still pending/confirmed) after end time.
+    const noShowBookings = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
-      .where("b.bookingStatus IN ('confirmed', 'live')")
+      .where("b.bookingStatus IN ('pending', 'confirmed')")
       .groupBy('b.id')
       .having('MAX(i.endDatetime) < :now', { now: now.toISOString() })
       .select('b.id', 'id')
-      .getRawMany();
+      .getRawMany<{ id: string }>();
+    if (noShowBookings.length > 0) {
+      const ids = noShowBookings.map((b) => b.id);
+      const rows = await this.bookingRepo.find({
+        where: { id: In(ids) },
+        relations: ['items'],
+      });
+      for (const booking of rows) {
+        booking.bookingStatus = 'cancelled';
+        booking.cancellationReason =
+          booking.cancellationReason ||
+          'Auto-cancelled because booking was not started before end time.';
+        for (const item of booking.items ?? []) {
+          item.itemStatus = 'cancelled';
+        }
+        await this.bookingRepo.save(booking);
+        await this.syncFacilitySlotsStatus(booking);
+      }
+      this.logger.log(
+        `Auto-cancelled ${rows.length} unstarted bookings past end time.`,
+      );
+    }
+
+    // Complete only live bookings once their play window has ended.
+    const pastBookings = await this.bookingRepo
+      .createQueryBuilder('b')
+      .innerJoin('b.items', 'i')
+      .where("b.bookingStatus = 'live'")
+      .groupBy('b.id')
+      .having('MAX(i.endDatetime) < :now', { now: now.toISOString() })
+      .select('b.id', 'id')
+      .getRawMany<{ id: string }>();
 
     if (pastBookings.length === 0) return;
 
     const ids = pastBookings.map((b) => b.id);
+    const liveBookings = await this.bookingRepo.find({
+      where: { id: In(ids), bookingStatus: 'live' },
+      relations: ['items'],
+    });
+    for (const booking of liveBookings) {
+      let extraSubTotal = 0;
+      for (const item of booking.items ?? []) {
+        if (item.itemStatus === 'cancelled') continue;
+        if (!item.startDatetime || !item.endDatetime) continue;
+        if (now <= item.endDatetime) continue;
+
+        const durationMinutes = Math.max(
+          1,
+          Math.round(
+            (item.endDatetime.getTime() - item.startDatetime.getTime()) / 60000,
+          ),
+        );
+        const perMinuteRate = numFromDec(item.price) / durationMinutes;
+        const overtimeMinutes = Math.max(
+          0,
+          Math.ceil((now.getTime() - item.endDatetime.getTime()) / 60000),
+        );
+        if (overtimeMinutes <= 0) continue;
+
+        const overtimeCharge = Number((perMinuteRate * overtimeMinutes).toFixed(2));
+        extraSubTotal += overtimeCharge;
+        item.price = dec(numFromDec(item.price) + overtimeCharge);
+        item.endDatetime = now;
+        item.endTime = now.toISOString().slice(11, 16);
+        item.date = now.toISOString().slice(0, 10);
+      }
+
+      if (extraSubTotal > 0) {
+        booking.subTotal = dec(numFromDec(booking.subTotal) + extraSubTotal);
+        booking.totalAmount = dec(
+          this.computePayableAmount(
+            numFromDec(booking.subTotal),
+            numFromDec(booking.discount),
+            numFromDec(booking.tax),
+          ),
+        );
+        harmonizePaymentStatusWithAmounts(booking);
+      }
+      await this.bookingRepo.save(booking);
+    }
     await this.bookingRepo.update({ id: In(ids) }, { bookingStatus: 'completed' });
     this.logger.log(`Marked ${ids.length} active bookings as completed.`);
   }
