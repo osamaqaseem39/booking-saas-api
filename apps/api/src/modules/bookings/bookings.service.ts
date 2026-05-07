@@ -361,6 +361,7 @@ export class BookingsService {
     locationsMap: Record<string, string> = {},
     courtToLocationMap: Record<string, string> = {},
     locationTimeZoneMap: Record<string, string> = {},
+    opts?: { projectLiveViewStatus?: boolean },
   ): BookingApiRow {
     const first = booking.items?.[0];
     const courtId = first?.courtId;
@@ -407,10 +408,13 @@ export class BookingsService {
         paidAmount: numFromDec(booking.paidAmount),
         remainingAmount: numFromDec(booking.totalAmount) - numFromDec(booking.paidAmount),
       },
-      bookingStatus: this.resolveBookingViewStatus(
-        booking,
-        locationId ? locationTimeZoneMap[locationId] : undefined,
-      ),
+      bookingStatus:
+        opts?.projectLiveViewStatus === false
+          ? booking.bookingStatus
+          : this.resolveBookingViewStatus(
+              booking,
+              locationId ? locationTimeZoneMap[locationId] : undefined,
+            ),
       notes: booking.notes,
       cancellationReason: booking.cancellationReason,
       createdAt: booking.createdAt.toISOString(),
@@ -878,7 +882,10 @@ export class BookingsService {
 
     const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap);
+    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, {
+      // PATCH should echo persisted status; "live" is a read-time projection only.
+      projectLiveViewStatus: false,
+    });
   }
 
   async update(
