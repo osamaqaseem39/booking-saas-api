@@ -1097,16 +1097,31 @@ export class BookingsService {
     const liveBase = new Date(`${liveDate}T00:00:00Z`);
     liveBase.setUTCMinutes(startMinutes);
     const liveBaseMs = liveBase.getTime();
+    const slotMinutes = Math.max(
+      1,
+      Math.min(
+        ...normalizedItems.map(({ originalStart, originalEnd }) =>
+          Math.max(
+            1,
+            Math.round((originalEnd.getTime() - originalStart.getTime()) / 60000),
+          ),
+        ),
+      ),
+    );
 
     for (const row of normalizedItems) {
-      const durationMinutes = Math.max(
+      const durationMinutesRaw = Math.max(
         1,
         Math.round((row.originalEnd.getTime() - row.originalStart.getTime()) / 60000),
       );
-      const offsetMinutes = Math.max(
+      const offsetMinutesRaw = Math.max(
         0,
         Math.round((row.originalStart.getTime() - firstStartMs) / 60000),
       );
+      const durationMinutes =
+        Math.max(1, Math.round(durationMinutesRaw / slotMinutes)) * slotMinutes;
+      const offsetMinutes =
+        Math.max(0, Math.round(offsetMinutesRaw / slotMinutes)) * slotMinutes;
       const liveStartDate = new Date(liveBaseMs + offsetMinutes * 60 * 1000);
       const liveEndDate = new Date(
         liveStartDate.getTime() + durationMinutes * 60 * 1000,
