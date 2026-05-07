@@ -975,6 +975,32 @@ export class BookingsService {
     if (dto.bookingStatus !== undefined) {
       const requestedStatus = dto.bookingStatus;
       if (requestedStatus === 'live') {
+        const previousItems = booking.items
+          .filter((item) => item.itemStatus !== 'cancelled')
+          .map((item) => {
+            const fallbackDate = formatDateOnly(item.date ?? booking.bookingDate);
+            const itemWindow = this.toSlotDateTimes(
+              fallbackDate,
+              item.startTime,
+              item.endTime,
+            );
+            return Object.assign(new BookingItem(), {
+              courtKind: item.courtKind,
+              courtId: item.courtId,
+              date: fallbackDate,
+              startTime: item.startTime,
+              endTime: item.endTime,
+              startDatetime: item.startDatetime ?? itemWindow.startDatetime,
+              endDatetime: item.endDatetime ?? itemWindow.endDatetime,
+            });
+          });
+
+        await this.setFacilitySlotsStatusForItems({
+          tenantId,
+          items: previousItems,
+          targetStatus: 'available',
+        });
+
         await this.assertNoOtherLiveBookingOnFields(
           tenantId,
           booking.items.map((item) => ({
@@ -2717,6 +2743,63 @@ export class BookingsService {
           `Updated ${totalAffected} slots to ${targetStatus} for court ${item.courtId} ` +
           `across ${startDateIso}..${endDateIso} ${item.startTime}-${item.endTime}`,
       );
+    }
+  }
+
+  private async setFacilitySlotsStatusForItems(params: {
+    tenantId: string;
+    items: BookingItem[];
+    targetStatus: CourtFacilitySlotStatus;
+  }): Promise<void> {
+    const { tenantId, items, targetStatus } = params;
+    if (!items.length) return;
+
+    for (const item of items) {
+      const fallbackDate = formatDateOnly(item.date);
+      const itemWindow = this.toSlotDateTimes(
+        fallbackDate,
+        item.startTime,
+        item.endTime,
+      );
+      const itemStart = item.startDatetime ?? itemWindow.startDatetime;
+      const itemEnd = item.endDatetime ?? itemWindow.endDatetime;
+      const startDateIso = formatDateOnly(itemStart);
+      const endDateIso = formatDateOnly(itemEnd);
+
+      for (
+        let slotDate = startDateIso;
+        slotDate <= endDateIso;
+        slotDate = addDays(slotDate, 1)
+      ) {
+        const dayStart = new Date(`${slotDate}T00:00:00Z`);
+        const nextDay = addDays(slotDate, 1);
+        const dayEnd = new Date(`${nextDay}T00:00:00Z`);
+        const windowStartDate = new Date(
+          Math.max(itemStart.getTime(), dayStart.getTime()),
+        );
+        const windowEndDate = new Date(
+          Math.min(itemEnd.getTime(), dayEnd.getTime()),
+        );
+        if (windowEndDate <= windowStartDate) continue;
+        const windowStart = windowStartDate.toISOString().slice(11, 16);
+        const windowEnd = windowEndDate.toISOString().slice(11, 16);
+        const effectiveEnd =
+          windowEnd === '00:00' && windowEndDate.getTime() === dayEnd.getTime()
+            ? '24:00'
+            : windowEnd;
+
+        await this.facilitySlotRepo
+          .createQueryBuilder()
+          .update(CourtFacilitySlot)
+          .set({ status: targetStatus })
+          .where('tenantId = :tenantId', { tenantId })
+          .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
+          .andWhere('courtId = :courtId', { courtId: item.courtId })
+          .andWhere('slotDate = :slotDate', { slotDate })
+          .andWhere('startTime < :endTime', { endTime: effectiveEnd })
+          .andWhere('endTime > :startTime', { startTime: windowStart })
+          .execute();
+      }
     }
   }
 
