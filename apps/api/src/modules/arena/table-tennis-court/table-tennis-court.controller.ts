@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Roles } from '../../iam/authz/roles.decorator';
@@ -24,6 +25,14 @@ import { TableTennisCourtService } from './table-tennis-court.service';
 @RequireSaasFeatures('table_tennis_module')
 export class TableTennisCourtController {
   constructor(private readonly service: TableTennisCourtService) {}
+
+  @Get()
+  list(
+    @CurrentTenant() tenant: TenantContext,
+    @Query('businessLocationId') businessLocationId?: string,
+  ) {
+    return this.service.list(tenant.tenantId, businessLocationId);
+  }
 
   @Get(':id')
   one(
