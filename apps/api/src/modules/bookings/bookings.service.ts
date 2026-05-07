@@ -999,6 +999,7 @@ export class BookingsService {
           tenantId,
           items: previousItems,
           targetStatus: 'available',
+          excludeBookingId: booking.id,
         });
 
         await this.assertNoOtherLiveBookingOnFields(
@@ -2750,8 +2751,9 @@ export class BookingsService {
     tenantId: string;
     items: BookingItem[];
     targetStatus: CourtFacilitySlotStatus;
+    excludeBookingId?: string;
   }): Promise<void> {
-    const { tenantId, items, targetStatus } = params;
+    const { tenantId, items, targetStatus, excludeBookingId } = params;
     if (!items.length) return;
 
     for (const item of items) {
@@ -2788,17 +2790,72 @@ export class BookingsService {
             ? '24:00'
             : windowEnd;
 
-        await this.facilitySlotRepo
-          .createQueryBuilder()
-          .update(CourtFacilitySlot)
-          .set({ status: targetStatus })
-          .where('tenantId = :tenantId', { tenantId })
-          .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
-          .andWhere('courtId = :courtId', { courtId: item.courtId })
-          .andWhere('slotDate = :slotDate', { slotDate })
-          .andWhere('startTime < :endTime', { endTime: effectiveEnd })
-          .andWhere('endTime > :startTime', { startTime: windowStart })
-          .execute();
+        if (targetStatus === 'blocked') {
+          await this.facilitySlotRepo
+            .createQueryBuilder()
+            .update(CourtFacilitySlot)
+            .set({ status: targetStatus })
+            .where('tenantId = :tenantId', { tenantId })
+            .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
+            .andWhere('courtId = :courtId', { courtId: item.courtId })
+            .andWhere('slotDate = :slotDate', { slotDate })
+            .andWhere('startTime < :endTime', { endTime: effectiveEnd })
+            .andWhere('endTime > :startTime', { startTime: windowStart })
+            .execute();
+          continue;
+        }
+
+        const candidateSlots = await this.facilitySlotRepo.find({
+          where: {
+            tenantId,
+            courtKind: item.courtKind,
+            courtId: item.courtId,
+            slotDate,
+          },
+          select: ['slotDate', 'startTime', 'endTime'],
+        });
+
+        for (const slot of candidateSlots) {
+          if (
+            toMinutes(slot.startTime, false) >= toMinutes(effectiveEnd, true) ||
+            toMinutes(slot.endTime, true) <= toMinutes(windowStart, false)
+          ) {
+            continue;
+          }
+
+          const slotStart = new Date(`${slot.slotDate}T${slot.startTime}:00Z`);
+          const slotEnd = new Date(`${slot.slotDate}T${slot.endTime}:00Z`);
+          const overlapQb = this.bookingRepo
+            .createQueryBuilder('b')
+            .innerJoin('b.items', 'i')
+            .where('b.tenantId = :tenantId', { tenantId })
+            .andWhere("b.bookingStatus IN ('pending', 'confirmed', 'live', 'completed')")
+            .andWhere("i.itemStatus <> 'cancelled'")
+            .andWhere('i.courtKind = :courtKind', { courtKind: item.courtKind })
+            .andWhere('i.courtId = :courtId', { courtId: item.courtId })
+            .andWhere('i.startDatetime < :slotEnd', {
+              slotEnd: slotEnd.toISOString(),
+            })
+            .andWhere('i.endDatetime > :slotStart', {
+              slotStart: slotStart.toISOString(),
+            });
+          if (excludeBookingId) {
+            overlapQb.andWhere('b.id <> :excludeBookingId', { excludeBookingId });
+          }
+          const overlapCount = await overlapQb.getCount();
+          if (overlapCount > 0) continue;
+
+          await this.facilitySlotRepo.update(
+            {
+              tenantId,
+              courtKind: item.courtKind,
+              courtId: item.courtId,
+              slotDate: slot.slotDate,
+              startTime: slot.startTime,
+            },
+            { status: 'available' },
+          );
+        }
       }
     }
   }
