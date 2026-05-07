@@ -786,8 +786,8 @@ export class BookingsService {
       .where('i.courtKind = :kind', { kind: item.courtKind })
       .andWhere('i.courtId = :courtId', { courtId: item.courtId })
       .andWhere("i.itemStatus <> 'cancelled'")
-      // Ignore cancelled / no_show bookings (also covers legacy rows where itemStatus was not persisted)
-      .andWhere("b.bookingStatus NOT IN ('cancelled', 'no_show')")
+      // Ignore terminal bookings that should not block new reservations.
+      .andWhere("b.bookingStatus NOT IN ('cancelled', 'no_show', 'completed')")
       .andWhere('i.startDatetime < :endDatetime', {
         endDatetime: endDatetime.toISOString(),
       })
