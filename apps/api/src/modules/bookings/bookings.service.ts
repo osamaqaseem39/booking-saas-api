@@ -386,7 +386,21 @@ export class BookingsService {
   }> {
     return this.resolveLocationMappingBatch([booking]);
   }
- 
+
+  /** Start instant for overlap / ordering; prefers persisted `startDatetime`. */
+  private itemPlayStartMs(item: BookingItem, bookingBookingDate: string): number {
+    if (item.startDatetime) return item.startDatetime.getTime();
+    const d = formatDateOnly(item.date ?? bookingBookingDate);
+    return this.toSlotDateTimes(d, item.startTime, item.endTime).startDatetime.getTime();
+  }
+
+  private sortBookingItemsForTimeline(booking: Booking): BookingItem[] {
+    const arr = [...(booking.items ?? [])];
+    const bd = formatDateOnly(booking.bookingDate);
+    arr.sort((a, b) => this.itemPlayStartMs(a, bd) - this.itemPlayStartMs(b, bd));
+    return arr;
+  }
+
   private toApi(
     booking: Booking,
     locationsMap: Record<string, string> = {},
@@ -394,7 +408,8 @@ export class BookingsService {
     locationTimeZoneMap: Record<string, string> = {},
     opts?: { projectLiveViewStatus?: boolean },
   ): BookingApiRow {
-    const first = booking.items?.[0];
+    const timelineItems = this.sortBookingItemsForTimeline(booking);
+    const first = timelineItems[0];
     const courtId = first?.courtId;
     const locationId = courtId ? courtToLocationMap[courtId] : undefined;
     const arenaId = locationId || booking.tenantId;
@@ -413,7 +428,7 @@ export class BookingsService {
         : undefined,
       sportType: booking.sportType,
       bookingDate: formatDateOnly(booking.bookingDate),
-      items: (booking.items ?? []).map((it) => ({
+      items: timelineItems.map((it) => ({
         id: it.id,
         date: it.date,
         courtKind: it.courtKind,
@@ -707,30 +722,112 @@ export class BookingsService {
     return !(touchesRequestedStart || touchesRequestedEnd);
   }
 
+  /** Same-night chronological order before expanding/splitting (aligns with web app overnight sorting). */
+  private sortInboundBookingItemsForCreate(
+    bookingDate: string | undefined,
+    items: CreateBookingItemDto[],
+  ): CreateBookingItemDto[] {
+    if (!items.length) return [...items];
+
+    const baseFallback = bookingDate ? formatDateOnly(bookingDate) : '';
+    type Row = {
+      item: CreateBookingItemDto;
+      dateKey: string;
+      rawStart: number;
+      sortKey: number;
+      idx: number;
+    };
+
+    const rows: Row[] = items.map((item, idx) => {
+      const dk =
+        formatDateOnly(item.date ?? item.bookingDate ?? baseFallback ?? '') ||
+        '__nodate__';
+      const rawStart = toMinutes(item.startTime, false);
+      return {
+        item,
+        dateKey: dk,
+        rawStart,
+        sortKey: rawStart,
+        idx,
+      };
+    });
+
+    const byDate = new Map<string, Row[]>();
+    for (const row of rows) {
+      const bucket = byDate.get(row.dateKey);
+      if (bucket) bucket.push(row);
+      else byDate.set(row.dateKey, [row]);
+    }
+
+    for (const group of byDate.values()) {
+      if (group.length < 2) continue;
+      const mins = group.map((g) => g.rawStart);
+      const minS = Math.min(...mins);
+      const maxS = Math.max(...mins);
+      if (maxS - minS <= 12 * 60) continue;
+      for (const g of group) {
+        if (g.rawStart < 6 * 60) g.sortKey = g.rawStart + 24 * 60;
+      }
+    }
+
+    rows.sort((a, b) => {
+      if (a.dateKey !== b.dateKey) return a.dateKey.localeCompare(b.dateKey);
+      if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
+      const endDiff = toMinutes(a.item.endTime, true) - toMinutes(b.item.endTime, true);
+      if (endDiff !== 0) return endDiff;
+      if (a.item.courtKind !== b.item.courtKind) {
+        return a.item.courtKind.localeCompare(b.item.courtKind);
+      }
+      return a.item.courtId.localeCompare(b.item.courtId) || a.idx - b.idx;
+    });
+
+    return rows.map((r) => r.item);
+  }
+
   private resolveItemBookingDates(
     bookingDate: string,
     items: CreateBookingItemDto[],
   ): string[] {
     const baseDate = formatDateOnly(bookingDate);
     const dayOffsetByCourt = new Map<string, number>();
-    const prevStartByCourt = new Map<string, number>();
+    const prevEffectiveByCourt = new Map<string, number>();
+
+    const startsByCourt = new Map<string, number[]>();
+    for (const item of items) {
+      const key = `${item.courtKind}:${item.courtId}`;
+      const raw = toMinutes(item.startTime, false);
+      const list = startsByCourt.get(key);
+      if (list) list.push(raw);
+      else startsByCourt.set(key, [raw]);
+    }
+
+    const toEffectiveStart = (courtKey: string, rawStart: number): number => {
+      const list = startsByCourt.get(courtKey) ?? [rawStart];
+      if (list.length < 2) return rawStart;
+      const minS = Math.min(...list);
+      const maxS = Math.max(...list);
+      if (maxS - minS > 12 * 60 && rawStart < 6 * 60) {
+        return rawStart + 24 * 60;
+      }
+      return rawStart;
+    };
 
     return items.map((item) => {
       const key = `${item.courtKind}:${item.courtId}`;
-      const currentStart = toMinutes(item.startTime, false);
-      const previousStart = prevStartByCourt.get(key);
+      const raw = toMinutes(item.startTime, false);
+      const effective = toEffectiveStart(key, raw);
+      const prevEffective = prevEffectiveByCourt.get(key);
       let offset = dayOffsetByCourt.get(key) ?? 0;
 
-      // If times wrap backwards for the same court in a single payload,
-      // treat subsequent rows as next-day selections.
-      if (previousStart !== undefined && currentStart < previousStart) {
+      // Effective timeline went backwards ⇒ next calendar day for this court.
+      if (prevEffective !== undefined && effective < prevEffective) {
         offset += 1;
         dayOffsetByCourt.set(key, offset);
       } else if (!dayOffsetByCourt.has(key)) {
         dayOffsetByCourt.set(key, offset);
       }
 
-      prevStartByCourt.set(key, currentStart);
+      prevEffectiveByCourt.set(key, effective);
       return addDays(baseDate, offset);
     });
   }
@@ -939,6 +1036,10 @@ export class BookingsService {
     const user = await this.userRepo.findOne({ where: { id: dto.userId } });
     if (!user) throw new BadRequestException(`User ${dto.userId} not found`);
 
+    if (dto.items?.length) {
+      dto.items = this.sortInboundBookingItemsForCreate(dto.bookingDate, dto.items);
+    }
+
     let expandedItems = this.expandBookingItems(
       dto.bookingDate,
       dto.items,
@@ -992,6 +1093,11 @@ export class BookingsService {
       currency: i.currency ?? 'PKR',
       itemStatus: i.status ?? 'confirmed',
     }));
+    itemsPayload.sort(
+      (a, b) =>
+        ((a.startDatetime as Date)?.getTime() ?? 0) -
+        ((b.startDatetime as Date)?.getTime() ?? 0),
+    );
 
     const pricingSubTotal = Number(dto.pricing.subTotal ?? 0);
     const pricingDiscount = Number(dto.pricing.discount ?? 0);
@@ -1073,6 +1179,9 @@ export class BookingsService {
     if (dto.bookingStatus !== undefined) {
       const requestedStatus = dto.bookingStatus;
       if (requestedStatus === 'live') {
+        if (booking.bookingStatus === 'live') {
+          throw new ConflictException('Booking is already live.');
+        }
         const previousItems = booking.items
           .filter((item) => item.itemStatus !== 'cancelled')
           .map((item) => {
