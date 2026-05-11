@@ -153,12 +153,9 @@ function collectItemWindows(
       if (it.courtId !== courtId) continue;
       if (it.courtKind !== courtKind) continue;
       if (it.itemStatus === 'cancelled') continue;
-      const { startMs, endMs } = wallRangeToMs(
-        b.bookingDate,
-        it.startTime,
-        it.endTime,
-        timeZone,
-      );
+      const ymd = itemBookingYmd(b, it);
+      if (!ymd) continue;
+      const { startMs, endMs } = wallRangeToMs(ymd, it.startTime, it.endTime, timeZone);
       out.push({ booking: b, item: it, startMs, endMs });
     }
   }
@@ -171,13 +168,47 @@ function hoursBetween(a: number, b: number): number {
 
 const SOON_MS = 60 * 60 * 1000;
 
-function toRef(b: Booking, it: BookingItem): LiveBookingRef {
+/** Min/max wall window for this booking on this court (all non-cancelled segments). */
+function sessionWindowOnCourt(
+  b: Booking,
+  courtKind: CourtKind,
+  courtId: string,
+  timeZone: string,
+): { startMs: number; endMs: number; startTime: string; endTime: string } | null {
+  const tz = resolveTimeZoneId(timeZone);
+  let minS = Number.POSITIVE_INFINITY;
+  let maxE = Number.NEGATIVE_INFINITY;
+  let startTime = '';
+  let endTime = '';
+  for (const it of b.items || []) {
+    if (it.courtId !== courtId || it.courtKind !== courtKind) continue;
+    if (it.itemStatus === 'cancelled') continue;
+    const ymd = itemBookingYmd(b, it);
+    if (!ymd) continue;
+    const { startMs, endMs } = wallRangeToMs(ymd, it.startTime, it.endTime, tz);
+    if (startMs < minS) {
+      minS = startMs;
+      startTime = it.startTime;
+    }
+    if (endMs > maxE) {
+      maxE = endMs;
+      endTime = it.endTime;
+    }
+  }
+  if (!startTime || !Number.isFinite(minS) || maxE <= minS) return null;
+  return { startMs: minS, endMs: maxE, startTime, endTime };
+}
+
+function liveRefFromSessionWindow(
+  b: Booking,
+  w: { startTime: string; endTime: string },
+): LiveBookingRef {
   const st = String(b.sportType || 'futsal').toLowerCase();
   return {
     bookingId: b.id,
     bookingDate: b.bookingDate,
-    startTime: it.startTime,
-    endTime: it.endTime,
+    startTime: w.startTime,
+    endTime: w.endTime,
     sportType: (BOOKING_SPORT_TYPES as readonly string[]).includes(st)
       ? st
       : 'futsal',
@@ -248,10 +279,11 @@ export function buildPlaySnapshot(
   let hoursBookedLast7Days = 0;
   for (const w of windows) {
     const h = hoursBetween(w.startMs, w.endMs);
-    if (w.booking.bookingDate === todayYmd) {
+    const dayKey = ymdInTimeZone(tz, new Date(w.startMs));
+    if (dayKey === todayYmd) {
       hoursBookedToday += h;
     }
-    if (weekYmds.has(w.booking.bookingDate)) {
+    if (weekYmds.has(dayKey)) {
       hoursBookedLast7Days += h;
     }
   }
@@ -260,7 +292,8 @@ export function buildPlaySnapshot(
   const future = windows
     .filter((w) => w.startMs > now)
     .sort((a, b) => a.startMs - b.startMs);
-  const next = future[0] ?? null;
+  const next =
+    future.find((w) => !ongoing || w.booking.id !== ongoing.booking.id) ?? null;
 
   let playStatus: FacilityPlayStatus = 'idle';
   if (ongoing) {
@@ -272,16 +305,22 @@ export function buildPlaySnapshot(
     }
   }
 
+  const ongoingSw = ongoing
+    ? sessionWindowOnCourt(ongoing.booking, courtKind, courtId, tz)
+    : null;
+  const nextSw = next
+    ? sessionWindowOnCourt(next.booking, courtKind, courtId, tz)
+    : null;
+
   return {
     courtKind,
     courtId,
     name,
     playStatus,
-    currentBooking: ongoing ? toRef(ongoing.booking, ongoing.item) : null,
-    currentEndsAt: ongoing
-      ? new Date(ongoing.endMs).toISOString()
-      : null,
-    nextBooking: next ? toRef(next.booking, next.item) : null,
+    currentBooking:
+      ongoing && ongoingSw ? liveRefFromSessionWindow(ongoing.booking, ongoingSw) : null,
+    currentEndsAt: ongoingSw ? new Date(ongoingSw.endMs).toISOString() : null,
+    nextBooking: next && nextSw ? liveRefFromSessionWindow(next.booking, nextSw) : null,
     nextStartsAt: next ? new Date(next.startMs).toISOString() : null,
     minutesUntilNext:
       next && next.startMs > now
