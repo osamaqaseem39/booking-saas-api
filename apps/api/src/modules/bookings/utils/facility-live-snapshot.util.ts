@@ -121,6 +121,8 @@ export type LiveBookingRef = {
   bookingDate: string;
   startTime: string;
   endTime: string;
+  /** Full booking total, not segment price. */
+  totalAmount: number;
   sportType: string;
   userDisplayName?: string;
 };
@@ -209,6 +211,7 @@ function liveRefFromSessionWindow(
     bookingDate: b.bookingDate,
     startTime: w.startTime,
     endTime: w.endTime,
+    totalAmount: Number(b.totalAmount ?? 0) || 0,
     sportType: (BOOKING_SPORT_TYPES as readonly string[]).includes(st)
       ? st
       : 'futsal',
