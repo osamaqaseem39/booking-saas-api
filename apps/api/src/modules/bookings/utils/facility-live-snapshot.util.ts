@@ -116,6 +116,13 @@ export function bookingIsInPlayWindowNow(
 
 export type FacilityPlayStatus = 'inactive' | 'live' | 'soon' | 'idle';
 
+function numFromDecLike(v: string | null | undefined): number {
+  const n = Number(v ?? 0);
+  if (!Number.isFinite(n)) return 0;
+  // DB decimals have scale=2; keep a stable 2-dec representation for clients.
+  return Math.round(n * 100) / 100;
+}
+
 export type LiveBookingRef = {
   bookingId: string;
   bookingDate: string;
@@ -123,6 +130,10 @@ export type LiveBookingRef = {
   endTime: string;
   /** Full booking total, not segment price. */
   totalAmount: number;
+  /** Booking pricing discount (PKR). */
+  discount: number;
+  /** Remaining payable amount = totalAmount - paidAmount. */
+  remainingAmount: number;
   sportType: string;
   userDisplayName?: string;
 };
@@ -206,12 +217,18 @@ function liveRefFromSessionWindow(
   w: { startTime: string; endTime: string },
 ): LiveBookingRef {
   const st = String(b.sportType || 'futsal').toLowerCase();
+  const totalAmount = numFromDecLike(b.totalAmount);
+  const discount = numFromDecLike(b.discount);
+  const paidAmount = numFromDecLike(b.paidAmount);
+  const remainingAmount = Math.max(0, Number((totalAmount - paidAmount).toFixed(2)));
   return {
     bookingId: b.id,
     bookingDate: b.bookingDate,
     startTime: w.startTime,
     endTime: w.endTime,
-    totalAmount: Number(b.totalAmount ?? 0) || 0,
+    totalAmount,
+    discount,
+    remainingAmount,
     sportType: (BOOKING_SPORT_TYPES as readonly string[]).includes(st)
       ? st
       : 'futsal',
