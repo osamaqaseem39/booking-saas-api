@@ -114,7 +114,7 @@ export function bookingIsInPlayWindowNow(
   return false;
 }
 
-export type FacilityPlayStatus = 'inactive' | 'live' | 'soon' | 'idle';
+export type FacilityPlayStatus = 'inactive' | 'live' | 'soon' | 'idle' | 'overtime';
 
 function numFromDecLike(v: string | null | undefined): number {
   const n = Number(v ?? 0);
@@ -312,15 +312,52 @@ export function buildPlaySnapshot(
   // Time-window math alone is not sufficient (bookings may still be `confirmed` until the venue flips them to `live`).
   const ongoing =
     windows.find((w) => w.startMs <= now && now < w.endMs && w.booking.bookingStatus === 'live') ?? null;
+
+  type SessionWindow = NonNullable<ReturnType<typeof sessionWindowOnCourt>>;
+
+  // If a booking is still marked `live` but its session window has already ended, treat it as `overtime`.
+  const overtime = (() => {
+    const liveBookings = Array.from(
+      new Map(
+        windows
+          .filter((w) => w.booking.bookingStatus === 'live')
+          .map((w) => [w.booking.id, w.booking] as const),
+      ).values(),
+    );
+
+    let best: { booking: Booking; sw: SessionWindow } | null = null;
+
+    for (const b of liveBookings) {
+      const sw = sessionWindowOnCourt(b, courtKind, courtId, tz);
+      if (!sw) continue;
+      if (sw.endMs > now) continue; // still within session window
+      if (!best || sw.endMs > best.sw.endMs) best = { booking: b, sw };
+    }
+
+    return best;
+  })();
+
+  // If a booking time-window has already started but it's still not marked `live`,
+  // keep it visible in `nextBooking` until the venue flips it.
+  const startedButNotLive = windows
+    .filter((w) => w.startMs <= now && now < w.endMs && w.booking.bookingStatus !== 'live')
+    .sort((a, b) => a.startMs - b.startMs);
+
   const future = windows
     .filter((w) => w.startMs > now)
     .sort((a, b) => a.startMs - b.startMs);
-  const next =
-    future.find((w) => !ongoing || w.booking.id !== ongoing.booking.id) ?? null;
+
+  const currentLiveBooking = ongoing ? ongoing.booking : overtime?.booking ?? null;
+
+  const next = currentLiveBooking
+    ? future.find((w) => w.booking.id !== currentLiveBooking.id) ?? null
+    : startedButNotLive[0] ?? future[0] ?? null;
 
   let playStatus: FacilityPlayStatus = 'idle';
   if (ongoing) {
     playStatus = 'live';
+  } else if (overtime) {
+    playStatus = 'overtime';
   } else if (next) {
     const ms = next.startMs - now;
     if (ms >= 0 && ms <= SOON_MS) {
@@ -331,6 +368,8 @@ export function buildPlaySnapshot(
   const ongoingSw = ongoing
     ? sessionWindowOnCourt(ongoing.booking, courtKind, courtId, tz)
     : null;
+  const overtimeSw = overtime?.sw ?? null;
+  const currentSw = ongoing ? ongoingSw : overtimeSw;
   const nextSw = next
     ? sessionWindowOnCourt(next.booking, courtKind, courtId, tz)
     : null;
@@ -341,8 +380,12 @@ export function buildPlaySnapshot(
     name,
     playStatus,
     currentBooking:
-      ongoing && ongoingSw ? liveRefFromSessionWindow(ongoing.booking, ongoingSw) : null,
-    currentEndsAt: ongoingSw ? new Date(ongoingSw.endMs).toISOString() : null,
+      ongoing && ongoingSw
+        ? liveRefFromSessionWindow(ongoing.booking, ongoingSw)
+        : overtime && overtimeSw
+          ? liveRefFromSessionWindow(overtime.booking, overtimeSw)
+          : null,
+    currentEndsAt: currentSw ? new Date(currentSw.endMs).toISOString() : null,
     nextBooking: next && nextSw ? liveRefFromSessionWindow(next.booking, nextSw) : null,
     nextStartsAt: next ? new Date(next.startMs).toISOString() : null,
     minutesUntilNext:
