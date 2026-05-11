@@ -308,7 +308,10 @@ export function buildPlaySnapshot(
     }
   }
 
-  const ongoing = windows.find((w) => w.startMs <= now && now < w.endMs) ?? null;
+  // Only expose a booking as `currentBooking` when it is explicitly marked `live`.
+  // Time-window math alone is not sufficient (bookings may still be `confirmed` until the venue flips them to `live`).
+  const ongoing =
+    windows.find((w) => w.startMs <= now && now < w.endMs && w.booking.bookingStatus === 'live') ?? null;
   const future = windows
     .filter((w) => w.startMs > now)
     .sort((a, b) => a.startMs - b.startMs);
