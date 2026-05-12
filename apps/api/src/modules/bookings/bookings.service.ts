@@ -3377,9 +3377,7 @@ export class BookingsService {
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        parsed.warnings.push(
-          `Gemini parse failed; using rule-based fields only (${msg.slice(0, 140)}).`,
-        );
+        parsed.warnings.push(`Gemini: ${msg} — using rule-based fields only.`);
         this.logger.warn(`Gemini booking parse failed: ${msg}`);
       }
     }

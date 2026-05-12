@@ -115,6 +115,37 @@ export function geminiBookingModelId(): string {
   return (process.env.GEMINI_BOOKING_MODEL ?? 'gemini-2.0-flash').trim() || 'gemini-2.0-flash';
 }
 
+function summarizeGeminiHttpError(status: number, errText: string): string {
+  let apiMessage = '';
+  try {
+    const j = JSON.parse(errText) as { error?: { message?: string } };
+    if (typeof j.error?.message === 'string') apiMessage = j.error.message.trim();
+  } catch {
+    apiMessage = errText.replace(/\s+/g, ' ').trim().slice(0, 160);
+  }
+
+  if (status === 429) {
+    return (
+      'Gemini quota or rate limit reached (billing/plan or free-tier cap). ' +
+      'Check Google AI Studio billing, try another GEMINI_BOOKING_MODEL, or disable GEMINI_API_KEY to use rules only.'
+    );
+  }
+  if (status === 401 || status === 403) {
+    return 'Gemini rejected the API key (invalid, revoked, or no access). Check GEMINI_API_KEY.';
+  }
+  if (status === 503 || status === 504) {
+    return 'Gemini is temporarily overloaded; try again in a minute.';
+  }
+  if (status >= 500) {
+    return `Gemini server error (${status}). Try again later.`;
+  }
+  if (apiMessage) {
+    const short = apiMessage.replace(/\s+/g, ' ').slice(0, 200);
+    return `Gemini error (${status}): ${short}`;
+  }
+  return `Gemini HTTP ${status}`;
+}
+
 /**
  * Calls Google Gemini when `GEMINI_API_KEY` is set. Returns null on failure (caller keeps heuristic only).
  */
@@ -179,7 +210,7 @@ ${message.trim()}`;
     });
     if (!res.ok) {
       const errText = await res.text().catch(() => '');
-      throw new Error(`Gemini HTTP ${res.status}${errText ? `: ${errText.slice(0, 200)}` : ''}`);
+      throw new Error(summarizeGeminiHttpError(res.status, errText));
     }
     const data = (await res.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
