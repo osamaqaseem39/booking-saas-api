@@ -14,6 +14,7 @@ type PgDriverError = {
   message?: string;
 };
 
+
 @Catch(QueryFailedError)
 export class DatabaseQueryExceptionFilter
   implements ExceptionFilter<QueryFailedError>
