@@ -1,6 +1,7 @@
 /**
  * Heuristic extraction of booking fields from unstructured text (WhatsApp, SMS, notes).
- * Tuned for Pakistan padel venues: PK phones, Rs/PKR amounts, English month/day, 12h times.
+ * Tuned for Pakistan sports venues: PK phones, Rs/PKR amounts, English month/day, 12h times;
+ * padel, futsal, cricket (turf), and table tennis cues.
  */
 
 const MONTH_WORD: Record<string, number> = {
@@ -612,13 +613,19 @@ function extractCustomerName(text: string, phone: string | null): string | null 
 
 function inferSport(text: string, courtPhrase: string | null): FreeTextBookingParseResult['inferredSport'] {
   const low = text.toLowerCase();
-  if (courtPhrase?.toLowerCase().includes('padel') || /\bpadel\b/i.test(text))
-    return 'padel';
-  if (/\bfutsal\b/i.test(low)) return 'futsal';
-  if (/\bcricket\b/i.test(low)) return 'cricket';
+  const phraseL = (courtPhrase ?? '').toLowerCase();
+  if (phraseL.includes('padel') || /\bpadel\b/i.test(text)) return 'padel';
+  if (phraseL.includes('futsal') || /\bfutsal\b/i.test(low)) return 'futsal';
+  if (phraseL.includes('cricket') || /\bcricket\b/i.test(low)) return 'cricket';
+  if (phraseL.includes('turf') || /\bturf\b/i.test(low)) {
+    if (/\bcricket\b/i.test(low) && !/\bfutsal\b/i.test(low)) return 'cricket';
+    if (/\bfutsal\b/i.test(low) && !/\bcricket\b/i.test(low)) return 'futsal';
+    return 'futsal';
+  }
   if (/\btable[\s-]?tennis\b/i.test(low)) return 'table-tennis';
   if (/\bcourt\s*\d+/i.test(text) && /\bpadel\b/i.test(low)) return 'padel';
-  if (/\bcourt\s*\d+/i.test(text)) return 'padel';
+  if (/\bcourt\s*\d+/i.test(text) && /\b(?:futsal|turf)\b/i.test(low)) return 'futsal';
+  if (/\bcourt\s*\d+/i.test(text) && /\bcricket\b/i.test(low)) return 'cricket';
   return null;
 }
 

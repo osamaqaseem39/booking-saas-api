@@ -3346,6 +3346,109 @@ export class BookingsService {
     };
   }
 
+  private async matchTurfCourtFromParsedText(params: {
+    tenantId: string;
+    rawText: string;
+    courtPhrase: string | null;
+    courtNumber: number | null;
+    businessLocationId?: string;
+    preferredSport: 'futsal' | 'cricket';
+  }): Promise<{
+    courtId: string | null;
+    courtName: string | null;
+    candidatesConsidered: number;
+    ambiguous: boolean;
+  }> {
+    const { tenantId, rawText, courtPhrase, courtNumber, businessLocationId, preferredSport } =
+      params;
+    const where: { tenantId: string; status: string; branchId?: string } = {
+      tenantId,
+      status: 'active',
+    };
+    if (businessLocationId?.trim()) {
+      where.branchId = businessLocationId.trim();
+    }
+    let courts = await this.turfRepo.find({
+      where,
+      select: ['id', 'name', 'supportedSports'],
+    });
+    const sportFiltered = courts.filter((c) => {
+      const ss = c.supportedSports ?? [];
+      if (!ss.length) return true;
+      return ss.includes(preferredSport);
+    });
+    if (sportFiltered.length) courts = sportFiltered;
+
+    if (!courts.length) {
+      return {
+        courtId: null,
+        courtName: null,
+        candidatesConsidered: 0,
+        ambiguous: false,
+      };
+    }
+    const textL = rawText.toLowerCase();
+    const phraseL = (courtPhrase ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const scored: Array<{ id: string; name: string; score: number }> = [];
+    for (const c of courts) {
+      const nl = c.name.toLowerCase();
+      let score = 0;
+      if (phraseL && nl === phraseL) score += 220;
+      if (phraseL && nl.includes(phraseL)) score += 160;
+      if (phraseL && phraseL.includes(nl)) score += 140;
+      if (phraseL) {
+        const short = phraseL
+          .replace(/^(?:padel|futsal|cricket|turf)\s+/i, '')
+          .trim();
+        if (short && nl.includes(short)) score += 100;
+      }
+      if (textL.includes(nl)) score += 40;
+      if (courtNumber != null) {
+        const n = courtNumber;
+        if (new RegExp(`(?:court|^|\\s)0*${n}(?:\\s|$|-)`, 'i').test(c.name)) {
+          score += 90;
+        }
+        if (nl.includes(`court ${n}`) || nl.endsWith(` ${n}`) || nl.endsWith(`-${n}`)) {
+          score += 85;
+        }
+      }
+      if (score > 0) scored.push({ id: c.id, name: c.name, score });
+    }
+    if (!scored.length && courtNumber != null) {
+      for (const c of courts) {
+        if (c.name.includes(String(courtNumber))) {
+          scored.push({ id: c.id, name: c.name, score: 8 });
+        }
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored[0];
+    const second = scored[1];
+    if (!top || top.score < 8) {
+      return {
+        courtId: null,
+        courtName: null,
+        candidatesConsidered: courts.length,
+        ambiguous: false,
+      };
+    }
+    const ambiguous = Boolean(second && second.score >= top.score - 4);
+    if (ambiguous) {
+      return {
+        courtId: null,
+        courtName: null,
+        candidatesConsidered: courts.length,
+        ambiguous: true,
+      };
+    }
+    return {
+      courtId: top.id,
+      courtName: top.name,
+      candidatesConsidered: courts.length,
+      ambiguous: false,
+    };
+  }
+
   async parseFreeTextBooking(input: {
     tenantId: string;
     message: string;
@@ -3421,9 +3524,32 @@ export class BookingsService {
           'Could not match a padel court name to your venues; select the court manually.',
         );
       }
+    } else if (parsed.inferredSport === 'futsal' || parsed.inferredSport === 'cricket') {
+      const match = await this.matchTurfCourtFromParsedText({
+        tenantId: input.tenantId,
+        rawText: input.message,
+        courtPhrase: parsed.courtPhrase,
+        courtNumber: parsed.courtNumber,
+        businessLocationId: input.businessLocationId,
+        preferredSport: parsed.inferredSport,
+      });
+      ambiguousCourt = match.ambiguous;
+      if (match.ambiguous) {
+        parsed.warnings.push(
+          'Multiple turf courts matched the text; choose the facility manually.',
+        );
+      } else if (match.courtId) {
+        courtId = match.courtId;
+        courtName = match.courtName;
+        courtKind = 'turf_court';
+      } else if (match.candidatesConsidered > 0) {
+        parsed.warnings.push(
+          'Could not match a turf court name to your venues for this sport; select the court manually.',
+        );
+      }
     } else if (parsed.inferredSport) {
       parsed.warnings.push(
-        'Only padel courts are auto-resolved from free text today; pick turf or table tennis manually.',
+        'Only padel and turf (futsal/cricket) courts are auto-resolved from free text today; pick table tennis manually.',
       );
     }
     return { ...parsed, courtId, courtName, courtKind, ambiguousCourt };

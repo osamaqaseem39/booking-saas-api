@@ -254,9 +254,9 @@ Rules:
 - bookingDate: YYYY-MM-DD only. Prefer explicit dates in the message.
 - startTime / endTime: 24h HH:mm. endTime may be "24:00" for end of calendar day. null if unclear.
 - amount: PKR as a number, null if not stated.
-- courtPhrase: natural phrase, e.g. "Padel Court 1".
+- courtPhrase: natural phrase, e.g. "Padel Court 1", "Futsal Court 2", "Cricket Turf A".
 - courtNumber: integer court index if clear, else null.
-- inferredSport: best guess; null if unknown.
+- inferredSport: best guess from wording — padel, futsal, cricket (turf/nets), or table-tennis; prefer futsal vs cricket when the message distinguishes them. null if unknown.
 - formattedSummary: 2–4 short sentences for staff (who, when, where, amount).
 
 USER_MESSAGE:
