@@ -153,7 +153,17 @@ export function geminiBookingModelId(): string {
   return VERSION_ALIAS[id] ?? id;
 }
 
-function summarizeGeminiHttpError(status: number, errText: string): string {
+function summarizeGeminiHttpError(
+  status: number,
+  errText: string,
+  /** Shown in messages so operators see exactly which id was requested. */
+  requestedModel?: string,
+): string {
+  const modelHint =
+    requestedModel && requestedModel.trim()
+      ? ` Requested model id: \`${requestedModel.trim()}\`.`
+      : '';
+
   let apiMessage = '';
   try {
     const j = JSON.parse(errText) as { error?: { message?: string } };
@@ -177,7 +187,8 @@ function summarizeGeminiHttpError(status: number, errText: string): string {
       return (
         'Invalid GEMINI_BOOKING_MODEL. Use the bare id from ListModels (strip `models/`), e.g. ' +
         '`gemini-2.5-flash`, `gemini-flash-latest`, or `gemini-2.0-flash-001`. ' +
-        'GET https://generativelanguage.googleapis.com/v1beta/models?key=…'
+        'GET https://generativelanguage.googleapis.com/v1beta/models?key=…' +
+        modelHint
       );
     }
   }
@@ -187,7 +198,8 @@ function summarizeGeminiHttpError(status: number, errText: string): string {
       return (
         'GEMINI_BOOKING_MODEL not found for this key (404). Set it to a name from ListModels ' +
         '(no `models/` prefix), e.g. `gemini-2.5-flash`, `gemini-2.5-flash-lite`, or `gemini-flash-latest`. ' +
-        'GET https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY'
+        'GET https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY —' +
+        modelHint
       );
     }
   }
@@ -199,9 +211,9 @@ function summarizeGeminiHttpError(status: number, errText: string): string {
   }
   if (apiMessage) {
     const short = apiMessage.replace(/\s+/g, ' ').slice(0, 200);
-    return `Gemini error (${status}): ${short}`;
+    return `Gemini error (${status}): ${short}${modelHint}`;
   }
-  return `Gemini HTTP ${status}`;
+  return `Gemini HTTP ${status}${modelHint}`;
 }
 
 /**
@@ -214,8 +226,10 @@ export async function fetchGeminiBookingExtract(
   const apiKey = process.env.GEMINI_API_KEY?.trim();
   if (!apiKey) return null;
 
-  const model = geminiBookingModelId();
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  /** When the primary id 404s (deprecated name or key restriction), try once with Google’s rolling alias. */
+  const MODEL_FALLBACK_ON_404 = 'gemini-flash-latest';
+
+  let model = geminiBookingModelId();
 
   const instruction = `You extract sports-facility booking details from messy text (WhatsApp, SMS). Venue context: Pakistan (PKR, 03XX mobiles).
 
@@ -260,26 +274,39 @@ ${message.trim()}`;
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), 22_000);
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: ac.signal,
-    });
-    if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      throw new Error(summarizeGeminiHttpError(res.status, errText));
-    }
-    const data = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-      error?: { message?: string };
-    };
-    if (data.error?.message) throw new Error(data.error.message);
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (typeof text !== 'string' || !text.trim()) throw new Error('Empty Gemini response');
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: ac.signal,
+      });
+      if (res.status === 404 && attempt === 0 && model !== MODEL_FALLBACK_ON_404) {
+        const errText = await res.text().catch(() => '');
+        const low = errText.toLowerCase();
+        if (low.includes('not found') || low.includes('is not found')) {
+          model = MODEL_FALLBACK_ON_404;
+          continue;
+        }
+        throw new Error(summarizeGeminiHttpError(res.status, errText, model));
+      }
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(summarizeGeminiHttpError(res.status, errText, model));
+      }
+      const data = (await res.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        error?: { message?: string };
+      };
+      if (data.error?.message) throw new Error(data.error.message);
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (typeof text !== 'string' || !text.trim()) throw new Error('Empty Gemini response');
 
-    const json = JSON.parse(stripJsonFence(text)) as GeminiRawExtract;
-    return parseGeminiPayload(json);
+      const json = JSON.parse(stripJsonFence(text)) as GeminiRawExtract;
+      return parseGeminiPayload(json);
+    }
+    throw new Error('Gemini: internal model loop exited unexpectedly');
   } finally {
     clearTimeout(timer);
   }
