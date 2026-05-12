@@ -93,8 +93,8 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
     }),
   );
   app.useGlobalFilters(
-    new DatabaseQueryExceptionFilter(),
     new ApiExceptionFilter(),
+    new DatabaseQueryExceptionFilter(),
   );
 }
 
