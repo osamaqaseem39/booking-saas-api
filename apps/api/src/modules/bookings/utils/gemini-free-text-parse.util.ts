@@ -112,7 +112,34 @@ export function isGeminiBookingParseConfigured(): boolean {
 }
 
 export function geminiBookingModelId(): string {
-  return (process.env.GEMINI_BOOKING_MODEL ?? 'gemini-2.0-flash').trim() || 'gemini-2.0-flash';
+  /** Widely accepted on `generativelanguage.googleapis.com` (AI Studio keys). */
+  const FALLBACK = 'gemini-1.5-flash';
+
+  const stripQuotes = (s: string): string => {
+    const t = s.trim();
+    if (t.length >= 2) {
+      const a = t[0];
+      const b = t[t.length - 1];
+      if ((a === '"' && b === '"') || (a === "'" && b === "'")) return t.slice(1, -1).trim();
+    }
+    return t;
+  };
+
+  let raw = process.env.GEMINI_BOOKING_MODEL?.trim();
+  raw = raw ? stripQuotes(raw) : '';
+  if (!raw) return FALLBACK;
+
+  raw = raw
+    .replace(/^models\//i, '')
+    .replace(/:generateContent.*$/i, '')
+    .trim();
+
+  /** Path segment only, e.g. `gemini-1.5-flash` or `gemini-2.0-flash-001` */
+  const id = raw.toLowerCase();
+  if (!/^gemini-[a-z0-9]+(?:[-._][a-z0-9]+)*$/.test(id) || id.length > 64) {
+    return FALLBACK;
+  }
+  return id;
 }
 
 function summarizeGeminiHttpError(status: number, errText: string): string {
@@ -132,6 +159,15 @@ function summarizeGeminiHttpError(status: number, errText: string): string {
   }
   if (status === 401 || status === 403) {
     return 'Gemini rejected the API key (invalid, revoked, or no access). Check GEMINI_API_KEY.';
+  }
+  if (status === 400) {
+    const low = apiMessage.toLowerCase();
+    if (low.includes('model') && (low.includes('format') || low.includes('invalid') || low.includes('not found'))) {
+      return (
+        'Invalid GEMINI_BOOKING_MODEL for this API. Use a bare model id (no `models/` prefix), e.g. ' +
+        '`gemini-1.5-flash` or `gemini-2.0-flash-001`. See https://ai.google.dev/gemini-api/docs/models'
+      );
+    }
   }
   if (status === 503 || status === 504) {
     return 'Gemini is temporarily overloaded; try again in a minute.';
