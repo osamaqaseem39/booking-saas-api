@@ -47,11 +47,19 @@ function parseMonthToken(t: string): number | null {
 }
 
 function minutesToHHmm(total: number): string {
+  if (total === 24 * 60) return '24:00';
+  if (total > 24 * 60 || total < 0) {
+    const norm = ((total % (24 * 60)) + 24 * 60) % (24 * 60);
+    const h = Math.floor(norm / 60);
+    const m = norm % 60;
+    return `${pad2(h)}:${pad2(m)}`;
+  }
   const h = Math.floor(total / 60) % 24;
   const m = total % 60;
   return `${pad2(h)}:${pad2(m)}`;
 }
 
+/** 12-hour clock: hour 1–12, minutes 0–59, AM/PM. */
 function parse12hToMinutes(
   hour: number,
   minute: number,
@@ -62,6 +70,255 @@ function parse12hToMinutes(
   let h = hour % 12;
   if (up.startsWith('P')) h += 12;
   return h * 60 + minute;
+}
+
+/** 24-hour clock 0–23, minutes 0–59. */
+function parse24hToMinutes(hour: number, minute: number): number | null {
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  return hour * 60 + minute;
+}
+
+/** Parse one side: `13:00`, `1:30pm`, `1pm`, `11:00 pm`, `0:30` (24h). */
+function parseSingleClockToken(raw: string): number | null {
+  const s = raw.trim().replace(/\s+/g, ' ');
+  const m12 = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*$/i);
+  if (m12) {
+    return parse12hToMinutes(Number(m12[1]), Number(m12[2] ?? 0), m12[3]);
+  }
+  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) {
+    return parse24hToMinutes(Number(m24[1]), Number(m24[2]));
+  }
+  const m24h = s.match(/^(\d{1,2})h(\d{2})$/i);
+  if (m24h) {
+    return parse24hToMinutes(Number(m24h[1]), Number(m24h[2]));
+  }
+  return null;
+}
+
+/** Hour only with meridian, e.g. `11` + `pm` → 23:00. */
+function parse12hHourOnly(hour: number, ap: string): number | null {
+  return parse12hToMinutes(hour, 0, ap);
+}
+
+const RANGE_SEP = String.raw`(?:\s*[-–—]\s*|\s+(?:to|until|till)\s+)`;
+
+function extractTimeRange(text: string): { start: string; end: string } | null {
+  const t = text.replace(/\u2013|\u2014/g, '-');
+
+  /** `between 2pm and 4pm` */
+  {
+    const m = t.match(
+      /\bbetween\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s+and\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i,
+    );
+    if (m) {
+      const a = parse12hToMinutes(Number(m[1]), Number(m[2] ?? 0), m[3]);
+      const b = parse12hToMinutes(Number(m[4]), Number(m[5] ?? 0), m[6]);
+      if (a != null && b != null) {
+        if (b > a) return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+        return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** Two meridiems with optional minutes: `11:00 PM to 1:00 AM`, `11pm-1am`, `11 pm to 1 am` */
+  {
+    const m = t.match(
+      /(\d{1,2})(?::(\d{2}))?\s*(am|pm)\s*(?:[-–]|to|until|till)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i,
+    );
+    if (m) {
+      const a = parse12hToMinutes(Number(m[1]), Number(m[2] ?? 0), m[3]);
+      const b = parse12hToMinutes(Number(m[4]), Number(m[5] ?? 0), m[6]);
+      if (a != null && b != null) {
+        if (b > a) return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+        return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** `5:00-6:00 PM` — one meridian for both clock times */
+  {
+    const m = t.match(/(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)\b/i);
+    if (m) {
+      const ap = m[5];
+      const a = parse12hToMinutes(Number(m[1]), Number(m[2]), ap);
+      const b = parse12hToMinutes(Number(m[3]), Number(m[4]), ap);
+      if (a != null && b != null && b > a) {
+        return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** `1:30 PM - 2:45 PM` (spaces around dash) */
+  {
+    const m = t.match(
+      new RegExp(
+        `(\\d{1,2}):(\\d{2})\\s*(am|pm)\\s*${RANGE_SEP}\\s*(\\d{1,2}):(\\d{2})\\s*(am|pm)`,
+        'i',
+      ),
+    );
+    if (m) {
+      const a = parse12hToMinutes(Number(m[1]), Number(m[2]), m[3]);
+      const b = parse12hToMinutes(Number(m[4]), Number(m[5]), m[6]);
+      if (a != null && b != null && b > a) {
+        return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** `1 PM - 2 PM` hour + meridian each side */
+  {
+    const m = t.match(
+      new RegExp(
+        `(\\d{1,2})\\s*(am|pm)\\s*${RANGE_SEP}\\s*(\\d{1,2})\\s*(am|pm)`,
+        'i',
+      ),
+    );
+    if (m) {
+      const a = parse12hHourOnly(Number(m[1]), m[2]);
+      const b = parse12hHourOnly(Number(m[3]), m[4]);
+      if (a != null && b != null) {
+        if (b > a) return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+        return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** `1-2pm`, `10-12 pm`, `1 – 2 pm` — hour-only, trailing meridian; `10-12 pm` → 22:00–24:00 */
+  {
+    const m = t.match(/(\d{1,2})\s*[-–]\s*(\d{1,2})\s*(am|pm)\b/i);
+    if (m) {
+      const h1 = Number(m[1]);
+      const h2 = Number(m[2]);
+      const ap = m[3];
+      const a = parse12hHourOnly(h1, ap);
+      if (a != null) {
+        if (ap.toLowerCase() === 'pm' && h2 === 12 && h1 >= 1 && h1 < 12) {
+          return { start: minutesToHHmm(a), end: '24:00' };
+        }
+        const b = parse12hHourOnly(h2, ap);
+        if (b != null && b > a) return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** `1pm-2:30pm` first side hour-only */
+  {
+    const m = t.match(/(\d{1,2})\s*(am|pm)\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)/i);
+    if (m) {
+      const a = parse12hHourOnly(Number(m[1]), m[2]);
+      const b = parse12hToMinutes(Number(m[3]), Number(m[4]), m[5]);
+      if (a != null && b != null) {
+        if (b > a) return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+        return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** 24h `13:00-14:30`, `09:00–10:15` (no am/pm on the segment) */
+  {
+    const m = t.match(/\b([01]?\d|2[0-3]):([0-5]\d)\s*[-–]\s*([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*[ap]m)/i);
+    if (m) {
+      const a = parse24hToMinutes(Number(m[1]), Number(m[2]));
+      const b = parse24hToMinutes(Number(m[3]), Number(m[4]));
+      if (a != null && b != null) {
+        if (b > a) return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+        return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** 24h with `to`: `23:00 to 01:00` */
+  {
+    const m = t.match(/\b([01]?\d|2[0-3]):([0-5]\d)\s+to\s+([01]?\d|2[0-3]):([0-5]\d)\b(?!\s*[ap]m)/i);
+    if (m) {
+      const a = parse24hToMinutes(Number(m[1]), Number(m[2]));
+      const b = parse24hToMinutes(Number(m[3]), Number(m[4]));
+      if (a != null && b != null) {
+        if (b > a) return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+        return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** `13h30-14h45` */
+  {
+    const m = t.match(/\b([01]?\d|2[0-3])h([0-5]\d)\s*[-–]\s*([01]?\d|2[0-3])h([0-5]\d)\b/i);
+    if (m) {
+      const a = parse24hToMinutes(Number(m[1]), Number(m[2]));
+      const b = parse24hToMinutes(Number(m[3]), Number(m[4]));
+      if (a != null && b != null) {
+        if (b > a) return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+        return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+      }
+    }
+  }
+
+  /** Legacy combined patterns */
+  const patterns: RegExp[] = [
+    new RegExp(
+      `(\\d{1,2}):(\\d{2})\\s*(AM|PM)${RANGE_SEP}(\\d{1,2}):(\\d{2})\\s*(AM|PM)`,
+      'i',
+    ),
+    new RegExp(
+      `(\\d{1,2})\\s*(AM|PM)${RANGE_SEP}(\\d{1,2}):(\\d{2})\\s*(AM|PM)`,
+      'i',
+    ),
+    new RegExp(`(\\d{1,2})\\s*(AM|PM)${RANGE_SEP}(\\d{1,2})\\s*(AM|PM)`, 'i'),
+    new RegExp(`(\\d{2}):(\\d{2})${RANGE_SEP}(\\d{2}):(\\d{2})`),
+  ];
+
+  for (const re of patterns) {
+    const m = t.match(re);
+    if (!m) continue;
+    if (re.source.includes('AM')) {
+      if (m.length >= 7) {
+        const a = parse12hToMinutes(Number(m[1]), Number(m[2]), m[3]);
+        const b = parse12hToMinutes(Number(m[4]), Number(m[5]), m[6]);
+        if (a != null && b != null && b > a) {
+          return {
+            start: minutesToHHmm(a),
+            end: minutesToHHmm(b),
+          };
+        }
+      }
+      if (m.length >= 6 && !m[2].match(/\d/)) {
+        const a = parse12hToMinutes(Number(m[1]), 0, m[2]);
+        const b = parse12hToMinutes(Number(m[3]), Number(m[4]), m[5]);
+        if (a != null && b != null && b > a) {
+          return {
+            start: minutesToHHmm(a),
+            end: minutesToHHmm(b),
+          };
+        }
+      }
+    } else {
+      const h1 = Number(m[1]);
+      const min1 = Number(m[2]);
+      const h2 = Number(m[3]);
+      const min2 = Number(m[4]);
+      if (
+        h1 >= 0 &&
+        h1 <= 23 &&
+        h2 >= 0 &&
+        h2 <= 23 &&
+        min1 >= 0 &&
+        min1 <= 59 &&
+        min2 >= 0 &&
+        min2 <= 59
+      ) {
+        const a = h1 * 60 + min1;
+        const b = h2 * 60 + min2;
+        if (b > a) {
+          return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+        }
+        if (b < a) {
+          return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+        }
+      }
+    }
+  }
+  return null;
 }
 
 export type FreeTextBookingParseResult = {
@@ -77,6 +334,10 @@ export type FreeTextBookingParseResult = {
   courtNumber: number | null;
   inferredSport: 'padel' | 'futsal' | 'cricket' | 'table-tennis' | null;
   warnings: string[];
+  /** When Gemini ran successfully: short staff-readable summary. */
+  formattedSummary?: string | null;
+  /** How the structured fields were produced. */
+  parseSource?: 'heuristic' | 'merged';
 };
 
 function normalizeSpaces(s: string): string {
@@ -105,6 +366,7 @@ function extractAmount(text: string): number | null {
   const reList = [
     /(?:PKR|Rs\.?|RS\.?)\s*:?\s*([\d,]+(?:\.\d{1,2})?)/gi,
     /(?:paid|payment|fee|amount|charges?|total)\s*:?\s*(?:PKR|Rs\.?)?\s*([\d,]+(?:\.\d{1,2})?)/gi,
+    /\b([\d,]+(?:\.\d{1,2})?)\s*PKR\b/gi,
     /([\d,]+(?:\.\d{1,2})?)\s*(?:PKR|Rs\.?)\b/gi,
   ];
   const candidates: number[] = [];
@@ -183,76 +445,21 @@ function extractDate(text: string, refYmd: string): string | null {
     return tryYear(y, Number(dmy[2]), Number(dmy[1]));
   }
 
+  const dayMonthYear = text.match(
+    new RegExp(
+      `\\b(\\d{1,2})\\s+(${Object.keys(MONTH_WORD).join('|')})\\s+(20\\d{2})\\b`,
+      'i',
+    ),
+  );
+  if (dayMonthYear) {
+    const d = Number(dayMonthYear[1]);
+    const m = parseMonthToken(dayMonthYear[2]);
+    const y = Number(dayMonthYear[3]);
+    if (m) return tryYear(y, m, d);
+  }
+
   void refM;
   void refD;
-  return null;
-}
-
-const RANGE_SEP = String.raw`(?:\s*[-–—]\s*|\s+(?:to|until|till)\s+)`;
-
-function extractTimeRange(text: string): { start: string; end: string } | null {
-  const t = text.replace(/\u2013|\u2014/g, '-');
-
-  const patterns: RegExp[] = [
-    new RegExp(
-      `(\\d{1,2}):(\\d{2})\\s*(AM|PM)${RANGE_SEP}(\\d{1,2}):(\\d{2})\\s*(AM|PM)`,
-      'i',
-    ),
-    new RegExp(
-      `(\\d{1,2})\\s*(AM|PM)${RANGE_SEP}(\\d{1,2}):(\\d{2})\\s*(AM|PM)`,
-      'i',
-    ),
-    new RegExp(`(\\d{1,2})\\s*(AM|PM)${RANGE_SEP}(\\d{1,2})\\s*(AM|PM)`, 'i'),
-    new RegExp(`(\\d{2}):(\\d{2})${RANGE_SEP}(\\d{2}):(\\d{2})`),
-  ];
-
-  for (const re of patterns) {
-    const m = t.match(re);
-    if (!m) continue;
-    if (re.source.includes('AM')) {
-      if (m.length >= 7) {
-        const a = parse12hToMinutes(Number(m[1]), Number(m[2]), m[3]);
-        const b = parse12hToMinutes(Number(m[4]), Number(m[5]), m[6]);
-        if (a != null && b != null && b > a) {
-          return {
-            start: minutesToHHmm(a),
-            end: minutesToHHmm(b),
-          };
-        }
-      }
-      if (m.length >= 6 && !m[2].match(/\d/)) {
-        const a = parse12hToMinutes(Number(m[1]), 0, m[2]);
-        const b = parse12hToMinutes(Number(m[3]), Number(m[4]), m[5]);
-        if (a != null && b != null && b > a) {
-          return {
-            start: minutesToHHmm(a),
-            end: minutesToHHmm(b),
-          };
-        }
-      }
-    } else {
-      const h1 = Number(m[1]);
-      const min1 = Number(m[2]);
-      const h2 = Number(m[3]);
-      const min2 = Number(m[4]);
-      if (
-        h1 >= 0 &&
-        h1 <= 23 &&
-        h2 >= 0 &&
-        h2 <= 23 &&
-        min1 >= 0 &&
-        min1 <= 59 &&
-        min2 >= 0 &&
-        min2 <= 59
-      ) {
-        const a = h1 * 60 + min1;
-        const b = h2 * 60 + min2;
-        if (b > a) {
-          return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
-        }
-      }
-    }
-  }
   return null;
 }
 
@@ -297,6 +504,12 @@ const STOP_NAME = new Set(
     'entry',
     'note',
     'token',
+    'done',
+    'enjoy',
+    'pkr',
+    'futsal',
+    'cricket',
+    'turf',
   ].map((s) => s.toLowerCase()),
 );
 
@@ -308,8 +521,32 @@ function scoreNameCandidate(s: string): number {
     if (/^\d+$/.test(x)) return -1;
     if (STOP_NAME.has(x.toLowerCase())) score -= 5;
     if (/^[A-Z][a-z]+$/.test(x)) score += 1;
+    if (/^[A-Z]{2,}$/.test(x)) score += 1;
   }
   return score;
+}
+
+function toTitleCaseWords(s: string): string {
+  return s
+    .trim()
+    .split(/\s+/)
+    .map((w) => (w.length ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w))
+    .join(' ');
+}
+
+function looksLikeMultilineNameLine(line: string): boolean {
+  const t = line.trim();
+  if (t.length < 4 || t.length > 64) return false;
+  if (/^0?3\d{9}$/.test(t.replace(/\D/g, ''))) return false;
+  if (/\d{1,2}\s+[A-Za-z]{3,12}\s+20\d{2}/.test(t)) return false;
+  if (/\d{1,2}\s*:\s*\d{2}/.test(t)) return false;
+  if (/\bPKR\b|\bRS\.?\b|\bPADEL\b|\bCOURT\b|\bCRICKET\b|\bFUTSAL\b|\bTURF\b/i.test(t))
+    return false;
+  if (/^(BOOKING|DONE|ENJOY|CONFIRMED|RESERVED|THANK|THANKS)\b/i.test(t)) return false;
+  if (/^\d[\d,\s]*$/.test(t)) return false;
+  if (!/^[A-Za-z][A-Za-z\s'.-]{2,62}[A-Za-z]$/.test(t)) return false;
+  const words = t.split(/\s+/).filter(Boolean);
+  return words.length >= 2 && words.length <= 5;
 }
 
 function extractCustomerName(text: string, phone: string | null): string | null {
@@ -319,6 +556,23 @@ function extractCustomerName(text: string, phone: string | null): string | null 
   }
 
   const candidates: string[] = [];
+
+  const rawLines = (text ?? '').split(/\r?\n|\r|\u2028/).map((l) => l.trim());
+  for (const line of rawLines.slice(0, 12)) {
+    if (line && looksLikeMultilineNameLine(line)) {
+      candidates.push(toTitleCaseWords(line));
+      break;
+    }
+  }
+
+  /** One physical line or collapsed paste: `HASEEB KHAN 5:00-6:00 PM …` (name line fails clock check) */
+  const collapsed = normalizeSpaces(t.replace(/\r?\n|\r|\u2028/g, ' '));
+  const inlineName = collapsed.match(
+    /^([A-Za-z][A-Za-z'.-]*(?:\s+[A-Za-z][A-Za-z'.-]*){1,4})\s+(?=\d{1,2}\s*:\s*\d{2}\s*[-–]\s*\d{1,2}\s*:\s*\d{2}\s*(?:am|pm)\b)/i,
+  );
+  if (inlineName?.[1]) {
+    candidates.push(toTitleCaseWords(inlineName[1]));
+  }
 
   const pipe = t.match(
     /^\s*([^|/]{3,80}?)\s*[|/]\s*(?:\+?92|0)?3\d/i,
@@ -398,24 +652,27 @@ export function parseFreeTextBookingMessage(
       ? referenceDateYmd
       : new Date().toISOString().slice(0, 10);
 
-  const phoneDigits = extractPhone(text);
+  /** Flatten newlines so patterns can match across line breaks */
+  const flat = normalizeSpaces(text.replace(/\r?\n/g, ' '));
+
+  const phoneDigits = extractPhone(text) ?? extractPhone(flat);
   if (!phoneDigits) warnings.push('Could not find a Pakistan mobile number (03XX…).');
 
-  const amount = extractAmount(text);
+  const amount = extractAmount(flat) ?? extractAmount(text);
   if (amount == null) warnings.push('Could not find an amount (Rs / PKR).');
 
-  const bookingDate = extractDate(text, refYmd);
+  const bookingDate = extractDate(flat, refYmd) ?? extractDate(text, refYmd);
   if (!bookingDate) warnings.push('Could not parse booking date.');
 
-  const tr = extractTimeRange(text);
+  const tr = extractTimeRange(flat) ?? extractTimeRange(text);
   if (!tr) warnings.push('Could not parse start and end time.');
   const startTime = tr?.start ?? null;
   const endTime = tr?.end ?? null;
 
-  const { phrase: courtPhrase, num: courtNumber } = extractCourtPhrase(text);
+  const { phrase: courtPhrase, num: courtNumber } = extractCourtPhrase(flat);
   if (!courtPhrase) warnings.push('Could not identify court (e.g. Padel Court 1).');
 
-  const inferredSport = inferSport(text, courtPhrase);
+  const inferredSport = inferSport(flat, courtPhrase);
   if (!inferredSport) warnings.push('Could not infer sport type from text.');
 
   const customerName = extractCustomerName(text, phoneDigits);

@@ -50,6 +50,11 @@ import {
   ymdInTimeZone,
 } from './utils/facility-live-snapshot.util';
 import {
+  fetchGeminiBookingExtract,
+  isGeminiBookingParseConfigured,
+  mergeGeminiOverHeuristic,
+} from './utils/gemini-free-text-parse.util';
+import {
   parseFreeTextBookingMessage,
   type FreeTextBookingParseResult,
 } from './utils/parse-free-text-booking.util';
@@ -3355,7 +3360,43 @@ export class BookingsService {
     }
   > {
     const ref = input.referenceDateYmd?.trim() || getCurrentDateInKarachi();
-    const parsed = parseFreeTextBookingMessage(input.message, ref);
+    let parsed = parseFreeTextBookingMessage(input.message, ref);
+    if (isGeminiBookingParseConfigured()) {
+      try {
+        const gem = await fetchGeminiBookingExtract(input.message, ref);
+        if (gem) {
+          const hasGeminiValue = Object.entries(gem).some(([, v]) => {
+            if (v == null) return false;
+            if (typeof v === 'string') return v.trim().length > 0;
+            if (typeof v === 'number') return Number.isFinite(v);
+            return false;
+          });
+          if (hasGeminiValue) {
+            parsed = mergeGeminiOverHeuristic(parsed, gem);
+          }
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        parsed.warnings.push(
+          `Gemini parse failed; using rule-based fields only (${msg.slice(0, 140)}).`,
+        );
+        this.logger.warn(`Gemini booking parse failed: ${msg}`);
+      }
+    }
+    const todayKhi = getCurrentDateInKarachi();
+    if (parsed.bookingDate && formatDateOnly(parsed.bookingDate) < todayKhi) {
+      parsed.warnings.push(
+        'Booking date is before today (Asia/Karachi). Choose today or a future date before creating.',
+      );
+    }
+    if (parsed.startTime && parsed.endTime) {
+      const spanMinutes = diffMinutes(parsed.startTime, parsed.endTime);
+      if (spanMinutes < 60) {
+        parsed.warnings.push(
+          'Parsed time range is under 1 hour. Extend the window to at least 60 minutes before creating.',
+        );
+      }
+    }
     let courtId: string | null = null;
     let courtName: string | null = null;
     let courtKind: CourtKind | null = null;
