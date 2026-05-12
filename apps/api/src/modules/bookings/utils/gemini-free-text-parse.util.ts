@@ -112,8 +112,18 @@ export function isGeminiBookingParseConfigured(): boolean {
 }
 
 export function geminiBookingModelId(): string {
-  /** Widely accepted on `generativelanguage.googleapis.com` (AI Studio keys). */
-  const FALLBACK = 'gemini-1.5-flash';
+  /**
+   * Default matches common `models.list` output (AI Studio): stable Flash for text + JSON.
+   * Override with any `name` from ListModels after stripping the `models/` prefix.
+   */
+  const FALLBACK = 'gemini-2.5-flash';
+
+  /** Legacy unversioned 1.5 ids often 404 on v1beta; rewrite to a versioned id. */
+  const VERSION_ALIAS: Record<string, string> = {
+    'gemini-1.5-flash': 'gemini-1.5-flash-002',
+    'gemini-1.5-pro': 'gemini-1.5-pro-002',
+    'gemini-1.0-pro': 'gemini-1.0-pro-001',
+  };
 
   const stripQuotes = (s: string): string => {
     const t = s.trim();
@@ -134,12 +144,13 @@ export function geminiBookingModelId(): string {
     .replace(/:generateContent.*$/i, '')
     .trim();
 
-  /** Path segment only, e.g. `gemini-1.5-flash` or `gemini-2.0-flash-001` */
+  /** Bare id: `gemini-2.5-flash`, `gemini-flash-latest`, `gemma-4-31b-it`, etc. */
   const id = raw.toLowerCase();
-  if (!/^gemini-[a-z0-9]+(?:[-._][a-z0-9]+)*$/.test(id) || id.length > 64) {
+  const idRe = /^(?:gemini|gemma)-[a-z0-9]+(?:[-._][a-z0-9]+)*$/;
+  if (!idRe.test(id) || id.length > 120) {
     return FALLBACK;
   }
-  return id;
+  return VERSION_ALIAS[id] ?? id;
 }
 
 function summarizeGeminiHttpError(status: number, errText: string): string {
@@ -164,8 +175,19 @@ function summarizeGeminiHttpError(status: number, errText: string): string {
     const low = apiMessage.toLowerCase();
     if (low.includes('model') && (low.includes('format') || low.includes('invalid') || low.includes('not found'))) {
       return (
-        'Invalid GEMINI_BOOKING_MODEL for this API. Use a bare model id (no `models/` prefix), e.g. ' +
-        '`gemini-1.5-flash` or `gemini-2.0-flash-001`. See https://ai.google.dev/gemini-api/docs/models'
+        'Invalid GEMINI_BOOKING_MODEL. Use the bare id from ListModels (strip `models/`), e.g. ' +
+        '`gemini-2.5-flash`, `gemini-flash-latest`, or `gemini-2.0-flash-001`. ' +
+        'GET https://generativelanguage.googleapis.com/v1beta/models?key=…'
+      );
+    }
+  }
+  if (status === 404) {
+    const low = apiMessage.toLowerCase();
+    if (low.includes('not found') || low.includes('is not found')) {
+      return (
+        'GEMINI_BOOKING_MODEL not found for this key (404). Set it to a name from ListModels ' +
+        '(no `models/` prefix), e.g. `gemini-2.5-flash`, `gemini-2.5-flash-lite`, or `gemini-flash-latest`. ' +
+        'GET https://generativelanguage.googleapis.com/v1beta/models?key=YOUR_KEY'
       );
     }
   }
