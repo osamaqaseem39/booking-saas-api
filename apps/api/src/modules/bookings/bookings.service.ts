@@ -13,6 +13,7 @@ import {
   Between,
   Brackets,
   DeepPartial,
+  FindOptionsWhere,
   In,
   QueryFailedError,
   Repository,
@@ -3370,7 +3371,7 @@ export class BookingsService {
   }> {
     const { tenantId, rawText, courtPhrase, courtNumber, businessLocationId, preferredSport } =
       params;
-    const where: { tenantId: string; status: string; branchId?: string } = {
+    const where: FindOptionsWhere<TurfCourt> = {
       tenantId,
       status: 'active',
     };
