@@ -49,6 +49,10 @@ import {
   type FacilityPlaySnapshot,
   ymdInTimeZone,
 } from './utils/facility-live-snapshot.util';
+import {
+  parseFreeTextBookingMessage,
+  type FreeTextBookingParseResult,
+} from './utils/parse-free-text-booking.util';
 import { CourtFacilitySlot, CourtFacilitySlotStatus } from './entities/court-facility-slot.entity';
 import { BookingItem } from './entities/booking-item.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
@@ -3242,5 +3246,147 @@ export class BookingsService {
       await this.syncFacilitySlotsStatus(booking);
     }
     this.logger.log(`Marked ${ids.length} active bookings as completed.`);
+  }
+
+  private async matchPadelCourtFromParsedText(params: {
+    tenantId: string;
+    rawText: string;
+    courtPhrase: string | null;
+    courtNumber: number | null;
+    businessLocationId?: string;
+  }): Promise<{
+    courtId: string | null;
+    courtName: string | null;
+    candidatesConsidered: number;
+    ambiguous: boolean;
+  }> {
+    const { tenantId, rawText, courtPhrase, courtNumber, businessLocationId } =
+      params;
+    const where: { tenantId: string; isActive: boolean; businessLocationId?: string } =
+      { tenantId, isActive: true };
+    if (businessLocationId?.trim()) {
+      where.businessLocationId = businessLocationId.trim();
+    }
+    const courts = await this.padelRepo.find({
+      where,
+      select: ['id', 'name', 'arenaLabel'],
+    });
+    if (!courts.length) {
+      return {
+        courtId: null,
+        courtName: null,
+        candidatesConsidered: 0,
+        ambiguous: false,
+      };
+    }
+    const textL = rawText.toLowerCase();
+    const phraseL = (courtPhrase ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const scored: Array<{ id: string; name: string; score: number }> = [];
+    for (const c of courts) {
+      const nl = c.name.toLowerCase();
+      const al = (c.arenaLabel ?? '').toLowerCase();
+      let score = 0;
+      if (phraseL && nl === phraseL) score += 220;
+      if (phraseL && nl.includes(phraseL)) score += 160;
+      if (phraseL && phraseL.includes(nl)) score += 140;
+      if (phraseL) {
+        const short = phraseL.replace(/^padel\s+/i, '').trim();
+        if (short && nl.includes(short)) score += 100;
+      }
+      if (textL.includes(nl)) score += 40;
+      if (al && textL.includes(al)) score += 35;
+      if (courtNumber != null) {
+        const n = courtNumber;
+        if (new RegExp(`(?:court|^|\\s)0*${n}(?:\\s|$|-)`, 'i').test(c.name)) {
+          score += 90;
+        }
+        if (nl.includes(`court ${n}`) || nl.endsWith(` ${n}`) || nl.endsWith(`-${n}`)) {
+          score += 85;
+        }
+      }
+      if (score > 0) scored.push({ id: c.id, name: c.name, score });
+    }
+    if (!scored.length && courtNumber != null) {
+      for (const c of courts) {
+        if (c.name.includes(String(courtNumber))) {
+          scored.push({ id: c.id, name: c.name, score: 8 });
+        }
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    const top = scored[0];
+    const second = scored[1];
+    if (!top || top.score < 8) {
+      return {
+        courtId: null,
+        courtName: null,
+        candidatesConsidered: courts.length,
+        ambiguous: false,
+      };
+    }
+    const ambiguous = Boolean(second && second.score >= top.score - 4);
+    if (ambiguous) {
+      return {
+        courtId: null,
+        courtName: null,
+        candidatesConsidered: courts.length,
+        ambiguous: true,
+      };
+    }
+    return {
+      courtId: top.id,
+      courtName: top.name,
+      candidatesConsidered: courts.length,
+      ambiguous: false,
+    };
+  }
+
+  async parseFreeTextBooking(input: {
+    tenantId: string;
+    message: string;
+    referenceDateYmd?: string;
+    businessLocationId?: string;
+  }): Promise<
+    FreeTextBookingParseResult & {
+      courtId: string | null;
+      courtName: string | null;
+      courtKind: CourtKind | null;
+      ambiguousCourt: boolean;
+    }
+  > {
+    const ref = input.referenceDateYmd?.trim() || getCurrentDateInKarachi();
+    const parsed = parseFreeTextBookingMessage(input.message, ref);
+    let courtId: string | null = null;
+    let courtName: string | null = null;
+    let courtKind: CourtKind | null = null;
+    let ambiguousCourt = false;
+    if (parsed.inferredSport === 'padel') {
+      const match = await this.matchPadelCourtFromParsedText({
+        tenantId: input.tenantId,
+        rawText: input.message,
+        courtPhrase: parsed.courtPhrase,
+        courtNumber: parsed.courtNumber,
+        businessLocationId: input.businessLocationId,
+      });
+      ambiguousCourt = match.ambiguous;
+      if (match.ambiguous) {
+        parsed.warnings.push(
+          'Multiple padel courts matched the text; choose the facility manually.',
+        );
+      } else if (match.courtId) {
+        courtId = match.courtId;
+        courtName = match.courtName;
+        courtKind = 'padel_court';
+      } else if (match.candidatesConsidered > 0) {
+        parsed.warnings.push(
+          'Could not match a padel court name to your venues; select the court manually.',
+        );
+      }
+    } else if (parsed.inferredSport) {
+      parsed.warnings.push(
+        'Only padel courts are auto-resolved from free text today; pick turf or table tennis manually.',
+      );
+    }
+    return { ...parsed, courtId, courtName, courtKind, ambiguousCourt };
   }
 }

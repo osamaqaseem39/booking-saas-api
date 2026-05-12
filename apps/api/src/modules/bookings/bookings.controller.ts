@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Logger,
   Param,
   ParseUUIDPipe,
@@ -44,6 +45,7 @@ import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
 import { TimeSlotTemplatesService } from './time-slot-templates/time-slot-templates.service';
 import { logBookingsCreateFailure } from './utils/log-bookings-create-failure';
+import { ParseFreeTextBookingDto } from './dto/parse-free-text-booking.dto';
 
 function normalizeKind(kind: string): CourtKind | string {
   if (kind === 'futsal_court' || kind === 'cricket_court') return 'turf_court';
@@ -184,6 +186,32 @@ export class BookingsController {
       throw new BadRequestException('Unable to resolve tenant for template.');
     }
     return this.timeSlotTemplatesService.remove(tenantId, templateId);
+  }
+
+  @Post('parse-free-text')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @HttpCode(200)
+  async parseFreeTextBooking(
+    @Req() req: Request,
+    @CurrentTenant() tenant: TenantContext,
+    @Body() body: ParseFreeTextBookingDto,
+    @Query('businessLocationId') businessLocationId?: string,
+  ) {
+    const userId = (req as Request & { userId?: string }).userId?.trim();
+    if (!userId) throw new UnauthorizedException('Missing user');
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      throw new BadRequestException(
+        'Set an active business tenant (X-Tenant-Id) so padel courts can be resolved.',
+      );
+    }
+    return this.bookingsService.parseFreeTextBooking({
+      tenantId,
+      message: body.message,
+      referenceDateYmd: body.referenceDate,
+      businessLocationId,
+    });
   }
 
   @Get('courts/:courtKind/:courtId/slots')
