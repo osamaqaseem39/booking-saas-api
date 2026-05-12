@@ -169,6 +169,7 @@ export type BookingApiRow = {
     date?: string;
     courtKind: CourtKind;
     courtId: string;
+    courtName?: string;
     slotId?: string;
     startTime: string;
     endTime: string;
@@ -326,10 +327,12 @@ export class BookingsService {
     locationsMap: Record<string, string>;
     courtToLocationMap: Record<string, string>;
     locationTimeZoneMap: Record<string, string>;
+    courtNamesMap: Record<string, string>;
   }> {
     const locationsMap: Record<string, string> = {};
     const courtToLocationMap: Record<string, string> = {};
     const locationTimeZoneMap: Record<string, string> = {};
+    const courtNamesMap: Record<string, string> = {};
 
     const padelIds = new Set<string>();
     const turfIds = new Set<string>();
@@ -347,9 +350,10 @@ export class BookingsService {
     if (padelIds.size > 0) {
       const padels = await this.padelRepo.find({
         where: { id: In([...padelIds]) },
-        select: ['id', 'businessLocationId'],
+        select: ['id', 'businessLocationId', 'name'],
       });
       for (const p of padels) {
+        courtNamesMap[p.id] = p.name;
         if (p.businessLocationId)
           courtToLocationMap[p.id] = p.businessLocationId;
       }
@@ -358,9 +362,10 @@ export class BookingsService {
     if (turfIds.size > 0) {
       const turfs = await this.turfRepo.find({
         where: { id: In([...turfIds]) },
-        select: ['id', 'branchId'],
+        select: ['id', 'branchId', 'name'],
       });
       for (const t of turfs) {
+        courtNamesMap[t.id] = t.name;
         if (t.branchId) courtToLocationMap[t.id] = t.branchId;
       }
     }
@@ -368,9 +373,10 @@ export class BookingsService {
     if (tableTennisIds.size > 0) {
       const rows = await this.tableTennisRepo.find({
         where: { id: In([...tableTennisIds]) },
-        select: ['id', 'businessLocationId'],
+        select: ['id', 'businessLocationId', 'name'],
       });
       for (const t of rows) {
+        courtNamesMap[t.id] = t.name;
         if (t.businessLocationId) courtToLocationMap[t.id] = t.businessLocationId;
       }
     }
@@ -388,13 +394,14 @@ export class BookingsService {
       }
     }
 
-    return { locationsMap, courtToLocationMap, locationTimeZoneMap };
+    return { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap };
   }
 
   private async resolveLocationMapping(booking: Booking): Promise<{
     locationsMap: Record<string, string>;
     courtToLocationMap: Record<string, string>;
     locationTimeZoneMap: Record<string, string>;
+    courtNamesMap: Record<string, string>;
   }> {
     return this.resolveLocationMappingBatch([booking]);
   }
@@ -463,6 +470,7 @@ export class BookingsService {
     locationsMap: Record<string, string> = {},
     courtToLocationMap: Record<string, string> = {},
     locationTimeZoneMap: Record<string, string> = {},
+    courtNamesMap: Record<string, string> = {},
     opts?: { projectLiveViewStatus?: boolean },
   ): BookingApiRow {
     const timelineItems = this.sortBookingItemsForTimeline(booking);
@@ -493,6 +501,7 @@ export class BookingsService {
         date: it.date,
         courtKind: it.courtKind,
         courtId: it.courtId,
+        courtName: courtNamesMap[it.courtId],
         slotId: it.slotId,
         startTime: it.startTime,
         endTime: it.endTime,
@@ -585,11 +594,11 @@ export class BookingsService {
     qb.orderBy('b.createdAt', 'DESC');
     const rows = await qb.getMany();
 
-    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMappingBatch(rows);
 
     return rows.map((b) =>
-      this.toApi(b, locationsMap, courtToLocationMap, locationTimeZoneMap),
+      this.toApi(b, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap),
     );
   }
 
@@ -600,11 +609,11 @@ export class BookingsService {
       order: { createdAt: 'DESC' },
     });
 
-    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMappingBatch(rows);
 
     return rows.map((b) =>
-      this.toApi(b, locationsMap, courtToLocationMap, locationTimeZoneMap),
+      this.toApi(b, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap),
     );
   }
 
@@ -634,10 +643,10 @@ export class BookingsService {
       }
     }
 
-    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(row);
 
-    return this.toApi(row, locationsMap, courtToLocationMap, locationTimeZoneMap);
+    return this.toApi(row, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
   }
 
   private async assertPadelCourtExists(
@@ -1221,9 +1230,9 @@ export class BookingsService {
     // Block the slots in the facility slots table
     await this.syncFacilitySlotsStatus(full);
 
-    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap);
+    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
   }
 
   async update(
@@ -1356,9 +1365,9 @@ export class BookingsService {
 
     await this.syncFacilitySlotsStatus(full);
 
-    const { locationsMap, courtToLocationMap, locationTimeZoneMap } =
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, {
+    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap, {
       // PATCH should echo persisted status; "live" is a read-time projection only.
       projectLiveViewStatus: false,
     });
