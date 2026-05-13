@@ -177,6 +177,9 @@ export type BookingApiRow = {
     price: number;
     currency: string;
     status: BookingItemStatus;
+    /** Present when `liveOvertime` is projected for this line item. */
+    overtimeMinutes?: number;
+    overtimeCharge?: number;
   }>;
   pricing: {
     subTotal: number;
@@ -193,6 +196,15 @@ export type BookingApiRow = {
     remainingAmount: number;
   };
   bookingStatus: BookingViewStatus;
+  /**
+   * When a booking is still `live` past the scheduled item end, projected overtime charges
+   * (same formula as completion persistence) are merged into `items[].price` and `pricing`.
+   */
+  liveOvertime?: {
+    projectedAt: string;
+    totalOvertimeMinutes: number;
+    totalOvertimeCharge: number;
+  };
   notes?: string;
   cancellationReason?: string;
   createdAt: string;
@@ -466,13 +478,68 @@ export class BookingsService {
     }
   }
 
+  /**
+   * Mirrors `completePastBookings` overtime math without mutating the entity.
+   * Only applies while the booking is still marked `live`.
+   */
+  private computeLiveOvertimeProjection(
+    booking: Booking,
+    now: Date,
+  ): {
+    perItem: Record<string, { overtimeMinutes: number; overtimeCharge: number }>;
+    totalOvertimeMinutes: number;
+    totalOvertimeCharge: number;
+    projectedAt: string;
+  } | null {
+    if (booking.bookingStatus !== 'live') return null;
+
+    const bd = formatDateOnly(booking.bookingDate);
+    const perItem: Record<string, { overtimeMinutes: number; overtimeCharge: number }> = {};
+    let totalOvertimeMinutes = 0;
+    let totalOvertimeCharge = 0;
+
+    for (const item of booking.items ?? []) {
+      if (item.itemStatus === 'cancelled') continue;
+
+      const startMs = this.itemPlayStartMs(item, bd);
+      const endMs = this.itemPlayEndMs(item, bd);
+      if (now.getTime() <= endMs) continue;
+
+      const durationMinutes = Math.max(
+        1,
+        Math.round((endMs - startMs) / 60000),
+      );
+      const basePrice = numFromDec(item.price);
+      const perMinuteRate = basePrice / durationMinutes;
+      const overtimeMinutes = Math.max(
+        0,
+        Math.ceil((now.getTime() - endMs) / 60000),
+      );
+      if (overtimeMinutes <= 0) continue;
+
+      const overtimeCharge = Number((perMinuteRate * overtimeMinutes).toFixed(2));
+      perItem[item.id] = { overtimeMinutes, overtimeCharge };
+      totalOvertimeMinutes += overtimeMinutes;
+      totalOvertimeCharge += overtimeCharge;
+    }
+
+    if (totalOvertimeCharge <= 0) return null;
+
+    return {
+      perItem,
+      totalOvertimeMinutes,
+      totalOvertimeCharge: Number(totalOvertimeCharge.toFixed(2)),
+      projectedAt: now.toISOString(),
+    };
+  }
+
   private toApi(
     booking: Booking,
     locationsMap: Record<string, string> = {},
     courtToLocationMap: Record<string, string> = {},
     locationTimeZoneMap: Record<string, string> = {},
     courtNamesMap: Record<string, string> = {},
-    opts?: { projectLiveViewStatus?: boolean },
+    opts?: { projectLiveViewStatus?: boolean; projectLiveOvertimePricing?: boolean },
   ): BookingApiRow {
     const timelineItems = this.sortBookingItemsForTimeline(booking);
     const first = timelineItems[0];
@@ -480,6 +547,34 @@ export class BookingsService {
     const locationId = courtId ? courtToLocationMap[courtId] : undefined;
     const arenaId = locationId || booking.tenantId;
     const wall = this.computeBookingWindowWallTimes(booking);
+
+    const projection =
+      opts?.projectLiveOvertimePricing === true
+        ? this.computeLiveOvertimeProjection(booking, new Date())
+        : null;
+    const extraOvertime = projection?.totalOvertimeCharge ?? 0;
+    const baseSubTotal = numFromDec(booking.subTotal);
+    const discountN = numFromDec(booking.discount);
+    const taxN = numFromDec(booking.tax);
+    const baseTotal = numFromDec(booking.totalAmount);
+    const useOvertimePricing = Boolean(projection && extraOvertime > 0);
+    const projectedSubTotal = useOvertimePricing
+      ? Number((baseSubTotal + extraOvertime).toFixed(2))
+      : baseSubTotal;
+    const projectedTotal = useOvertimePricing
+      ? this.computePayableAmount(projectedSubTotal, discountN, taxN)
+      : baseTotal;
+
+    let paymentStatusOut = booking.paymentStatus;
+    if (useOvertimePricing) {
+      const ph = {
+        totalAmount: dec(projectedTotal),
+        paidAmount: booking.paidAmount,
+        paymentStatus: booking.paymentStatus,
+      };
+      harmonizePaymentStatusWithAmounts(ph);
+      paymentStatusOut = ph.paymentStatus;
+    }
 
     return {
       bookingId: booking.id,
@@ -497,32 +592,50 @@ export class BookingsService {
       bookingDate: formatDateOnly(booking.bookingDate),
       startTime: booking.startTime ?? wall?.startTime,
       endTime: booking.endTime ?? wall?.endTime,
-      items: timelineItems.map((it) => ({
-        id: it.id,
-        date: it.date,
-        courtKind: it.courtKind,
-        courtId: it.courtId,
-        courtName: courtNamesMap[it.courtId],
-        slotId: it.slotId,
-        startTime: it.startTime,
-        endTime: it.endTime,
-        price: numFromDec(it.price),
-        currency: it.currency,
-        status: it.itemStatus,
-      })),
+      items: timelineItems.map((it) => {
+        const o = projection?.perItem[it.id];
+        const basePrice = numFromDec(it.price);
+        const price = o
+          ? Number((basePrice + o.overtimeCharge).toFixed(2))
+          : basePrice;
+        return {
+          id: it.id,
+          date: it.date,
+          courtKind: it.courtKind,
+          courtId: it.courtId,
+          courtName: courtNamesMap[it.courtId],
+          slotId: it.slotId,
+          startTime: it.startTime,
+          endTime: it.endTime,
+          price,
+          currency: it.currency,
+          status: it.itemStatus,
+          ...(o
+            ? {
+                overtimeMinutes: o.overtimeMinutes,
+                overtimeCharge: o.overtimeCharge,
+              }
+            : {}),
+        };
+      }),
       pricing: {
-        subTotal: numFromDec(booking.subTotal),
-        discount: numFromDec(booking.discount),
-        tax: numFromDec(booking.tax),
-        totalAmount: numFromDec(booking.totalAmount),
+        subTotal: useOvertimePricing ? projectedSubTotal : baseSubTotal,
+        discount: discountN,
+        tax: taxN,
+        totalAmount: useOvertimePricing ? projectedTotal : baseTotal,
       },
       payment: {
-        paymentStatus: booking.paymentStatus,
+        paymentStatus: paymentStatusOut,
         paymentMethod: booking.paymentMethod,
         transactionId: booking.transactionId,
         paidAt: booking.paidAt?.toISOString(),
         paidAmount: numFromDec(booking.paidAmount),
-        remainingAmount: numFromDec(booking.totalAmount) - numFromDec(booking.paidAmount),
+        remainingAmount: useOvertimePricing
+          ? Math.max(
+              0,
+              Number((projectedTotal - numFromDec(booking.paidAmount)).toFixed(2)),
+            )
+          : numFromDec(booking.totalAmount) - numFromDec(booking.paidAmount),
       },
       bookingStatus:
         opts?.projectLiveViewStatus === false
@@ -531,6 +644,15 @@ export class BookingsService {
               booking,
               locationId ? locationTimeZoneMap[locationId] : undefined,
             ),
+      ...(useOvertimePricing && projection
+        ? {
+            liveOvertime: {
+              projectedAt: projection.projectedAt,
+              totalOvertimeMinutes: projection.totalOvertimeMinutes,
+              totalOvertimeCharge: projection.totalOvertimeCharge,
+            },
+          }
+        : {}),
       notes: booking.notes,
       cancellationReason: booking.cancellationReason,
       createdAt: booking.createdAt.toISOString(),
@@ -647,7 +769,9 @@ export class BookingsService {
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(row);
 
-    return this.toApi(row, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
+    return this.toApi(row, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap, {
+      projectLiveOvertimePricing: true,
+    });
   }
 
   private async assertPadelCourtExists(
