@@ -128,14 +128,20 @@ export type LiveBookingRef = {
   bookingDate: string;
   startTime: string;
   endTime: string;
-  /** Full booking total, not segment price. */
+  /** Full booking total including projected overtime when applicable. */
   totalAmount: number;
   /** Booking pricing discount (PKR). */
   discount: number;
+  /** Amount already paid (PKR). */
+  paidAmount: number;
   /** Remaining payable amount = totalAmount - paidAmount. */
   remainingAmount: number;
   sportType: string;
   userDisplayName?: string;
+  /** Minutes past scheduled end on this court (projected while live). */
+  overtimeMinutes?: number;
+  /** Extra charge for overtime on this court (PKR). */
+  overtimeCharge?: number;
 };
 
 function userDisplayName(u: Booking['user'] | undefined | null): string | undefined {
@@ -173,6 +179,42 @@ function collectItemWindows(
     }
   }
   return out.sort((a, b) => a.startMs - b.startMs);
+}
+
+/** Same per-line rule as booking completion / `computeLiveOvertimeProjection` for this court. */
+function computeSessionOvertime(
+  b: Booking,
+  courtKind: CourtKind,
+  courtId: string,
+  nowMs: number,
+  timeZone: string,
+): { minutes: number; charge: number } {
+  const tz = resolveTimeZoneId(timeZone);
+  let totalMinutes = 0;
+  let totalCharge = 0;
+
+  for (const it of b.items || []) {
+    if (it.courtId !== courtId || it.courtKind !== courtKind) continue;
+    if (it.itemStatus === 'cancelled') continue;
+    const ymd = itemBookingYmd(b, it);
+    if (!ymd) continue;
+    const { startMs, endMs } = wallRangeToMs(ymd, it.startTime, it.endTime, tz);
+    if (nowMs <= endMs) continue;
+
+    const duration = Math.max(1, Math.round((endMs - startMs) / 60000));
+    const price = numFromDecLike(it.price);
+    const perMin = price / duration;
+    const overtimeMins = Math.max(0, Math.ceil((nowMs - endMs) / 60000));
+    if (overtimeMins > 0) {
+      totalMinutes += overtimeMins;
+      totalCharge += perMin * overtimeMins;
+    }
+  }
+
+  return {
+    minutes: totalMinutes,
+    charge: Number(totalCharge.toFixed(2)),
+  };
 }
 
 function hoursBetween(a: number, b: number): number {
@@ -215,12 +257,18 @@ function sessionWindowOnCourt(
 function liveRefFromSessionWindow(
   b: Booking,
   w: { startTime: string; endTime: string },
+  overtime?: { minutes: number; charge: number },
 ): LiveBookingRef {
   const st = String(b.sportType || 'futsal').toLowerCase();
-  const totalAmount = numFromDecLike(b.totalAmount);
+  const baseTotal = numFromDecLike(b.totalAmount);
+  const extra = overtime?.charge ?? 0;
+  const totalAmount = Number((baseTotal + extra).toFixed(2));
   const discount = numFromDecLike(b.discount);
   const paidAmount = numFromDecLike(b.paidAmount);
-  const remainingAmount = Math.max(0, Number((totalAmount - paidAmount).toFixed(2)));
+  const remainingAmount = Math.max(
+    0,
+    Number((totalAmount - paidAmount).toFixed(2)),
+  );
   return {
     bookingId: b.id,
     bookingDate: b.bookingDate,
@@ -228,11 +276,15 @@ function liveRefFromSessionWindow(
     endTime: w.endTime,
     totalAmount,
     discount,
+    paidAmount,
     remainingAmount,
     sportType: (BOOKING_SPORT_TYPES as readonly string[]).includes(st)
       ? st
       : 'futsal',
     userDisplayName: userDisplayName(b.user),
+    ...(overtime && overtime.minutes > 0
+      ? { overtimeMinutes: overtime.minutes, overtimeCharge: overtime.charge }
+      : {}),
   };
 }
 
@@ -381,12 +433,27 @@ export function buildPlaySnapshot(
     playStatus,
     currentBooking:
       ongoing && ongoingSw
-        ? liveRefFromSessionWindow(ongoing.booking, ongoingSw)
+        ? liveRefFromSessionWindow(
+            ongoing.booking,
+            ongoingSw,
+            computeSessionOvertime(ongoing.booking, courtKind, courtId, now, tz),
+          )
         : overtime && overtimeSw
-          ? liveRefFromSessionWindow(overtime.booking, overtimeSw)
+          ? liveRefFromSessionWindow(
+              overtime.booking,
+              overtimeSw,
+              computeSessionOvertime(overtime.booking, courtKind, courtId, now, tz),
+            )
           : null,
     currentEndsAt: currentSw ? new Date(currentSw.endMs).toISOString() : null,
-    nextBooking: next && nextSw ? liveRefFromSessionWindow(next.booking, nextSw) : null,
+    nextBooking:
+      next && nextSw
+        ? liveRefFromSessionWindow(
+            next.booking,
+            nextSw,
+            computeSessionOvertime(next.booking, courtKind, courtId, now, tz),
+          )
+        : null,
     nextStartsAt: next ? new Date(next.startMs).toISOString() : null,
     minutesUntilNext:
       next && next.startMs > now

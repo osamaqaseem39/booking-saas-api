@@ -14,9 +14,6 @@ import { AuthModule } from './modules/auth/auth.module';
 import { IamModule } from './modules/iam/iam.module';
 import { PaymentsModule } from './modules/payments/payments.module';
 import { SaasSubscriptionsModule } from './modules/saas-subscriptions/saas-subscriptions.module';
-import { InventoryModule } from './modules/inventory/inventory.module';
-import { ExpensesModule } from './modules/expenses/expenses.module';
-import { CanteenModule } from './modules/canteen/canteen.module';
 
 import { TenancyModule } from './tenancy/tenancy.module';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -188,9 +185,6 @@ function sslModeFromEnv() {
     BusinessesModule,
     PaymentsModule,
     SaasSubscriptionsModule,
-    InventoryModule,
-    ExpensesModule,
-    CanteenModule,
   ],
 })
 export class AppModule {}
