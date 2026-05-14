@@ -537,6 +537,48 @@ export class BookingsService {
     };
   }
 
+  /**
+   * Writes projected live overtime into persisted item prices and booking subtotal, and advances
+   * each affected item's end to `now` so `computeLiveOvertimeProjection` does not bill the same minutes twice.
+   */
+  private materializeLiveOvertimeOnBooking(booking: Booking, now: Date): void {
+    if (booking.bookingStatus !== 'live') {
+      throw new BadRequestException(
+        'materializeLiveOvertime is only valid while the booking is live.',
+      );
+    }
+    const projection = this.computeLiveOvertimeProjection(booking, now);
+    if (!projection || projection.totalOvertimeCharge <= 0) {
+      throw new BadRequestException('There is no live overtime to add right now.');
+    }
+    let touched = false;
+    for (const item of booking.items ?? []) {
+      if (item.itemStatus === 'cancelled') continue;
+      const o = projection.perItem[item.id];
+      if (!o) continue;
+      touched = true;
+      item.price = dec(numFromDec(item.price) + o.overtimeCharge);
+      item.endDatetime = now;
+      item.endTime = now.toISOString().slice(11, 16);
+      item.date = formatDateOnly(now);
+    }
+    if (!touched) {
+      throw new BadRequestException('There is no live overtime to add right now.');
+    }
+    booking.subTotal = dec(
+      numFromDec(booking.subTotal) + projection.totalOvertimeCharge,
+    );
+    booking.totalAmount = dec(
+      this.computePayableAmount(
+        numFromDec(booking.subTotal),
+        numFromDec(booking.discount),
+        numFromDec(booking.tax),
+      ),
+    );
+    harmonizePaymentStatusWithAmounts(booking);
+    this.applyBookingWindowFields(booking);
+  }
+
   private toApi(
     booking: Booking,
     locationsMap: Record<string, string> = {},
@@ -1374,6 +1416,10 @@ export class BookingsService {
       relations: ['items', 'user'],
     });
     if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
+
+    if (dto.materializeLiveOvertime === true) {
+      this.materializeLiveOvertimeOnBooking(booking, new Date());
+    }
 
     if (dto.bookingStatus !== undefined) {
       const requestedStatus = dto.bookingStatus;

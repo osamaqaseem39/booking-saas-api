@@ -1,5 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsDateString,
   IsIn,
   IsNumber,
@@ -80,6 +81,11 @@ export class UpdateBookingItemStatusDto {
 }
 
 export class UpdateBookingDto {
+  @IsOptional()
+  @IsBoolean()
+  /** When true, persists current projected live overtime into item prices and booking totals (live bookings only). */
+  materializeLiveOvertime?: boolean;
+
   @Transform(({ value }) => {
     if (typeof value !== 'string') return value;
     const v = value.toLowerCase();
