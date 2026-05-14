@@ -1639,6 +1639,7 @@ export class BookingsService {
     });
   }
 
+  
   private applyLiveWindowToBooking(booking: Booking): void {
     const startMinutes = getCurrentMinutesInKarachi();
     const liveDate = getCurrentDateInKarachi();
