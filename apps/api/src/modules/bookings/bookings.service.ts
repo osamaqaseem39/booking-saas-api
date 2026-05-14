@@ -600,6 +600,30 @@ export class BookingsService {
     this.applyBookingWindowFields(booking);
   }
 
+  /** Stops further live overtime projection after totals are adjusted (see total-only `pricing` PATCH). */
+  private advanceLiveBookingItemEndsThroughNow(
+    booking: Booking,
+    now: Date,
+    courtToLocationMap: Record<string, string>,
+    locationTimeZoneMap: Record<string, string>,
+  ): void {
+    if (booking.bookingStatus !== 'live') return;
+    const bd = formatDateOnly(booking.bookingDate);
+    for (const item of booking.items ?? []) {
+      if (item.itemStatus === 'cancelled') continue;
+      const ymd = formatDateOnly(item.date ?? booking.bookingDate);
+      const locId = courtToLocationMap[item.courtId];
+      const rawTz = locId ? locationTimeZoneMap[locId] : undefined;
+      const endMs = rawTz?.trim()
+        ? wallRangeToMs(ymd, item.startTime, item.endTime, rawTz).endMs
+        : this.itemPlayEndMs(item, bd);
+      if (now.getTime() <= endMs) continue;
+      item.endDatetime = now;
+      item.endTime = now.toISOString().slice(11, 16);
+      item.date = formatDateOnly(now);
+    }
+  }
+
   private toApi(
     booking: Booking,
     locationsMap: Record<string, string> = {},
@@ -1516,22 +1540,56 @@ export class BookingsService {
     if (dto.cancellationReason !== undefined)
       booking.cancellationReason = dto.cancellationReason;
     if (dto.pricing) {
-      if (dto.pricing.subTotal !== undefined) {
-        booking.subTotal = dec(dto.pricing.subTotal);
+      const hasPart =
+        dto.pricing.subTotal !== undefined ||
+        dto.pricing.discount !== undefined ||
+        dto.pricing.tax !== undefined;
+      const totalOnly =
+        dto.pricing.totalAmount !== undefined && !hasPart;
+
+      if (totalOnly) {
+        const t = Number(dto.pricing.totalAmount);
+        if (!Number.isFinite(t) || t < 0) {
+          throw new BadRequestException('pricing.totalAmount must be a non-negative number.');
+        }
+        const prevTotal = numFromDec(booking.totalAmount);
+        booking.totalAmount = dec(t);
+        booking.subTotal = dec(
+          numFromDec(booking.totalAmount) +
+            numFromDec(booking.discount) -
+            numFromDec(booking.tax),
+        );
+        if (
+          booking.bookingStatus === 'live' &&
+          t > prevTotal + 0.005
+        ) {
+          const { courtToLocationMap, locationTimeZoneMap } =
+            await this.resolveLocationMapping(booking);
+          this.advanceLiveBookingItemEndsThroughNow(
+            booking,
+            new Date(),
+            courtToLocationMap,
+            locationTimeZoneMap,
+          );
+        }
+      } else {
+        if (dto.pricing.subTotal !== undefined) {
+          booking.subTotal = dec(dto.pricing.subTotal);
+        }
+        if (dto.pricing.discount !== undefined) {
+          booking.discount = dec(dto.pricing.discount);
+        }
+        if (dto.pricing.tax !== undefined) {
+          booking.tax = dec(dto.pricing.tax);
+        }
+        booking.totalAmount = dec(
+          this.computePayableAmount(
+            numFromDec(booking.subTotal),
+            numFromDec(booking.discount),
+            numFromDec(booking.tax),
+          ),
+        );
       }
-      if (dto.pricing.discount !== undefined) {
-        booking.discount = dec(dto.pricing.discount);
-      }
-      if (dto.pricing.tax !== undefined) {
-        booking.tax = dec(dto.pricing.tax);
-      }
-      booking.totalAmount = dec(
-        this.computePayableAmount(
-          numFromDec(booking.subTotal),
-          numFromDec(booking.discount),
-          numFromDec(booking.tax),
-        ),
-      );
     }
     if (dto.payment?.paymentStatus !== undefined)
       booking.paymentStatus = dto.payment.paymentStatus;
