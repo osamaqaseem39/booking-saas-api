@@ -107,6 +107,29 @@ const RANGE_SEP = String.raw`(?:\s*[-–—]\s*|\s+(?:to|until|till)\s+)`;
 function extractTimeRange(text: string): { start: string; end: string } | null {
   const t = text.replace(/\u2013|\u2014/g, '-');
 
+  /** `at 9-12 tonight`, `9-12 tonight` — hour-only, implied PM, end 12 = midnight */
+  {
+    const night = /\b(tonight|this\s+evening|tonite)\b/i.test(t);
+    if (night) {
+      const m = t.match(/\b(?:at\s+)?(\d{1,2})\s*[-–]\s*(\d{1,2})\b/i);
+      if (m) {
+        const h1 = Number(m[1]);
+        const h2 = Number(m[2]);
+        if (h1 >= 1 && h1 <= 11 && h2 === 12) {
+          const a = parse12hHourOnly(h1, 'pm');
+          if (a != null) return { start: minutesToHHmm(a), end: '24:00' };
+        }
+        if (h1 >= 6 && h1 <= 11 && h2 >= 6 && h2 <= 11 && h2 > h1) {
+          const a = parse12hHourOnly(h1, 'pm');
+          const b = parse12hHourOnly(h2, 'pm');
+          if (a != null && b != null && b > a) {
+            return { start: minutesToHHmm(a), end: minutesToHHmm(b) };
+          }
+        }
+      }
+    }
+  }
+
   /** `between 2pm and 4pm` */
   {
     const m = t.match(
@@ -439,6 +462,18 @@ function extractDate(text: string, refYmd: string): string | null {
     return tryYear(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   }
 
+  if (/\b(tonight|today)\b/i.test(text)) {
+    return refYmd;
+  }
+  if (/\btomorrow\b/i.test(text)) {
+    const dt = new Date(`${refYmd}T12:00:00Z`);
+    dt.setUTCDate(dt.getUTCDate() + 1);
+    const y = dt.getUTCFullYear();
+    const mo = dt.getUTCMonth() + 1;
+    const da = dt.getUTCDate();
+    return tryYear(y, mo, da);
+  }
+
   const dmy = text.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
   if (dmy) {
     let y = Number(dmy[3]);
@@ -581,9 +616,19 @@ function extractCustomerName(text: string, phone: string | null): string | null 
   if (pipe?.[1]) candidates.push(pipe[1].trim());
 
   const bookingFor = t.match(
-    /\b(?:for|under|by|to)\s+([A-Z][^|/\n]{2,60}?)(?:\s+(?:booked|has|on|at|from|between|,|\|))/i,
+    /\b(?:for|under|by|to)\s+([A-Za-z][^|/\n]{2,60}?)(?:\s+(?:booked|has|on|at|from|between|,|\|))/i,
   );
-  if (bookingFor?.[1]) candidates.push(bookingFor[1].trim());
+  if (bookingFor?.[1]) {
+    const bf = bookingFor[1].trim();
+    if (!/^(padel|futsal|cricket|turf|court|table\s+tennis)$/i.test(bf)) {
+      candidates.push(bf);
+    }
+  }
+
+  const leadNameBooking = collapsed.match(
+    /^([a-zA-Z][a-zA-Z'.-]*(?:\s+[a-zA-Z][a-zA-Z'.-]*){1,4})\s+booking\b/i,
+  );
+  if (leadNameBooking?.[1]) candidates.push(toTitleCaseWords(leadNameBooking[1]));
 
   const bookedLead = t.match(
     /^([A-Z][a-z]+(?:\s+[A-Z][a-z]+){0,4})\s+(?:booked|reserved|secured|confirmed|officially)/im,
@@ -629,6 +674,36 @@ function inferSport(text: string, courtPhrase: string | null): FreeTextBookingPa
   return null;
 }
 
+export function buildParseGapWarnings(
+  p: Pick<
+    FreeTextBookingParseResult,
+    | 'phoneDigits'
+    | 'bookingDate'
+    | 'startTime'
+    | 'endTime'
+    | 'courtPhrase'
+    | 'inferredSport'
+  >,
+  messageFlat: string,
+): string[] {
+  const w: string[] = [];
+  const hint = messageFlat.trim();
+  if (!p.phoneDigits) {
+    if (/\b03\d{8}\b/.test(hint) && !/\b03\d{9}\b/.test(hint)) {
+      w.push(
+        'Mobile looks like 03… but has 10 digits instead of 11 (03XXXXXXXXX); confirm the full number.',
+      );
+    } else {
+      w.push('Could not find a Pakistan mobile number (03XX…).');
+    }
+  }
+  if (!p.bookingDate) w.push('Could not parse booking date.');
+  if (!p.startTime || !p.endTime) w.push('Could not parse start and end time.');
+  if (!p.courtPhrase) w.push('Could not identify court (e.g. Padel Court 1).');
+  if (!p.inferredSport) w.push('Could not infer sport type from text.');
+  return w;
+}
+
 /**
  * @param message Raw message
  * @param referenceDateYmd Calendar day used when the message omits a year (`YYYY-MM-DD`)
@@ -637,7 +712,6 @@ export function parseFreeTextBookingMessage(
   message: string,
   referenceDateYmd: string,
 ): FreeTextBookingParseResult {
-  const warnings: string[] = [];
   const text = (message ?? '').trim();
   if (!text) {
     return {
@@ -663,26 +737,32 @@ export function parseFreeTextBookingMessage(
   const flat = normalizeSpaces(text.replace(/\r?\n/g, ' '));
 
   const phoneDigits = extractPhone(text) ?? extractPhone(flat);
-  if (!phoneDigits) warnings.push('Could not find a Pakistan mobile number (03XX…).');
 
   const amount = extractAmount(flat) ?? extractAmount(text);
-  if (amount == null) warnings.push('Could not find an amount (Rs / PKR).');
 
   const bookingDate = extractDate(flat, refYmd) ?? extractDate(text, refYmd);
-  if (!bookingDate) warnings.push('Could not parse booking date.');
 
   const tr = extractTimeRange(flat) ?? extractTimeRange(text);
-  if (!tr) warnings.push('Could not parse start and end time.');
   const startTime = tr?.start ?? null;
   const endTime = tr?.end ?? null;
 
   const { phrase: courtPhrase, num: courtNumber } = extractCourtPhrase(flat);
-  if (!courtPhrase) warnings.push('Could not identify court (e.g. Padel Court 1).');
 
   const inferredSport = inferSport(flat, courtPhrase);
-  if (!inferredSport) warnings.push('Could not infer sport type from text.');
 
   const customerName = extractCustomerName(text, phoneDigits);
+
+  const warnings = buildParseGapWarnings(
+    {
+      phoneDigits,
+      bookingDate,
+      startTime,
+      endTime,
+      courtPhrase,
+      inferredSport,
+    },
+    flat,
+  );
 
   return {
     customerName,

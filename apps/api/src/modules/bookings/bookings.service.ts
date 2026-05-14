@@ -3402,6 +3402,7 @@ export class BookingsService {
     courtName: string | null;
     candidatesConsidered: number;
     ambiguous: boolean;
+    weakDefaultResolution?: boolean;
   }> {
     const { tenantId, rawText, courtPhrase, courtNumber, businessLocationId } =
       params;
@@ -3456,7 +3457,7 @@ export class BookingsService {
         }
       }
     }
-    scored.sort((a, b) => b.score - a.score);
+    scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
     const top = scored[0];
     const second = scored[1];
     if (!top || top.score < 8) {
@@ -3468,6 +3469,15 @@ export class BookingsService {
       };
     }
     const ambiguous = Boolean(second && second.score >= top.score - 4);
+    if (ambiguous && top.score <= 45) {
+      return {
+        courtId: top.id,
+        courtName: top.name,
+        candidatesConsidered: courts.length,
+        ambiguous: false,
+        weakDefaultResolution: true,
+      };
+    }
     if (ambiguous) {
       return {
         courtId: null,
@@ -3618,7 +3628,7 @@ export class BookingsService {
             return false;
           });
           if (hasLlmValue) {
-            parsed = mergeGeminiOverHeuristic(parsed, llm);
+            parsed = mergeGeminiOverHeuristic(parsed, llm, input.message.trim());
           }
         }
       } catch (e) {
@@ -3671,6 +3681,11 @@ export class BookingsService {
         courtId = match.courtId;
         courtName = match.courtName;
         courtKind = 'padel_court';
+        if (match.weakDefaultResolution) {
+          parsed.warnings.push(
+            'Several padel venues scored equally; one was chosen by default. Verify the court before saving.',
+          );
+        }
       } else if (match.candidatesConsidered > 0) {
         parsed.warnings.push(
           'Could not match a padel court name to your venues; select the court manually.',

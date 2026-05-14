@@ -20,6 +20,8 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { RedisModule } from '../../../libs/database/src/redis/redis.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { HttpMetricsModule } from './observability/http-metrics.module';
+import { ExpensesModule } from './modules/expenses/expenses.module';
+import { InventoryModule } from './modules/inventory/inventory.module';
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
   const poolMax = resolvePoolMax();
@@ -185,6 +187,8 @@ function sslModeFromEnv() {
     BusinessesModule,
     PaymentsModule,
     SaasSubscriptionsModule,
+    InventoryModule,
+    ExpensesModule,
   ],
 })
 export class AppModule {}

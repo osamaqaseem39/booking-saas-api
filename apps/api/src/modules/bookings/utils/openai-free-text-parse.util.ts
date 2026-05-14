@@ -66,9 +66,9 @@ Return ONLY valid JSON with exactly these keys (no markdown fences):
 }
 
 Rules:
-- phoneDigits: 10 digits starting with 3 (strip country code 92 and leading 0 from 03XXXXXXXXX). null if absent.
-- bookingDate: YYYY-MM-DD only. Prefer explicit dates in the message.
-- startTime / endTime: 24h HH:mm. endTime may be "24:00" for end of calendar day. null if unclear.
+- phoneDigits: 10 digits starting with 3 (strip country code 92 and leading 0 from 03XXXXXXXXX). null if absent or if the number is not exactly 11 digits locally (03 + nine more).
+- bookingDate: YYYY-MM-DD only. Prefer explicit dates in the message. Map "today", "tonight" to REFERENCE_DATE; "tomorrow" to the next calendar day.
+- startTime / endTime: 24h HH:mm. endTime may be "24:00" for end of calendar day. null if unclear. For "9-12 tonight" with no am/pm, treat as 21:00–24:00 when clearly evening.
 - amount: PKR as a number, null if not stated.
 - courtPhrase: natural phrase, e.g. "Padel Court 1", "Futsal Court 2", "Cricket Turf A".
 - courtNumber: integer court index if clear, else null.
