@@ -48,6 +48,7 @@ import {
   addDaysYmd,
   buildPlaySnapshot,
   type FacilityPlaySnapshot,
+  wallRangeToMs,
   ymdInTimeZone,
 } from './utils/facility-live-snapshot.util';
 import {
@@ -489,6 +490,8 @@ export class BookingsService {
   private computeLiveOvertimeProjection(
     booking: Booking,
     now: Date,
+    courtToLocationMap: Record<string, string> = {},
+    locationTimeZoneMap: Record<string, string> = {},
   ): {
     perItem: Record<string, { overtimeMinutes: number; overtimeCharge: number }>;
     totalOvertimeMinutes: number;
@@ -505,8 +508,16 @@ export class BookingsService {
     for (const item of booking.items ?? []) {
       if (item.itemStatus === 'cancelled') continue;
 
-      const startMs = this.itemPlayStartMs(item, bd);
-      const endMs = this.itemPlayEndMs(item, bd);
+      const ymd = formatDateOnly(item.date ?? booking.bookingDate);
+      const locId = courtToLocationMap[item.courtId];
+      const rawTz = locId ? locationTimeZoneMap[locId] : undefined;
+      const { startMs, endMs } =
+        rawTz?.trim()
+          ? wallRangeToMs(ymd, item.startTime, item.endTime, rawTz)
+          : {
+              startMs: this.itemPlayStartMs(item, bd),
+              endMs: this.itemPlayEndMs(item, bd),
+            };
       if (now.getTime() <= endMs) continue;
 
       const durationMinutes = Math.max(
@@ -541,13 +552,23 @@ export class BookingsService {
    * Writes projected live overtime into persisted item prices and booking subtotal, and advances
    * each affected item's end to `now` so `computeLiveOvertimeProjection` does not bill the same minutes twice.
    */
-  private materializeLiveOvertimeOnBooking(booking: Booking, now: Date): void {
+  private materializeLiveOvertimeOnBooking(
+    booking: Booking,
+    now: Date,
+    courtToLocationMap: Record<string, string> = {},
+    locationTimeZoneMap: Record<string, string> = {},
+  ): void {
     if (booking.bookingStatus !== 'live') {
       throw new BadRequestException(
         'materializeLiveOvertime is only valid while the booking is live.',
       );
     }
-    const projection = this.computeLiveOvertimeProjection(booking, now);
+    const projection = this.computeLiveOvertimeProjection(
+      booking,
+      now,
+      courtToLocationMap,
+      locationTimeZoneMap,
+    );
     if (!projection || projection.totalOvertimeCharge <= 0) {
       throw new BadRequestException('There is no live overtime to add right now.');
     }
@@ -596,7 +617,12 @@ export class BookingsService {
 
     const projection =
       opts?.projectLiveOvertimePricing === true
-        ? this.computeLiveOvertimeProjection(booking, new Date())
+        ? this.computeLiveOvertimeProjection(
+            booking,
+            new Date(),
+            courtToLocationMap,
+            locationTimeZoneMap,
+          )
         : null;
     const extraOvertime = projection?.totalOvertimeCharge ?? 0;
     const baseSubTotal = numFromDec(booking.subTotal);
@@ -1418,7 +1444,14 @@ export class BookingsService {
     if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
 
     if (dto.materializeLiveOvertime === true) {
-      this.materializeLiveOvertimeOnBooking(booking, new Date());
+      const { courtToLocationMap, locationTimeZoneMap } =
+        await this.resolveLocationMapping(booking);
+      this.materializeLiveOvertimeOnBooking(
+        booking,
+        new Date(),
+        courtToLocationMap,
+        locationTimeZoneMap,
+      );
     }
 
     if (dto.bookingStatus !== undefined) {
@@ -1543,8 +1576,8 @@ export class BookingsService {
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
     return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap, {
-      // PATCH should echo persisted status; "live" is a read-time projection only.
       projectLiveViewStatus: false,
+      projectLiveOvertimePricing: true,
     });
   }
 
