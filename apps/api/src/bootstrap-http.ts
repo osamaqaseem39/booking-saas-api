@@ -36,10 +36,15 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
 
   function isAllowedOrigin(origin: string): boolean {
     if (!origin) return false;
+    if (origin === 'null') return false;
     if (allowedOrigins.length === 0) return true;
     if (allowedOrigins.includes(origin)) return true;
     if (/^https?:\/\/localhost(?::\d+)?$/i.test(origin)) return true;
-    if (allowVercelPreviews && /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(origin)) {
+    if (/^https?:\/\/127\.0\.0\.1(?::\d+)?$/i.test(origin)) return true;
+    if (
+      allowVercelPreviews &&
+      /^https:\/\/[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.vercel\.app$/i.test(origin)
+    ) {
       return true;
     }
     return false;
@@ -50,14 +55,14 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
   app.use((req: Request, res: Response, next: NextFunction) => {
     const origin = req.headers.origin as string | undefined;
 
+    let corsAllowed = false;
     if (origin) {
-      const allowOrigin = isAllowedOrigin(origin);
-      res.setHeader(
-        'Access-Control-Allow-Origin',
-        allowOrigin ? origin : 'null',
-      );
-      res.setHeader('Vary', 'Origin');
-      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      corsAllowed = isAllowedOrigin(origin);
+      if (corsAllowed) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+      }
     }
 
     res.setHeader(
@@ -75,6 +80,9 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
     );
 
     if (req.method === 'OPTIONS') {
+      if (corsAllowed) {
+        res.setHeader('Access-Control-Max-Age', '86400');
+      }
       res.status(204).send();
       return;
     }
