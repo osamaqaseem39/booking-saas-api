@@ -20,6 +20,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { RedisModule } from '../../../libs/database/src/redis/redis.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { HttpMetricsModule } from './observability/http-metrics.module';
+import { CanteenModule } from './modules/canteen/canteen.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 
@@ -189,6 +190,7 @@ function sslModeFromEnv() {
     SaasSubscriptionsModule,
     InventoryModule,
     ExpensesModule,
+    CanteenModule,
   ],
 })
 export class AppModule {}
