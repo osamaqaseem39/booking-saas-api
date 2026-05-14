@@ -56,6 +56,10 @@ import {
   mergeGeminiOverHeuristic,
 } from './utils/gemini-free-text-parse.util';
 import {
+  fetchOpenAiBookingExtract,
+  isOpenAiBookingParseConfigured,
+} from './utils/openai-free-text-parse.util';
+import {
   parseFreeTextBookingMessage,
   type FreeTextBookingParseResult,
 } from './utils/parse-free-text-booking.util';
@@ -3598,25 +3602,39 @@ export class BookingsService {
   > {
     const ref = input.referenceDateYmd?.trim() || getCurrentDateInKarachi();
     let parsed = parseFreeTextBookingMessage(input.message, ref);
-    if (isGeminiBookingParseConfigured()) {
+    const mergeLlmIfPresent = async (
+      label: 'OpenAI' | 'Gemini',
+      fetcher: () => Promise<
+        (Partial<FreeTextBookingParseResult> & { formattedSummary?: string | null }) | null
+      >,
+    ) => {
       try {
-        const gem = await fetchGeminiBookingExtract(input.message, ref);
-        if (gem) {
-          const hasGeminiValue = Object.entries(gem).some(([, v]) => {
+        const llm = await fetcher();
+        if (llm) {
+          const hasLlmValue = Object.entries(llm).some(([, v]) => {
             if (v == null) return false;
             if (typeof v === 'string') return v.trim().length > 0;
             if (typeof v === 'number') return Number.isFinite(v);
             return false;
           });
-          if (hasGeminiValue) {
-            parsed = mergeGeminiOverHeuristic(parsed, gem);
+          if (hasLlmValue) {
+            parsed = mergeGeminiOverHeuristic(parsed, llm);
           }
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
-        parsed.warnings.push(`Gemini: ${msg} — using rule-based fields only.`);
-        this.logger.warn(`Gemini booking parse failed: ${msg}`);
+        parsed.warnings.push(`${label}: ${msg} — using rule-based fields only.`);
+        this.logger.warn(`${label} booking parse failed: ${msg}`);
       }
+    };
+    if (isOpenAiBookingParseConfigured()) {
+      await mergeLlmIfPresent('OpenAI', () =>
+        fetchOpenAiBookingExtract(input.message, ref),
+      );
+    } else if (isGeminiBookingParseConfigured()) {
+      await mergeLlmIfPresent('Gemini', () =>
+        fetchGeminiBookingExtract(input.message, ref),
+      );
     }
     const todayKhi = getCurrentDateInKarachi();
     if (parsed.bookingDate && formatDateOnly(parsed.bookingDate) < todayKhi) {

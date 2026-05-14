@@ -1,6 +1,6 @@
 import type { FreeTextBookingParseResult } from './parse-free-text-booking.util';
 
-type GeminiRawExtract = {
+export type BookingLlmRawExtract = {
   customerName?: unknown;
   phoneDigits?: unknown;
   bookingDate?: unknown;
@@ -69,7 +69,7 @@ function pickCourtNumber(v: unknown): number | null {
   return n;
 }
 
-function parseGeminiPayload(raw: GeminiRawExtract): Partial<FreeTextBookingParseResult> & {
+export function parseBookingLlmExtract(raw: BookingLlmRawExtract): Partial<FreeTextBookingParseResult> & {
   formattedSummary?: string | null;
 } {
   const out: Partial<FreeTextBookingParseResult> & { formattedSummary?: string | null } = {};
@@ -303,8 +303,8 @@ ${message.trim()}`;
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
       if (typeof text !== 'string' || !text.trim()) throw new Error('Empty Gemini response');
 
-      const json = JSON.parse(stripJsonFence(text)) as GeminiRawExtract;
-      return parseGeminiPayload(json);
+      const json = JSON.parse(stripJsonFence(text)) as BookingLlmRawExtract;
+      return parseBookingLlmExtract(json);
     }
     throw new Error('Gemini: internal model loop exited unexpectedly');
   } finally {
