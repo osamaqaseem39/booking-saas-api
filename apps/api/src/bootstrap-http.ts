@@ -81,7 +81,9 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
 
     if (req.method === 'OPTIONS') {
       if (corsAllowed) {
-        res.setHeader('Access-Control-Max-Age', '86400');
+        // Keep moderate: long Max-Age can leave browsers stuck on an old
+        // Allow-Methods list after a bad deploy until the entry expires.
+        res.setHeader('Access-Control-Max-Age', '600');
       }
       res.status(204).send();
       return;
