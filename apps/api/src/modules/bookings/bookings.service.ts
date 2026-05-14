@@ -179,15 +179,24 @@ export type BookingApiRow = {
     slotId?: string;
     startTime: string;
     endTime: string;
+    /** Stored line amount before projected live overtime; same as `price` when not projecting. */
+    basePrice: number;
+    /** Projected live overtime charge for this line; 0 when none. */
+    overtimeCharge: number;
+    /** Projected live overtime minutes for this line; 0 when none. */
+    overtimeMinutes: number;
+    /** `basePrice + overtimeCharge` (matches persisted total after materialization). */
     price: number;
     currency: string;
     status: BookingItemStatus;
-    /** Present when `liveOvertime` is projected for this line item. */
-    overtimeMinutes?: number;
-    overtimeCharge?: number;
   }>;
   pricing: {
+    /** Subtotal including projected live overtime when applicable (unchanged semantics). */
     subTotal: number;
+    /** Stored booking subtotal before current live overtime projection is merged into `subTotal`. */
+    baseSubTotal: number;
+    /** Portion of the live view attributable to projected overtime only; 0 when not projecting. */
+    overtimeAmount: number;
     discount: number;
     tax: number;
     totalAmount: number;
@@ -691,8 +700,10 @@ export class BookingsService {
       items: timelineItems.map((it) => {
         const o = projection?.perItem[it.id];
         const basePrice = numFromDec(it.price);
+        const overtimeCharge = o ? o.overtimeCharge : 0;
+        const overtimeMinutes = o ? o.overtimeMinutes : 0;
         const price = o
-          ? Number((basePrice + o.overtimeCharge).toFixed(2))
+          ? Number((basePrice + overtimeCharge).toFixed(2))
           : basePrice;
         return {
           id: it.id,
@@ -703,19 +714,18 @@ export class BookingsService {
           slotId: it.slotId,
           startTime: it.startTime,
           endTime: it.endTime,
+          basePrice,
+          overtimeCharge,
+          overtimeMinutes,
           price,
           currency: it.currency,
           status: it.itemStatus,
-          ...(o
-            ? {
-                overtimeMinutes: o.overtimeMinutes,
-                overtimeCharge: o.overtimeCharge,
-              }
-            : {}),
         };
       }),
       pricing: {
         subTotal: useOvertimePricing ? projectedSubTotal : baseSubTotal,
+        baseSubTotal,
+        overtimeAmount: useOvertimePricing ? extraOvertime : 0,
         discount: discountN,
         tax: taxN,
         totalAmount: useOvertimePricing ? projectedTotal : baseTotal,
@@ -1639,7 +1649,7 @@ export class BookingsService {
     });
   }
 
-  
+
   private applyLiveWindowToBooking(booking: Booking): void {
     const startMinutes = getCurrentMinutesInKarachi();
     const liveDate = getCurrentDateInKarachi();
