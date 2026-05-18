@@ -1096,28 +1096,41 @@ export class BookingsService {
       courtId,
     );
 
-    const bookings = await this.bookingRepo.find({
-      where: {
-        tenantId,
-        bookingStatus: In(['pending', 'confirmed', 'live']),
-      },
-      relations: ['items'],
-    });
+    const dayStart = new Date(`${slotDate}T00:00:00.000Z`);
+    const dayEnd = new Date(`${addDays(slotDate, 1)}T00:00:00.000Z`);
+    const activeRows = await this.bookingRepo
+      .createQueryBuilder('b')
+      .innerJoin('b.items', 'i')
+      .where('b.tenantId = :tenantId', { tenantId })
+      .andWhere("b.bookingStatus IN ('pending', 'confirmed', 'live')")
+      .andWhere("i.itemStatus <> 'cancelled'")
+      .andWhere('i.courtKind = :courtKind', { courtKind })
+      .andWhere('i.courtId = :courtId', { courtId })
+      .andWhere('i.startDatetime < :dayEnd', { dayEnd: dayEnd.toISOString() })
+      .andWhere('i.endDatetime > :dayStart', {
+        dayStart: dayStart.toISOString(),
+      })
+      .select([
+        'b.bookingDate AS bookingDate',
+        'i.date AS itemDate',
+        'i.startTime AS startTime',
+        'i.endTime AS endTime',
+      ])
+      .getRawMany<{
+        bookingDate: string;
+        itemDate: string | null;
+        startTime: string;
+        endTime: string;
+      }>();
 
-    const activeItems: Array<Pick<BookingItem, 'date' | 'startTime' | 'endTime'>> =
-      [];
-    for (const b of bookings) {
-      const bd = formatDateOnly(b.bookingDate);
-      for (const item of b.items ?? []) {
-        if (item.itemStatus === 'cancelled') continue;
-        if (item.courtKind !== courtKind || item.courtId !== courtId) continue;
-        activeItems.push({
-          date: item.date ?? bd,
-          startTime: item.startTime,
-          endTime: item.endTime,
-        });
-      }
-    }
+    const activeItems = activeRows.map((r) => ({
+      date: formatDateOnly(r.itemDate ?? r.bookingDate ?? slotDate),
+      startTime: r.startTime,
+      endTime: r.endTime,
+    }));
+
+    const blockStarts: string[] = [];
+    const availableStarts: string[] = [];
 
     for (const slot of slots) {
       const slotEndEffective = wallSlotEffectiveEndTime(
@@ -1149,16 +1162,33 @@ export class BookingsService {
         if (shouldBlock) break;
       }
 
-      await this.facilitySlotRepo.update(
-        {
-          tenantId,
-          courtKind,
-          courtId,
-          slotDate,
-          startTime: slot.startTime,
-        },
-        { status: shouldBlock ? 'blocked' : 'available' },
-      );
+      if (shouldBlock) blockStarts.push(slot.startTime);
+      else availableStarts.push(slot.startTime);
+    }
+
+    if (blockStarts.length) {
+      await this.facilitySlotRepo
+        .createQueryBuilder()
+        .update(CourtFacilitySlot)
+        .set({ status: 'blocked' })
+        .where('tenantId = :tenantId', { tenantId })
+        .andWhere('courtKind = :courtKind', { courtKind })
+        .andWhere('courtId = :courtId', { courtId })
+        .andWhere('slotDate = :slotDate', { slotDate })
+        .andWhere('startTime IN (:...blockStarts)', { blockStarts })
+        .execute();
+    }
+    if (availableStarts.length) {
+      await this.facilitySlotRepo
+        .createQueryBuilder()
+        .update(CourtFacilitySlot)
+        .set({ status: 'available' })
+        .where('tenantId = :tenantId', { tenantId })
+        .andWhere('courtKind = :courtKind', { courtKind })
+        .andWhere('courtId = :courtId', { courtId })
+        .andWhere('slotDate = :slotDate', { slotDate })
+        .andWhere('startTime IN (:...availableStarts)', { availableStarts })
+        .execute();
     }
   }
 
@@ -2500,7 +2530,6 @@ export class BookingsService {
     const data = await this.getCourtSlots(tenantId, {
       ...params,
       availableOnly: false,
-      reconcileFacility: true,
     });
     let segments = data.slots.map((s: any) =>
       s.availability === 'booked'
