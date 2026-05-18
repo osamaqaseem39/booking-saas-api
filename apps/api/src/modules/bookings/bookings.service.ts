@@ -985,7 +985,10 @@ export class BookingsService {
     return BookingsService.DEFAULT_SLOT_STEP_MINUTES;
   }
 
-  /** Wall-clock end for sync/overlap; `24:00` at midnight start is usually a 1h row, not full day. */
+  /**
+   * Wall-clock end for sync/overlap. Facility rows often store `24:00` as row end;
+   * only evening-to-close bookings (17:00+) should keep that as a day-long window.
+   */
   private bookingItemEffectiveEndTime(
     startTime: string,
     endTime: string,
@@ -993,10 +996,8 @@ export class BookingsService {
   ): string {
     if (endTime !== '24:00') return endTime;
     const startMin = toMinutes(startTime, false);
-    if (startMin > 0) return '24:00';
-    const oneStepEnd = startMin + slotStepMinutes;
-    if (oneStepEnd < 24 * 60) return minutesToTimeString(oneStepEnd);
-    return '24:00';
+    if (startMin >= 17 * 60) return '24:00';
+    return minutesToTimeString(Math.min(startMin + slotStepMinutes, 24 * 60));
   }
 
   private toSlotDateTimes(

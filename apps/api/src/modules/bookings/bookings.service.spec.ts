@@ -88,6 +88,16 @@ describe('BookingsService - booking wall times', () => {
     expect(effective).toBe('24:00');
   });
 
+  it('maps 01:00–24:00 stored row to one slot step', () => {
+    const { service } = makeService();
+    const effective = (service as any).bookingItemEffectiveEndTime(
+      '01:00',
+      '24:00',
+      60,
+    );
+    expect(effective).toBe('02:00');
+  });
+
   it('maps 17:00–24:00 to next-day midnight end instant', () => {
     const { service } = makeService();
     const { endDatetime } = (service as any).toSlotDateTimes(
@@ -110,6 +120,22 @@ describe('BookingsService - booking wall times', () => {
         slotDate: '2026-05-20',
         windowStart: '00:00',
         windowEnd: '01:00',
+      },
+    ]);
+  });
+
+  it('sync window for 01:00–24:00 item blocks only 01:00–02:00', () => {
+    const { service } = makeService();
+    const windows = (service as any).itemFacilitySlotSyncWindows(
+      { date: '2026-05-19', startTime: '01:00', endTime: '24:00' },
+      '2026-05-19',
+      60,
+    );
+    expect(windows).toEqual([
+      {
+        slotDate: '2026-05-19',
+        windowStart: '01:00',
+        windowEnd: '02:00',
       },
     ]);
   });
