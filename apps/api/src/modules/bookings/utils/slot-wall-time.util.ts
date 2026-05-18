@@ -27,9 +27,20 @@ export function addDaysYmdWall(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** Facility grid rows ending at `24:00` always mean one step, not close-of-day. */
+export function facilitySlotEffectiveEndTime(
+  startTime: string,
+  endTime: string,
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+): string {
+  if (endTime !== '24:00') return endTime;
+  const startMin = wallToMinutes(startTime, false);
+  return wallMinutesToTime(Math.min(startMin + slotStepMinutes, 24 * 60));
+}
+
 /**
- * Normalizes facility-row / booking `endTime` when stored as `24:00`.
- * Early slots (before 17:00) mean one step; 17:00+ means close-of-day.
+ * Booking item `endTime` when stored as `24:00`.
+ * Before 17:00 means one step; 17:00+ means play until close.
  */
 export function wallSlotEffectiveEndTime(
   startTime: string,
@@ -62,7 +73,7 @@ export function facilitySlotOverlapsWallWindow(
   windowEnd: string,
   slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
 ): boolean {
-  const slotEndEffective = wallSlotEffectiveEndTime(
+  const slotEndEffective = facilitySlotEffectiveEndTime(
     slotStart,
     slotEnd,
     slotStepMinutes,

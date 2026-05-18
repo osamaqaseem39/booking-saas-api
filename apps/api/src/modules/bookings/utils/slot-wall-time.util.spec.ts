@@ -1,12 +1,23 @@
 import {
   buildItemFacilitySlotSyncWindows,
+  facilitySlotEffectiveEndTime,
   facilitySlotOverlapsWallWindow,
   wallSlotEffectiveEndTime,
 } from './slot-wall-time.util';
 
 describe('slot-wall-time.util', () => {
   it('maps facility row 08:00–24:00 to one hour for overlap', () => {
+    expect(facilitySlotEffectiveEndTime('08:00', '24:00', 60)).toBe('09:00');
     expect(wallSlotEffectiveEndTime('08:00', '24:00', 60)).toBe('09:00');
+  });
+
+  it('booking 19:00–20:00 does not overlap earlier hourly facility rows ending 24:00', () => {
+    expect(
+      facilitySlotOverlapsWallWindow('18:00', '24:00', '19:00', '20:00', 60),
+    ).toBe(false);
+    expect(
+      facilitySlotOverlapsWallWindow('19:00', '24:00', '19:00', '20:00', 60),
+    ).toBe(true);
   });
 
   it('booking 08:00–09:00 does not overlap facility row 09:00–24:00', () => {

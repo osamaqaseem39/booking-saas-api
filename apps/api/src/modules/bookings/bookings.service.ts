@@ -76,6 +76,7 @@ import { Booking } from './entities/booking.entity';
 import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
 import {
   buildItemFacilitySlotSyncWindows,
+  facilitySlotEffectiveEndTime,
   facilitySlotOverlapsWallWindow,
   wallSlotEffectiveEndTime,
   wallSlotOverlapsWindow,
@@ -1132,7 +1133,7 @@ export class BookingsService {
     const availableStarts: string[] = [];
 
     for (const slot of slots) {
-      const slotEndEffective = wallSlotEffectiveEndTime(
+      const slotEndEffective = facilitySlotEffectiveEndTime(
         slot.startTime,
         slot.endTime,
         slotStepMinutes,
@@ -2347,32 +2348,27 @@ export class BookingsService {
       for (const fs of facilitySlots) {
         if (toMinutes(fs.startTime, false) >= end || toMinutes(fs.endTime, true) <= start)
           continue;
-        const fsEndEffective = wallSlotEffectiveEndTime(
-          fs.startTime,
-          fs.endTime,
-          slotStepMinutes,
-        );
         const hit = rows.find((r) => {
-          const itemDate = formatDateOnly(r.itemDate ?? r.bookingDate ?? date);
-          const slotWindow = this.toSlotDateTimes(
-            date,
-            fs.startTime,
-            fsEndEffective,
+          const bookingDate = formatDateOnly(r.bookingDate ?? date);
+          const windows = buildItemFacilitySlotSyncWindows(
+            {
+              date: formatDateOnly(r.itemDate ?? bookingDate),
+              startTime: r.startTime,
+              endTime: r.endTime,
+            },
+            bookingDate,
+            slotStepMinutes,
           );
-          const bookingWindow = this.toSlotDateTimes(
-            itemDate,
-            r.startTime,
-            this.bookingItemEffectiveEndTime(
-              r.startTime,
-              r.endTime,
-              slotStepMinutes,
-            ),
-          );
-          return this.isOverlapBeyondGrace(
-            bookingWindow.startDatetime,
-            bookingWindow.endDatetime,
-            slotWindow.startDatetime,
-            slotWindow.endDatetime,
+          return windows.some(
+            (w) =>
+              w.slotDate === date &&
+              facilitySlotOverlapsWallWindow(
+                fs.startTime,
+                fs.endTime,
+                w.windowStart,
+                w.windowEnd,
+                slotStepMinutes,
+              ),
           );
         });
         if (hit) {
@@ -2404,18 +2400,20 @@ export class BookingsService {
         const s = minutesToTimeString(m);
         const e = minutesToTimeString(m + slotStepMinutes);
         const hit = rows.find((r) => {
-          const itemDate = formatDateOnly(r.itemDate ?? r.bookingDate ?? date);
-          const slotWindow = this.toSlotDateTimes(date, s, e);
-          const bookingWindow = this.toSlotDateTimes(
-            itemDate,
-            r.startTime,
-            this.bookingItemEffectiveEndTime(r.startTime, r.endTime),
+          const bookingDate = formatDateOnly(r.bookingDate ?? date);
+          const windows = buildItemFacilitySlotSyncWindows(
+            {
+              date: formatDateOnly(r.itemDate ?? bookingDate),
+              startTime: r.startTime,
+              endTime: r.endTime,
+            },
+            bookingDate,
+            slotStepMinutes,
           );
-          return this.isOverlapBeyondGrace(
-            bookingWindow.startDatetime,
-            bookingWindow.endDatetime,
-            slotWindow.startDatetime,
-            slotWindow.endDatetime,
+          return windows.some(
+            (w) =>
+              w.slotDate === date &&
+              wallSlotOverlapsWindow(s, e, w.windowStart, w.windowEnd),
           );
         });
         if (hit) {
@@ -3630,17 +3628,13 @@ export class BookingsService {
         });
 
         for (const slot of candidateSlots) {
-          const slotEndEffective = wallSlotEffectiveEndTime(
-            slot.startTime,
-            slot.endTime,
-            slotStep,
-          );
           if (
-            !wallSlotOverlapsWindow(
+            !facilitySlotOverlapsWallWindow(
               slot.startTime,
-              slotEndEffective,
+              slot.endTime,
               windowStart,
               windowEnd,
+              slotStep,
             )
           ) {
             continue;
@@ -3662,11 +3656,12 @@ export class BookingsService {
               for (const w of biWindows) {
                 if (w.slotDate !== slotDate) continue;
                 if (
-                  wallSlotOverlapsWindow(
+                  facilitySlotOverlapsWallWindow(
                     slot.startTime,
-                    slotEndEffective,
+                    slot.endTime,
                     w.windowStart,
                     w.windowEnd,
+                    slotStep,
                   )
                 ) {
                   hasOtherBooking = true;
