@@ -1055,6 +1055,91 @@ export class BookingsService {
     return result.affected ?? 0;
   }
 
+  private wallSlotOverlapsWindow(
+    slotStart: string,
+    slotEnd: string,
+    windowStart: string,
+    windowEnd: string,
+  ): boolean {
+    return (
+      toMinutes(slotStart, false) < toMinutes(windowEnd, true) &&
+      toMinutes(slotEnd, true) > toMinutes(windowStart, false)
+    );
+  }
+
+  /** Recompute facility-slot blocked/available from all active bookings (fixes stale blocks). */
+  private async reconcileFacilitySlotsForCourtDate(
+    tenantId: string,
+    courtKind: CourtKind,
+    courtId: string,
+    slotDate: string,
+  ): Promise<void> {
+    const slots = await this.facilitySlotRepo.find({
+      where: { tenantId, courtKind, courtId, slotDate },
+      select: ['startTime', 'endTime'],
+    });
+    if (!slots.length) return;
+
+    const bookings = await this.bookingRepo.find({
+      where: {
+        tenantId,
+        bookingStatus: In(['pending', 'confirmed', 'live']),
+      },
+      relations: ['items'],
+    });
+
+    const activeItems: Array<Pick<BookingItem, 'date' | 'startTime' | 'endTime'>> =
+      [];
+    for (const b of bookings) {
+      const bd = formatDateOnly(b.bookingDate);
+      for (const item of b.items ?? []) {
+        if (item.itemStatus === 'cancelled') continue;
+        if (item.courtKind !== courtKind || item.courtId !== courtId) continue;
+        activeItems.push({
+          date: item.date ?? bd,
+          startTime: item.startTime,
+          endTime: item.endTime,
+        });
+      }
+    }
+
+    for (const slot of slots) {
+      let shouldBlock = false;
+      for (const item of activeItems) {
+        const windows = this.itemFacilitySlotSyncWindows(
+          item,
+          formatDateOnly(item.date ?? slotDate),
+        );
+        for (const w of windows) {
+          if (w.slotDate !== slotDate) continue;
+          if (
+            this.wallSlotOverlapsWindow(
+              slot.startTime,
+              slot.endTime,
+              w.windowStart,
+              w.windowEnd,
+            )
+          ) {
+            shouldBlock = true;
+            break;
+          }
+        }
+        if (shouldBlock) break;
+      }
+
+      await this.facilitySlotRepo.update(
+        {
+          tenantId,
+          courtKind,
+          courtId,
+          slotDate,
+          startTime: slot.startTime,
+        },
+        { status: shouldBlock ? 'blocked' : 'available' },
+      );
+    }
+  }
+
   private isOverlapBeyondGrace(
     existingStart: Date,
     existingEnd: Date,
@@ -2038,13 +2123,26 @@ export class BookingsService {
       select: ['courtId', 'slotDate', 'startTime', 'endTime'],
     });
 
+    const qStartMin = toMinutes(params.startTime, false);
+    const qEndMin = toMinutes(params.endTime, true);
     const blockedIds = new Set<string>();
     for (const fs of blocked) {
-      if (
-        new Date(`${fs.slotDate}T${fs.startTime}:00Z`) < queryEnd &&
-        new Date(`${fs.slotDate}T${fs.endTime}:00Z`) > queryStart
-      ) {
-        blockedIds.add(fs.courtId);
+      if (fs.slotDate !== date && fs.slotDate !== nextDate) continue;
+      if (fs.slotDate === date) {
+        if (
+          toMinutes(fs.startTime, false) < qEndMin &&
+          toMinutes(fs.endTime, true) > qStartMin
+        ) {
+          blockedIds.add(fs.courtId);
+        }
+      } else if (qEndMin > 24 * 60 || qEndMin <= qStartMin) {
+        const nextEndMin = qEndMin > 24 * 60 ? qEndMin - 24 * 60 : qEndMin;
+        if (
+          toMinutes(fs.startTime, false) < nextEndMin &&
+          toMinutes(fs.endTime, true) > 0
+        ) {
+          blockedIds.add(fs.courtId);
+        }
       }
     }
     return {
@@ -3364,43 +3462,33 @@ export class BookingsService {
   private async syncFacilitySlotsStatus(booking: Booking): Promise<void> {
     if (!booking.items?.length) return;
 
+    const touched = new Set<string>();
+    const bd = formatDateOnly(booking.bookingDate);
     for (const item of booking.items) {
-      // A slot is considered 'blocked' if the booking is not cancelled/no-show 
-      // AND the item itself is not cancelled.
-      const isBookingActive =
-        booking.bookingStatus === 'confirmed' ||
-        booking.bookingStatus === 'live' ||
-        booking.bookingStatus === 'pending';
-      
-      const isItemActive = item.itemStatus !== 'cancelled';
-      
-      const targetStatus: CourtFacilitySlotStatus =
-        isBookingActive && isItemActive ? 'blocked' : 'available';
-
-      const windows = this.itemFacilitySlotSyncWindows(
-        item,
-        formatDateOnly(booking.bookingDate),
-      );
-
-      let totalAffected = 0;
-      for (const { slotDate, windowStart, windowEnd } of windows) {
-        totalAffected += await this.updateFacilitySlotsInWindow({
-          tenantId: booking.tenantId,
-          courtKind: item.courtKind,
-          courtId: item.courtId,
-          slotDate,
-          windowStart,
-          windowEnd,
-          targetStatus,
-        });
+      const windows = this.itemFacilitySlotSyncWindows(item, bd);
+      for (const { slotDate } of windows) {
+        touched.add(`${item.courtKind}\t${item.courtId}\t${slotDate}`);
       }
+    }
 
-      console.log(
-        `[syncFacilitySlotsStatus] Booking ${booking.id} (${booking.bookingStatus}): ` +
-          `Updated ${totalAffected} slots to ${targetStatus} for court ${item.courtId} ` +
-          `${item.startTime}-${item.endTime}`,
+    for (const key of touched) {
+      const [courtKind, courtId, slotDate] = key.split('\t') as [
+        CourtKind,
+        string,
+        string,
+      ];
+      await this.reconcileFacilitySlotsForCourtDate(
+        booking.tenantId,
+        courtKind,
+        courtId,
+        slotDate,
       );
     }
+
+    console.log(
+      `[syncFacilitySlotsStatus] Booking ${booking.id} (${booking.bookingStatus}): ` +
+        `reconciled ${touched.size} court-date grid(s)`,
+    );
   }
 
   private async setFacilitySlotsStatusForItems(params: {
