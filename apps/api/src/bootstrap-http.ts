@@ -80,10 +80,10 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
     );
 
     if (req.method === 'OPTIONS') {
+      res.setHeader('Cache-Control', 'no-store');
       if (corsAllowed) {
-        // Keep moderate: long Max-Age can leave browsers stuck on an old
-        // Allow-Methods list after a bad deploy until the entry expires.
-        res.setHeader('Access-Control-Max-Age', '600');
+        // Do not cache preflight at CDN/browser; stale Allow-Methods breaks PATCH.
+        res.setHeader('Access-Control-Max-Age', '0');
       }
       res.status(204).send();
       return;
