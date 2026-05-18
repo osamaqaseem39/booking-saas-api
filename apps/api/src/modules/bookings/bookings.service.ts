@@ -1668,6 +1668,8 @@ export class BookingsService {
     });
     if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
 
+    let preLiveFacilityItems: BookingItem[] | undefined;
+
     if (dto.materializeLiveOvertime === true) {
       const { courtToLocationMap, locationTimeZoneMap } =
         await this.resolveLocationMapping(booking);
@@ -1711,7 +1713,7 @@ export class BookingsService {
         if (booking.bookingStatus === 'live') {
           throw new ConflictException('Booking is already live.');
         }
-        const previousItems = booking.items
+        preLiveFacilityItems = booking.items
           .filter((item) => item.itemStatus !== 'cancelled')
           .map((item) => {
             const fallbackDate = formatDateOnly(item.date ?? booking.bookingDate);
@@ -1730,13 +1732,6 @@ export class BookingsService {
               endDatetime: item.endDatetime ?? itemWindow.endDatetime,
             });
           });
-
-        await this.setFacilitySlotsStatusForItems({
-          tenantId,
-          items: previousItems,
-          targetStatus: 'available',
-          excludeBookingId: booking.id,
-        });
 
         await this.assertNoOtherLiveBookingOnFields(
           tenantId,
@@ -1860,12 +1855,23 @@ export class BookingsService {
       dto.bookingStatus !== undefined &&
       ['cancelled', 'completed', 'no_show'].includes(full.bookingStatus)
     ) {
-      await this.unblockStaleFacilitySlotsForBooking(full);
+      await this.releaseFacilitySlotsForBooking(full);
     } else if (
       dto.bookingStatus !== undefined &&
       full.bookingStatus === 'confirmed'
     ) {
       await this.markFacilitySlotsBookedForBooking(full);
+    } else if (
+      dto.bookingStatus !== undefined &&
+      full.bookingStatus === 'live' &&
+      preLiveFacilityItems?.length
+    ) {
+      await this.releaseBookedFacilitySlotsForItems(
+        tenantId,
+        preLiveFacilityItems,
+        full.id,
+      );
+      await this.markFacilitySlotsBlockedForLiveBooking(full);
     }
 
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
@@ -1956,7 +1962,7 @@ export class BookingsService {
       'UPDATE booking_items SET "itemStatus" = $1 WHERE "bookingId" = $2',
       ['cancelled', booking.id],
     );
-    await this.unblockStaleFacilitySlotsForBooking(booking);
+    await this.releaseFacilitySlotsForBooking(booking);
     await this.bookingRepo.remove(booking);
     return { ok: true };
   }
@@ -3546,6 +3552,43 @@ export class BookingsService {
     });
   }
 
+  private async markFacilitySlotsBlockedForLiveBooking(
+    booking: Booking,
+  ): Promise<void> {
+    if (booking.bookingStatus !== 'live') return;
+    const items = (booking.items ?? []).filter((i) => i.itemStatus !== 'cancelled');
+    if (!items.length) return;
+    await this.setFacilitySlotsStatusForItems({
+      tenantId: booking.tenantId,
+      items,
+      targetStatus: 'blocked',
+    });
+  }
+
+  private async releaseBookedFacilitySlotsForItems(
+    tenantId: string,
+    items: BookingItem[],
+    excludeBookingId?: string,
+  ): Promise<void> {
+    if (!items.length) return;
+    await this.setFacilitySlotsStatusForItems({
+      tenantId,
+      items,
+      targetStatus: 'available',
+      excludeBookingId,
+    });
+  }
+
+  private async releaseFacilitySlotsForBooking(booking: Booking): Promise<void> {
+    if (!booking.items?.length) return;
+    await this.releaseBookedFacilitySlotsForItems(
+      booking.tenantId,
+      booking.items,
+      booking.id,
+    );
+    await this.unblockStaleFacilitySlotsForBooking(booking);
+  }
+
   private async unblockStaleFacilitySlotsForBooking(
     booking: Booking,
   ): Promise<void> {
@@ -3723,7 +3766,7 @@ export class BookingsService {
         }
         this.applyBookingWindowFields(booking);
         await this.bookingRepo.save(booking);
-        await this.unblockStaleFacilitySlotsForBooking(booking);
+        await this.releaseFacilitySlotsForBooking(booking);
       }
       this.logger.log(
         `Auto-cancelled ${rows.length} unstarted bookings past end time.`,
@@ -3793,7 +3836,7 @@ export class BookingsService {
     await this.bookingRepo.update({ id: In(ids) }, { bookingStatus: 'completed' });
     for (const booking of liveBookings) {
       booking.bookingStatus = 'completed';
-      await this.unblockStaleFacilitySlotsForBooking(booking);
+      await this.releaseFacilitySlotsForBooking(booking);
     }
     this.logger.log(`Marked ${ids.length} active bookings as completed.`);
   }
