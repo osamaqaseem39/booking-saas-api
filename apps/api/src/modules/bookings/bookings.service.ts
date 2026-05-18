@@ -986,13 +986,68 @@ export class BookingsService {
     endTime: string,
   ) {
     const date = formatDateOnly(bookingDate);
-    const overnight = toMinutes(endTime) <= toMinutes(startTime);
+    const overnight =
+      toMinutes(endTime, true) <= toMinutes(startTime, false);
+    const endDate = overnight ? addDays(date, 1) : date;
+    const endPart = endTime === '24:00' ? '00:00' : endTime;
     return {
       startDatetime: new Date(`${date}T${startTime}:00Z`),
-      endDatetime: new Date(
-        `${overnight ? addDays(date, 1) : date}T${endTime}:00Z`,
-      ),
+      endDatetime: new Date(`${endDate}T${endPart}:00Z`),
     };
+  }
+
+  /** Wall-clock windows for facility-slot block/unblock (never span to EOD unless booked). */
+  private itemFacilitySlotSyncWindows(
+    item: Pick<BookingItem, 'date' | 'startTime' | 'endTime'>,
+    bookingDate: string,
+  ): Array<{ slotDate: string; windowStart: string; windowEnd: string }> {
+    const date = formatDateOnly(item.date ?? bookingDate);
+    const startMin = toMinutes(item.startTime, false);
+    const endMin = toMinutes(item.endTime, true);
+    if (endMin <= startMin) {
+      return [
+        {
+          slotDate: date,
+          windowStart: minutesToTimeString(startMin),
+          windowEnd: '24:00',
+        },
+        {
+          slotDate: addDays(date, 1),
+          windowStart: '00:00',
+          windowEnd: minutesToTimeString(endMin),
+        },
+      ];
+    }
+    return [
+      {
+        slotDate: date,
+        windowStart: minutesToTimeString(startMin),
+        windowEnd: minutesToTimeString(endMin),
+      },
+    ];
+  }
+
+  private async updateFacilitySlotsInWindow(params: {
+    tenantId: string;
+    courtKind: CourtKind;
+    courtId: string;
+    slotDate: string;
+    windowStart: string;
+    windowEnd: string;
+    targetStatus: CourtFacilitySlotStatus;
+  }): Promise<number> {
+    const result = await this.facilitySlotRepo
+      .createQueryBuilder()
+      .update(CourtFacilitySlot)
+      .set({ status: params.targetStatus })
+      .where('tenantId = :tenantId', { tenantId: params.tenantId })
+      .andWhere('courtKind = :courtKind', { courtKind: params.courtKind })
+      .andWhere('courtId = :courtId', { courtId: params.courtId })
+      .andWhere('slotDate = :slotDate', { slotDate: params.slotDate })
+      .andWhere('startTime < :windowEnd', { windowEnd: params.windowEnd })
+      .andWhere('endTime > :windowStart', { windowStart: params.windowStart })
+      .execute();
+    return result.affected ?? 0;
   }
 
   private isOverlapBeyondGrace(
@@ -2077,7 +2132,9 @@ export class BookingsService {
       })
       .select([
         'b.id AS bookingId',
+        'b.bookingDate AS bookingDate',
         'i.id AS id',
+        'i.date AS itemDate',
         'i.startTime AS startTime',
         'i.endTime AS endTime',
         'i.startDatetime AS startDatetime',
@@ -2086,7 +2143,9 @@ export class BookingsService {
       ])
       .getRawMany<{
         bookingId: string;
+        bookingDate: string;
         id: string;
+        itemDate: string | null;
         startTime: string;
         endTime: string;
         startDatetime: string;
@@ -2099,21 +2158,25 @@ export class BookingsService {
       for (const fs of facilitySlots) {
         if (toMinutes(fs.startTime, false) >= end || toMinutes(fs.endTime, true) <= start)
           continue;
-        const hit = rows.find(
-          (r) => {
-            const slotWindow = this.toSlotDateTimes(
-              date,
-              fs.startTime,
-              fs.endTime,
-            );
-            return this.isOverlapBeyondGrace(
-              new Date(r.startDatetime),
-              new Date(r.endDatetime),
-              slotWindow.startDatetime,
-              slotWindow.endDatetime,
-            );
-          },
-        );
+        const hit = rows.find((r) => {
+          const itemDate = formatDateOnly(r.itemDate ?? r.bookingDate ?? date);
+          const slotWindow = this.toSlotDateTimes(
+            date,
+            fs.startTime,
+            fs.endTime,
+          );
+          const bookingWindow = this.toSlotDateTimes(
+            itemDate,
+            r.startTime,
+            r.endTime,
+          );
+          return this.isOverlapBeyondGrace(
+            bookingWindow.startDatetime,
+            bookingWindow.endDatetime,
+            slotWindow.startDatetime,
+            slotWindow.endDatetime,
+          );
+        });
         if (hit) {
           slots.push({
             startTime: fs.startTime,
@@ -2142,17 +2205,21 @@ export class BookingsService {
       for (let m = start; m < end; m += slotStepMinutes) {
         const s = minutesToTimeString(m);
         const e = minutesToTimeString(m + slotStepMinutes);
-        const hit = rows.find(
-          (r) => {
-            const slotWindow = this.toSlotDateTimes(date, s, e);
-            return this.isOverlapBeyondGrace(
-              new Date(r.startDatetime),
-              new Date(r.endDatetime),
-              slotWindow.startDatetime,
-              slotWindow.endDatetime,
-            );
-          },
-        );
+        const hit = rows.find((r) => {
+          const itemDate = formatDateOnly(r.itemDate ?? r.bookingDate ?? date);
+          const slotWindow = this.toSlotDateTimes(date, s, e);
+          const bookingWindow = this.toSlotDateTimes(
+            itemDate,
+            r.startTime,
+            r.endTime,
+          );
+          return this.isOverlapBeyondGrace(
+            bookingWindow.startDatetime,
+            bookingWindow.endDatetime,
+            slotWindow.startDatetime,
+            slotWindow.endDatetime,
+          );
+        });
         if (hit) {
           slots.push({
             startTime: s,
@@ -3264,59 +3331,28 @@ export class BookingsService {
       const targetStatus: CourtFacilitySlotStatus =
         isBookingActive && isItemActive ? 'blocked' : 'available';
 
-      const fallbackDate = formatDateOnly(item.date ?? booking.bookingDate);
-      const itemWindow = this.toSlotDateTimes(
-        fallbackDate,
-        item.startTime,
-        item.endTime,
+      const windows = this.itemFacilitySlotSyncWindows(
+        item,
+        formatDateOnly(booking.bookingDate),
       );
-      const itemStart = item.startDatetime ?? itemWindow.startDatetime;
-      const itemEnd = item.endDatetime ?? itemWindow.endDatetime;
-
-      const startDateIso = formatDateOnly(itemStart);
-      const endDateIso = formatDateOnly(itemEnd);
 
       let totalAffected = 0;
-      for (
-        let slotDate = startDateIso;
-        slotDate <= endDateIso;
-        slotDate = addDays(slotDate, 1)
-      ) {
-        const dayStart = new Date(`${slotDate}T00:00:00Z`);
-        const nextDay = addDays(slotDate, 1);
-        const dayEnd = new Date(`${nextDay}T00:00:00Z`);
-        const windowStartDate = new Date(
-          Math.max(itemStart.getTime(), dayStart.getTime()),
-        );
-        const windowEndDate = new Date(
-          Math.min(itemEnd.getTime(), dayEnd.getTime()),
-        );
-        if (windowEndDate <= windowStartDate) continue;
-        const windowStart = windowStartDate.toISOString().slice(11, 16);
-        const windowEnd = windowEndDate.toISOString().slice(11, 16);
-        const effectiveEnd =
-          windowEnd === '00:00' && windowEndDate.getTime() === dayEnd.getTime()
-            ? '24:00'
-            : windowEnd;
-
-        const updateResult = await this.facilitySlotRepo
-          .createQueryBuilder()
-          .update(CourtFacilitySlot)
-          .set({ status: targetStatus })
-          .where('tenantId = :tenantId', { tenantId: booking.tenantId })
-          .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
-          .andWhere('courtId = :courtId', { courtId: item.courtId })
-          .andWhere('slotDate = :slotDate', { slotDate })
-          .andWhere('startTime < :endTime', { endTime: effectiveEnd })
-          .andWhere('endTime > :startTime', { startTime: windowStart })
-          .execute();
-        totalAffected += updateResult.affected ?? 0;
+      for (const { slotDate, windowStart, windowEnd } of windows) {
+        totalAffected += await this.updateFacilitySlotsInWindow({
+          tenantId: booking.tenantId,
+          courtKind: item.courtKind,
+          courtId: item.courtId,
+          slotDate,
+          windowStart,
+          windowEnd,
+          targetStatus,
+        });
       }
 
       console.log(
         `[syncFacilitySlotsStatus] Booking ${booking.id} (${booking.bookingStatus}): ` +
           `Updated ${totalAffected} slots to ${targetStatus} for court ${item.courtId} ` +
-          `across ${startDateIso}..${endDateIso} ${item.startTime}-${item.endTime}`,
+          `${item.startTime}-${item.endTime}`,
       );
     }
   }
@@ -3331,53 +3367,22 @@ export class BookingsService {
     if (!items.length) return;
 
     for (const item of items) {
-      const fallbackDate = formatDateOnly(
-        item.date ?? item.startDatetime ?? item.endDatetime ?? new Date(),
+      const windows = this.itemFacilitySlotSyncWindows(
+        item,
+        formatDateOnly(item.date ?? item.startDatetime ?? new Date()),
       );
-      const itemWindow = this.toSlotDateTimes(
-        fallbackDate,
-        item.startTime,
-        item.endTime,
-      );
-      const itemStart = item.startDatetime ?? itemWindow.startDatetime;
-      const itemEnd = item.endDatetime ?? itemWindow.endDatetime;
-      const startDateIso = formatDateOnly(itemStart);
-      const endDateIso = formatDateOnly(itemEnd);
 
-      for (
-        let slotDate = startDateIso;
-        slotDate <= endDateIso;
-        slotDate = addDays(slotDate, 1)
-      ) {
-        const dayStart = new Date(`${slotDate}T00:00:00Z`);
-        const nextDay = addDays(slotDate, 1);
-        const dayEnd = new Date(`${nextDay}T00:00:00Z`);
-        const windowStartDate = new Date(
-          Math.max(itemStart.getTime(), dayStart.getTime()),
-        );
-        const windowEndDate = new Date(
-          Math.min(itemEnd.getTime(), dayEnd.getTime()),
-        );
-        if (windowEndDate <= windowStartDate) continue;
-        const windowStart = windowStartDate.toISOString().slice(11, 16);
-        const windowEnd = windowEndDate.toISOString().slice(11, 16);
-        const effectiveEnd =
-          windowEnd === '00:00' && windowEndDate.getTime() === dayEnd.getTime()
-            ? '24:00'
-            : windowEnd;
-
+      for (const { slotDate, windowStart, windowEnd } of windows) {
         if (targetStatus === 'blocked') {
-          await this.facilitySlotRepo
-            .createQueryBuilder()
-            .update(CourtFacilitySlot)
-            .set({ status: targetStatus })
-            .where('tenantId = :tenantId', { tenantId })
-            .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
-            .andWhere('courtId = :courtId', { courtId: item.courtId })
-            .andWhere('slotDate = :slotDate', { slotDate })
-            .andWhere('startTime < :endTime', { endTime: effectiveEnd })
-            .andWhere('endTime > :startTime', { startTime: windowStart })
-            .execute();
+          await this.updateFacilitySlotsInWindow({
+            tenantId,
+            courtKind: item.courtKind,
+            courtId: item.courtId,
+            slotDate,
+            windowStart,
+            windowEnd,
+            targetStatus,
+          });
           continue;
         }
 
@@ -3393,7 +3398,7 @@ export class BookingsService {
 
         for (const slot of candidateSlots) {
           if (
-            toMinutes(slot.startTime, false) >= toMinutes(effectiveEnd, true) ||
+            toMinutes(slot.startTime, false) >= toMinutes(windowEnd, true) ||
             toMinutes(slot.endTime, true) <= toMinutes(windowStart, false)
           ) {
             continue;
