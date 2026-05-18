@@ -475,17 +475,7 @@ export class BookingsController {
           'Unable to resolve tenant. Provide a valid court in items or X-Tenant-Id.',
         );
       }
-      const result = await this.bookingsService.create(tenantId, dto);
-
-      // Explicit check in controller as requested: block slots if booking is active
-      if (result.bookingStatus === 'confirmed' || result.bookingStatus === 'live') {
-        await this.bookingsService.syncFacilitySlotsStatusById(
-          tenantId,
-          result.bookingId,
-        );
-      }
-
-      return result;
+      return await this.bookingsService.create(tenantId, dto);
     } catch (err) {
       logBookingsCreateFailure(
         this.logger,
@@ -506,12 +496,7 @@ export class BookingsController {
     if (!tenantId) {
       throw new BadRequestException('Unable to resolve tenant for booking.');
     }
-    const result = await this.bookingsService.update(tenantId, bookingId, dto);
-
-    // Explicit check in controller as requested: update slots status
-    await this.bookingsService.syncFacilitySlotsStatusById(tenantId, result.bookingId);
-
-    return result;
+    return await this.bookingsService.update(tenantId, bookingId, dto);
   }
 
   @Patch(':bookingId/facility-slots')

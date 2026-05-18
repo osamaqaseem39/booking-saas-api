@@ -13,12 +13,6 @@ import { PadelCourt } from '../../arena/padel-court/entities/padel-court.entity'
 import { TableTennisCourt } from '../../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { TurfCourt } from '../../arena/turf/entities/turf-court.entity';
 import { CourtFacilitySlot } from '../entities/court-facility-slot.entity';
-import { BookingItem } from '../entities/booking-item.entity';
-import {
-  buildItemFacilitySlotSyncWindows,
-  facilitySlotOverlapsWallWindow,
-  formatDateOnlyYmd,
-} from '../utils/slot-wall-time.util';
 
 function toMinutes(time: string, isEndTime = false): number {
   if (time === '24:00' || (time === '00:00' && isEndTime)) return 24 * 60;
@@ -66,8 +60,6 @@ export class TimeSlotTemplatesService {
     private readonly tableTennisRepo: Repository<TableTennisCourt>,
     @InjectRepository(CourtFacilitySlot)
     private readonly facilitySlotRepo: Repository<CourtFacilitySlot>,
-    @InjectRepository(BookingItem)
-    private readonly bookingItemRepo: Repository<BookingItem>,
   ) {}
 
   private async syncTemplateToFacilitySlots(
@@ -184,86 +176,6 @@ export class TimeSlotTemplatesService {
       }
     }
 
-    const affectedCourtIds = [
-      ...padelCourtIds,
-      ...turfCourtIds,
-      ...tableTennisIds,
-    ];
-    if (!affectedCourtIds.length) return;
-
-    const activeBookingItems = await this.bookingItemRepo
-      .createQueryBuilder('item')
-      .innerJoin('item.booking', 'booking')
-      .where('item.tenantId = :tenantId', { tenantId })
-      .andWhere('item.courtId IN (:...courtIds)', {
-        courtIds: affectedCourtIds,
-      })
-      .andWhere("booking.bookingStatus IN ('confirmed', 'pending', 'live', 'completed')")
-      .andWhere("item.itemStatus <> 'cancelled'")
-      .andWhere('item.endDatetime >= :startDateTime', {
-        startDateTime: `${today}T00:00:00.000Z`,
-      })
-      .select([
-        'item.courtKind AS "courtKind"',
-        'item.courtId AS "courtId"',
-        'item.date AS "date"',
-        'booking.bookingDate AS "bookingDate"',
-        'item.startTime AS "startTime"',
-        'item.endTime AS "endTime"',
-      ])
-      .getRawMany<{
-        courtKind: 'padel_court' | 'turf_court' | 'table_tennis_court';
-        courtId: string;
-        date: string | null;
-        bookingDate: string;
-        startTime: string;
-        endTime: string;
-      }>();
-
-    for (const item of activeBookingItems) {
-      const bookingDate = formatDateOnlyYmd(item.bookingDate);
-      const windows = buildItemFacilitySlotSyncWindows(
-        {
-          date: item.date ?? bookingDate,
-          startTime: item.startTime,
-          endTime: item.endTime,
-        },
-        bookingDate,
-      );
-      for (const { slotDate, windowStart, windowEnd } of windows) {
-        const gridSlots = await this.facilitySlotRepo.find({
-          where: {
-            tenantId,
-            courtKind: item.courtKind,
-            courtId: item.courtId,
-            slotDate,
-          },
-          select: ['startTime', 'endTime'],
-        });
-        for (const gridSlot of gridSlots) {
-          if (
-            !facilitySlotOverlapsWallWindow(
-              gridSlot.startTime,
-              gridSlot.endTime,
-              windowStart,
-              windowEnd,
-            )
-          ) {
-            continue;
-          }
-          await this.facilitySlotRepo.update(
-            {
-              tenantId,
-              courtKind: item.courtKind,
-              courtId: item.courtId,
-              slotDate,
-              startTime: gridSlot.startTime,
-            },
-            { status: 'blocked' },
-          );
-        }
-      }
-    }
   }
 
   private normalizeSlotStarts(raw: string[]): string[] {

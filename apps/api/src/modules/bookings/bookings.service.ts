@@ -1077,7 +1077,7 @@ export class BookingsService {
     return affected;
   }
 
-  /** Recompute facility-slot blocked/available from all active bookings (fixes stale blocks). */
+  /** Clear stale booking-driven blocks; availability is enforced via booking_items. */
   private async reconcileFacilitySlotsForCourtDate(
     tenantId: string,
     courtKind: CourtKind,
@@ -1129,7 +1129,6 @@ export class BookingsService {
       endTime: r.endTime,
     }));
 
-    const blockStarts: string[] = [];
     const availableStarts: string[] = [];
 
     for (const slot of slots) {
@@ -1138,7 +1137,7 @@ export class BookingsService {
         slot.endTime,
         slotStepMinutes,
       );
-      let shouldBlock = false;
+      let hasActiveBooking = false;
       for (const item of activeItems) {
         const windows = this.itemFacilitySlotSyncWindows(
           item,
@@ -1155,29 +1154,16 @@ export class BookingsService {
               w.windowEnd,
             )
           ) {
-            shouldBlock = true;
+            hasActiveBooking = true;
             break;
           }
         }
-        if (shouldBlock) break;
+        if (hasActiveBooking) break;
       }
 
-      if (shouldBlock) blockStarts.push(slot.startTime);
-      else availableStarts.push(slot.startTime);
+      if (!hasActiveBooking) availableStarts.push(slot.startTime);
     }
 
-    if (blockStarts.length) {
-      await this.facilitySlotRepo
-        .createQueryBuilder()
-        .update(CourtFacilitySlot)
-        .set({ status: 'blocked' })
-        .where('tenantId = :tenantId', { tenantId })
-        .andWhere('courtKind = :courtKind', { courtKind })
-        .andWhere('courtId = :courtId', { courtId })
-        .andWhere('slotDate = :slotDate', { slotDate })
-        .andWhere('startTime IN (:...blockStarts)', { blockStarts })
-        .execute();
-    }
     if (availableStarts.length) {
       await this.facilitySlotRepo
         .createQueryBuilder()
@@ -1678,9 +1664,6 @@ export class BookingsService {
       relations: ['items', 'user'],
     });
 
-    // Block the slots in the facility slots table
-    await this.syncFacilitySlotsStatus(full);
-
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
     return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
@@ -1885,7 +1868,12 @@ export class BookingsService {
       relations: ['items', 'user'],
     });
 
-    await this.syncFacilitySlotsStatus(full);
+    if (
+      dto.bookingStatus !== undefined &&
+      ['cancelled', 'completed', 'no_show'].includes(full.bookingStatus)
+    ) {
+      await this.unblockStaleFacilitySlotsForBooking(full);
+    }
 
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
@@ -1975,8 +1963,7 @@ export class BookingsService {
       'UPDATE booking_items SET "itemStatus" = $1 WHERE "bookingId" = $2',
       ['cancelled', booking.id],
     );
-    await this.syncFacilitySlotsStatus(booking);
-
+    await this.unblockStaleFacilitySlotsForBooking(booking);
     await this.bookingRepo.remove(booking);
     return { ok: true };
   }
@@ -2087,8 +2074,6 @@ export class BookingsService {
       where: { id: bookingId, tenantId },
       relations: ['items'],
     });
-    await this.syncFacilitySlotsStatus(full);
-
     return { ok: true, bookingId, blocked, extendedBy: addOnMinutes };
   }
 
@@ -2282,8 +2267,6 @@ export class BookingsService {
       endTime?: string;
       availableOnly?: boolean;
       skipCourtCheck?: boolean;
-      /** Re-apply wall-clock booking windows to facility rows (fixes stale day-wide blocks). */
-      reconcileFacility?: boolean;
     },
   ) {
     if (!params.skipCourtCheck) {
@@ -2318,24 +2301,6 @@ export class BookingsService {
       },
       order: { startTime: 'ASC' },
     });
-
-    if (params.reconcileFacility && facilitySlots.length > 0) {
-      await this.reconcileFacilitySlotsForCourtDate(
-        tenantId,
-        params.kind,
-        params.courtId,
-        date,
-      );
-      facilitySlots = await this.facilitySlotRepo.find({
-        where: {
-          tenantId,
-          courtKind: params.kind,
-          courtId: params.courtId,
-          slotDate: date,
-        },
-        order: { startTime: 'ASC' },
-      });
-    }
 
     const queryStart = new Date(`${date}T00:00:00.000Z`);
     queryStart.setUTCMinutes(toMinutes(params.startTime ?? '00:00', false));
@@ -2639,13 +2604,6 @@ export class BookingsService {
       .values(values as CourtFacilitySlot[])
       .orIgnore()
       .execute();
-
-    await this.reconcileFacilitySlotsForCourtDate(
-      tenantId,
-      params.kind,
-      params.courtId,
-      date,
-    );
 
     return { ok: true, upserted: values.length };
   }
@@ -3584,21 +3542,10 @@ export class BookingsService {
     };
   }
 
-  async syncFacilitySlotsStatusById(
-    tenantId: string,
-    bookingId: string,
+  private async unblockStaleFacilitySlotsForBooking(
+    booking: Booking,
   ): Promise<void> {
-    const booking = await this.bookingRepo.findOne({
-      where: { id: bookingId, tenantId },
-      relations: ['items'],
-    });
-    if (!booking) return;
-    await this.syncFacilitySlotsStatus(booking);
-  }
-
-  private async syncFacilitySlotsStatus(booking: Booking): Promise<void> {
     if (!booking.items?.length) return;
-
     const touched = new Set<string>();
     const bd = formatDateOnly(booking.bookingDate);
     for (const item of booking.items) {
@@ -3607,7 +3554,6 @@ export class BookingsService {
         touched.add(`${item.courtKind}\t${item.courtId}\t${slotDate}`);
       }
     }
-
     for (const key of touched) {
       const [courtKind, courtId, slotDate] = key.split('\t') as [
         CourtKind,
@@ -3621,11 +3567,6 @@ export class BookingsService {
         slotDate,
       );
     }
-
-    console.log(
-      `[syncFacilitySlotsStatus] Booking ${booking.id} (${booking.bookingStatus}): ` +
-        `reconciled ${touched.size} court-date grid(s)`,
-    );
   }
 
   private async setFacilitySlotsStatusForItems(params: {
@@ -3781,7 +3722,7 @@ export class BookingsService {
         }
         this.applyBookingWindowFields(booking);
         await this.bookingRepo.save(booking);
-        await this.syncFacilitySlotsStatus(booking);
+        await this.unblockStaleFacilitySlotsForBooking(booking);
       }
       this.logger.log(
         `Auto-cancelled ${rows.length} unstarted bookings past end time.`,
@@ -3851,7 +3792,7 @@ export class BookingsService {
     await this.bookingRepo.update({ id: In(ids) }, { bookingStatus: 'completed' });
     for (const booking of liveBookings) {
       booking.bookingStatus = 'completed';
-      await this.syncFacilitySlotsStatus(booking);
+      await this.unblockStaleFacilitySlotsForBooking(booking);
     }
     this.logger.log(`Marked ${ids.length} active bookings as completed.`);
   }
