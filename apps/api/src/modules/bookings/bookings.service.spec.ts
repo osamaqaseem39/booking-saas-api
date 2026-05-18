@@ -67,6 +67,54 @@ function makeService() {
   };
 }
 
+describe('BookingsService - booking wall times', () => {
+  it('treats midnight start + end 24:00 as one slot step, not full day', () => {
+    const { service } = makeService();
+    const effective = (service as any).bookingItemEffectiveEndTime(
+      '00:00',
+      '24:00',
+      60,
+    );
+    expect(effective).toBe('01:00');
+  });
+
+  it('keeps same-day 17:00–24:00 as end-of-day window', () => {
+    const { service } = makeService();
+    const effective = (service as any).bookingItemEffectiveEndTime(
+      '17:00',
+      '24:00',
+      60,
+    );
+    expect(effective).toBe('24:00');
+  });
+
+  it('maps 17:00–24:00 to next-day midnight end instant', () => {
+    const { service } = makeService();
+    const { endDatetime } = (service as any).toSlotDateTimes(
+      '2026-05-20',
+      '17:00',
+      '24:00',
+    );
+    expect(endDatetime.toISOString()).toBe('2026-05-21T00:00:00.000Z');
+  });
+
+  it('sync window for 00:00–24:00 item blocks only first hour', () => {
+    const { service } = makeService();
+    const windows = (service as any).itemFacilitySlotSyncWindows(
+      { date: '2026-05-20', startTime: '00:00', endTime: '24:00' },
+      '2026-05-20',
+      60,
+    );
+    expect(windows).toEqual([
+      {
+        slotDate: '2026-05-20',
+        windowStart: '00:00',
+        windowEnd: '01:00',
+      },
+    ]);
+  });
+});
+
 describe('BookingsService - table tennis integration', () => {
   it('returns table-tennis facilities for table-tennis availability queries', async () => {
     const { service, repos } = makeService();

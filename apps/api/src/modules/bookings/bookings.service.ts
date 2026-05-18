@@ -985,16 +985,33 @@ export class BookingsService {
     return BookingsService.DEFAULT_SLOT_STEP_MINUTES;
   }
 
+  /** Wall-clock end for sync/overlap; `24:00` at midnight start is usually a 1h row, not full day. */
+  private bookingItemEffectiveEndTime(
+    startTime: string,
+    endTime: string,
+    slotStepMinutes = BookingsService.DEFAULT_SLOT_STEP_MINUTES,
+  ): string {
+    if (endTime !== '24:00') return endTime;
+    const startMin = toMinutes(startTime, false);
+    if (startMin > 0) return '24:00';
+    const oneStepEnd = startMin + slotStepMinutes;
+    if (oneStepEnd < 24 * 60) return minutesToTimeString(oneStepEnd);
+    return '24:00';
+  }
+
   private toSlotDateTimes(
     bookingDate: string,
     startTime: string,
     endTime: string,
   ) {
     const date = formatDateOnly(bookingDate);
-    const overnight =
-      toMinutes(endTime, true) <= toMinutes(startTime, false);
-    const endDate = overnight ? addDays(date, 1) : date;
-    const endPart = endTime === '24:00' ? '00:00' : endTime;
+    const startMin = toMinutes(startTime, false);
+    const endMin = toMinutes(endTime, true);
+    const overnight = endMin <= startMin;
+    const spansNextCalendarDay = overnight || endMin >= 24 * 60;
+    const endDate = spansNextCalendarDay ? addDays(date, 1) : date;
+    const endPart =
+      endTime === '24:00' || (endMin >= 24 * 60 && !overnight) ? '00:00' : endTime;
     return {
       startDatetime: new Date(`${date}T${startTime}:00Z`),
       endDatetime: new Date(`${endDate}T${endPart}:00Z`),
@@ -1005,10 +1022,16 @@ export class BookingsService {
   private itemFacilitySlotSyncWindows(
     item: Pick<BookingItem, 'date' | 'startTime' | 'endTime'>,
     bookingDate: string,
+    slotStepMinutes = BookingsService.DEFAULT_SLOT_STEP_MINUTES,
   ): Array<{ slotDate: string; windowStart: string; windowEnd: string }> {
     const date = formatDateOnly(item.date ?? bookingDate);
+    const effectiveEnd = this.bookingItemEffectiveEndTime(
+      item.startTime,
+      item.endTime,
+      slotStepMinutes,
+    );
     const startMin = toMinutes(item.startTime, false);
-    const endMin = toMinutes(item.endTime, true);
+    const endMin = toMinutes(effectiveEnd, true);
     if (endMin <= startMin) {
       return [
         {
@@ -1526,18 +1549,31 @@ export class BookingsService {
       await this.assertNoOverlap(tenantId, item.date, item);
     }
 
-    const itemsPayload: DeepPartial<BookingItem>[] = expandedItems.map((i) => ({
-      courtKind: i.courtKind,
-      courtId: i.courtId,
-      slotId: i.slotId,
-      date: i.date,
-      startTime: i.startTime,
-      endTime: i.endTime,
-      ...this.toSlotDateTimes(i.date, i.startTime, i.endTime),
-      price: dec(i.price),
-      currency: i.currency ?? 'PKR',
-      itemStatus: i.status ?? 'confirmed',
-    }));
+    const itemsPayload: DeepPartial<BookingItem>[] = [];
+    for (const i of expandedItems) {
+      const slotStep = await this.resolveCourtSlotStepMinutes(
+        tenantId,
+        i.courtKind,
+        i.courtId,
+      );
+      const endTime = this.bookingItemEffectiveEndTime(
+        i.startTime,
+        i.endTime,
+        slotStep,
+      );
+      itemsPayload.push({
+        courtKind: i.courtKind,
+        courtId: i.courtId,
+        slotId: i.slotId,
+        date: i.date,
+        startTime: i.startTime,
+        endTime,
+        ...this.toSlotDateTimes(i.date, i.startTime, endTime),
+        price: dec(i.price),
+        currency: i.currency ?? 'PKR',
+        itemStatus: i.status ?? 'confirmed',
+      });
+    }
     itemsPayload.sort(
       (a, b) =>
         ((a.startDatetime as Date)?.getTime() ?? 0) -
@@ -2271,7 +2307,7 @@ export class BookingsService {
           const bookingWindow = this.toSlotDateTimes(
             itemDate,
             r.startTime,
-            r.endTime,
+            this.bookingItemEffectiveEndTime(r.startTime, r.endTime),
           );
           return this.isOverlapBeyondGrace(
             bookingWindow.startDatetime,
@@ -2314,7 +2350,7 @@ export class BookingsService {
           const bookingWindow = this.toSlotDateTimes(
             itemDate,
             r.startTime,
-            r.endTime,
+            this.bookingItemEffectiveEndTime(r.startTime, r.endTime),
           );
           return this.isOverlapBeyondGrace(
             bookingWindow.startDatetime,
