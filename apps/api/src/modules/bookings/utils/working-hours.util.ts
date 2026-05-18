@@ -91,3 +91,26 @@ export function getWorkingDayWindow(
   // Keep overnight ranges (e.g. 16:00 -> 04:00) as informational instead of forcing closed.
   return { closed, open, close };
 }
+
+function wallMinutes(time: string, isEnd = false): number {
+  const t = (time || '').trim();
+  if (t === '24:00' || (t === '00:00' && isEnd)) return 24 * 60;
+  const m = t.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!m) return 0;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** True when close is at or before open on the clock (e.g. 16:00 → 04:00). */
+export function isOvernightWorkingWindow(open: string, close: string): boolean {
+  const o = wallMinutes(open, false);
+  const c = wallMinutes(close, true);
+  return c < o;
+}
+
+/** Next-calendar-day slots that continue the previous night (before `close`, e.g. 04:00). */
+export function isOvernightContinuationSlot(
+  startTime: string,
+  overnightClose: string,
+): boolean {
+  return wallMinutes(startTime, false) < wallMinutes(overnightClose, true);
+}

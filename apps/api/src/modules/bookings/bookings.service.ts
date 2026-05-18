@@ -52,6 +52,11 @@ import {
   ymdInTimeZone,
 } from './utils/facility-live-snapshot.util';
 import {
+  getWorkingDayWindow,
+  isOvernightContinuationSlot,
+  isOvernightWorkingWindow,
+} from './utils/working-hours.util';
+import {
   fetchGeminiBookingExtract,
   isGeminiBookingParseConfigured,
   mergeGeminiOverHeuristic,
@@ -2685,20 +2690,61 @@ export class BookingsService {
     };
 
     const currentDateSlots = await buildSlotsResponseForDate(date);
-    const additionalDates = await Promise.all(
-      Array.from({ length: 1 }, (_, idx) =>
-        buildSlotsResponseForDate(addDays(date, idx + 1)),
-      ),
-    );
-    const nextDateSlots = additionalDates[0] ?? null;
-    const unionSlotsAll = [currentDateSlots, ...additionalDates].flatMap((day) =>
-      day.unionSlots.map((slot) => ({
-        date: day.date,
-        startTime: slot.startTime,
-        endTime: slot.endTime,
-        availability: slot.availability,
+
+    const loc = await this.locationRepo.findOne({
+      where: { id: params.locationId },
+      select: ['workingHours'],
+    });
+    const dayWindow = getWorkingDayWindow(loc?.workingHours, date);
+    const allowsOvernightContinuation =
+      !dayWindow.closed &&
+      isOvernightWorkingWindow(dayWindow.open, dayWindow.close);
+
+    const filterContinuationDay = <
+      T extends {
+        date: string;
+        facilities: Array<{
+          slots: Array<{ startTime: string; endTime: string; availability: string }>;
+        }>;
+        unionSlots: Array<{ startTime: string; endTime: string; availability: string }>;
+      },
+    >(
+      day: T,
+    ): T => {
+      const keep = (s: { startTime: string }) =>
+        isOvernightContinuationSlot(s.startTime, dayWindow.close);
+      return {
+        ...day,
+        facilities: day.facilities.map((f) => ({
+          ...f,
+          slots: f.slots.filter(keep),
+        })),
+        unionSlots: day.unionSlots.filter(keep),
+      };
+    };
+
+    let nextDateSlots: (typeof currentDateSlots) | null = null;
+    const additionalDates: typeof currentDateSlots[] = [];
+    if (allowsOvernightContinuation) {
+      const nextBuilt = filterContinuationDay(
+        await buildSlotsResponseForDate(addDays(date, 1)),
+      );
+      if (nextBuilt.unionSlots.length > 0) {
+        nextDateSlots = nextBuilt;
+        additionalDates.push(nextBuilt);
+      }
+    }
+
+    const unionSlotsAll = [
+      ...currentDateSlots.unionSlots.map((slot) => ({
+        date,
+        ...slot,
       })),
-    );
+      ...(nextDateSlots?.unionSlots.map((slot) => ({
+        date: nextDateSlots!.date,
+        ...slot,
+      })) ?? []),
+    ];
 
     return {
       date,
