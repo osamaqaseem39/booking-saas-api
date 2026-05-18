@@ -1648,6 +1648,10 @@ export class BookingsService {
       relations: ['items', 'user'],
     });
 
+    if (full.bookingStatus === 'confirmed') {
+      await this.markFacilitySlotsBookedForBooking(full);
+    }
+
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
     return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
@@ -1857,6 +1861,11 @@ export class BookingsService {
       ['cancelled', 'completed', 'no_show'].includes(full.bookingStatus)
     ) {
       await this.unblockStaleFacilitySlotsForBooking(full);
+    } else if (
+      dto.bookingStatus !== undefined &&
+      full.bookingStatus === 'confirmed'
+    ) {
+      await this.markFacilitySlotsBookedForBooking(full);
     }
 
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
@@ -2360,6 +2369,12 @@ export class BookingsService {
             bookingId: hit.bookingId,
             itemId: hit.id,
             status: hit.itemStatus,
+          });
+        } else if (fs.status === 'booked') {
+          slots.push({
+            startTime: fs.startTime,
+            endTime: displayEnd,
+            availability: 'booked',
           });
         } else if (fs.status === 'blocked') {
           slots.push({
@@ -3520,6 +3535,17 @@ export class BookingsService {
     };
   }
 
+  private async markFacilitySlotsBookedForBooking(booking: Booking): Promise<void> {
+    if (booking.bookingStatus !== 'confirmed') return;
+    const items = (booking.items ?? []).filter((i) => i.itemStatus !== 'cancelled');
+    if (!items.length) return;
+    await this.setFacilitySlotsStatusForItems({
+      tenantId: booking.tenantId,
+      items,
+      targetStatus: 'booked',
+    });
+  }
+
   private async unblockStaleFacilitySlotsForBooking(
     booking: Booking,
   ): Promise<void> {
@@ -3584,7 +3610,7 @@ export class BookingsService {
           : [];
 
       for (const { slotDate, windowStart, windowEnd } of windows) {
-        if (targetStatus === 'blocked') {
+        if (targetStatus === 'blocked' || targetStatus === 'booked') {
           await this.updateFacilitySlotsInWindow({
             tenantId,
             courtKind: item.courtKind,
