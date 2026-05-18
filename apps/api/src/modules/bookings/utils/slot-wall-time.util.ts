@@ -65,6 +65,60 @@ export function wallSlotOverlapsWindow(
   );
 }
 
+/** Wall-clock end used when matching a booking item to facility grid rows. */
+export function resolveBookingMatchEndTime(
+  item: {
+    startTime: string;
+    endTime: string;
+    startDatetime?: Date | string | null;
+    endDatetime?: Date | string | null;
+  },
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+  graceMinutes = 15,
+): string {
+  if (item.endTime !== '24:00') return item.endTime;
+  if (item.startDatetime != null && item.endDatetime != null) {
+    const durationMin =
+      (new Date(item.endDatetime).getTime() -
+        new Date(item.startDatetime).getTime()) /
+      60000;
+    if (durationMin > slotStepMinutes + graceMinutes) {
+      return '24:00';
+    }
+  }
+  return facilitySlotEffectiveEndTime(
+    item.startTime,
+    item.endTime,
+    slotStepMinutes,
+  );
+}
+
+export function facilitySlotOverlapsBookingItem(
+  slotStart: string,
+  slotEnd: string,
+  item: {
+    startTime: string;
+    endTime: string;
+    startDatetime?: Date | string | null;
+    endDatetime?: Date | string | null;
+  },
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+  graceMinutes = 15,
+): boolean {
+  const matchEnd = resolveBookingMatchEndTime(
+    item,
+    slotStepMinutes,
+    graceMinutes,
+  );
+  return facilitySlotOverlapsWallWindow(
+    slotStart,
+    slotEnd,
+    item.startTime,
+    matchEnd,
+    slotStepMinutes,
+  );
+}
+
 /** Match a facility grid row (often `endTime: 24:00`) to a booking block window. */
 export function facilitySlotOverlapsWallWindow(
   slotStart: string,

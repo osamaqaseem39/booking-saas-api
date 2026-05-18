@@ -77,6 +77,7 @@ import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.ent
 import {
   buildItemFacilitySlotSyncWindows,
   facilitySlotEffectiveEndTime,
+  facilitySlotOverlapsBookingItem,
   facilitySlotOverlapsWallWindow,
   wallSlotEffectiveEndTime,
   wallSlotOverlapsWindow,
@@ -1116,50 +1117,42 @@ export class BookingsService {
         'i.date AS itemDate',
         'i.startTime AS startTime',
         'i.endTime AS endTime',
+        'i.startDatetime AS startDatetime',
+        'i.endDatetime AS endDatetime',
       ])
       .getRawMany<{
         bookingDate: string;
         itemDate: string | null;
         startTime: string;
         endTime: string;
+        startDatetime: string;
+        endDatetime: string;
       }>();
-
-    const activeItems = activeRows.map((r) => ({
-      date: formatDateOnly(r.itemDate ?? r.bookingDate ?? slotDate),
-      startTime: r.startTime,
-      endTime: r.endTime,
-    }));
 
     const availableStarts: string[] = [];
 
     for (const slot of slots) {
-      const slotEndEffective = facilitySlotEffectiveEndTime(
-        slot.startTime,
-        slot.endTime,
-        slotStepMinutes,
-      );
       let hasActiveBooking = false;
-      for (const item of activeItems) {
-        const windows = this.itemFacilitySlotSyncWindows(
-          item,
-          formatDateOnly(item.date ?? slotDate),
-          slotStepMinutes,
-        );
-        for (const w of windows) {
-          if (w.slotDate !== slotDate) continue;
-          if (
-            wallSlotOverlapsWindow(
-              slot.startTime,
-              slotEndEffective,
-              w.windowStart,
-              w.windowEnd,
-            )
-          ) {
-            hasActiveBooking = true;
-            break;
-          }
+      for (const item of activeRows) {
+        const itemDate = formatDateOnly(item.itemDate ?? item.bookingDate ?? slotDate);
+        if (itemDate !== slotDate) continue;
+        if (
+          facilitySlotOverlapsBookingItem(
+            slot.startTime,
+            slot.endTime,
+            {
+              startTime: item.startTime,
+              endTime: item.endTime,
+              startDatetime: item.startDatetime,
+              endDatetime: item.endDatetime,
+            },
+            slotStepMinutes,
+            BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
+          )
+        ) {
+          hasActiveBooking = true;
+          break;
         }
-        if (hasActiveBooking) break;
       }
 
       if (!hasActiveBooking) availableStarts.push(slot.startTime);
@@ -1577,24 +1570,14 @@ export class BookingsService {
 
     const itemsPayload: DeepPartial<BookingItem>[] = [];
     for (const i of expandedItems) {
-      const slotStep = await this.resolveCourtSlotStepMinutes(
-        tenantId,
-        i.courtKind,
-        i.courtId,
-      );
-      const endTime = this.bookingItemEffectiveEndTime(
-        i.startTime,
-        i.endTime,
-        slotStep,
-      );
       itemsPayload.push({
         courtKind: i.courtKind,
         courtId: i.courtId,
         slotId: i.slotId,
         date: i.date,
         startTime: i.startTime,
-        endTime,
-        ...this.toSlotDateTimes(i.date, i.startTime, endTime),
+        endTime: i.endTime,
+        ...this.toSlotDateTimes(i.date, i.startTime, i.endTime),
         price: dec(i.price),
         currency: i.currency ?? 'PKR',
         itemStatus: i.status ?? 'confirmed',
@@ -2348,33 +2331,31 @@ export class BookingsService {
       for (const fs of facilitySlots) {
         if (toMinutes(fs.startTime, false) >= end || toMinutes(fs.endTime, true) <= start)
           continue;
+        const displayEnd = facilitySlotEffectiveEndTime(
+          fs.startTime,
+          fs.endTime,
+          slotStepMinutes,
+        );
         const hit = rows.find((r) => {
-          const bookingDate = formatDateOnly(r.bookingDate ?? date);
-          const windows = buildItemFacilitySlotSyncWindows(
+          const itemDate = formatDateOnly(r.itemDate ?? r.bookingDate ?? date);
+          if (itemDate !== date) return false;
+          return facilitySlotOverlapsBookingItem(
+            fs.startTime,
+            fs.endTime,
             {
-              date: formatDateOnly(r.itemDate ?? bookingDate),
               startTime: r.startTime,
               endTime: r.endTime,
+              startDatetime: r.startDatetime,
+              endDatetime: r.endDatetime,
             },
-            bookingDate,
             slotStepMinutes,
-          );
-          return windows.some(
-            (w) =>
-              w.slotDate === date &&
-              facilitySlotOverlapsWallWindow(
-                fs.startTime,
-                fs.endTime,
-                w.windowStart,
-                w.windowEnd,
-                slotStepMinutes,
-              ),
+            BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
           );
         });
         if (hit) {
           slots.push({
             startTime: fs.startTime,
-            endTime: fs.endTime,
+            endTime: displayEnd,
             availability: 'booked',
             bookingId: hit.bookingId,
             itemId: hit.id,
@@ -2383,13 +2364,13 @@ export class BookingsService {
         } else if (fs.status === 'blocked') {
           slots.push({
             startTime: fs.startTime,
-            endTime: fs.endTime,
+            endTime: displayEnd,
             availability: 'blocked',
           });
         } else {
           slots.push({
             startTime: fs.startTime,
-            endTime: fs.endTime,
+            endTime: displayEnd,
             availability: 'available',
           });
         }
@@ -2400,20 +2381,19 @@ export class BookingsService {
         const s = minutesToTimeString(m);
         const e = minutesToTimeString(m + slotStepMinutes);
         const hit = rows.find((r) => {
-          const bookingDate = formatDateOnly(r.bookingDate ?? date);
-          const windows = buildItemFacilitySlotSyncWindows(
+          const itemDate = formatDateOnly(r.itemDate ?? r.bookingDate ?? date);
+          if (itemDate !== date) return false;
+          return facilitySlotOverlapsBookingItem(
+            s,
+            e,
             {
-              date: formatDateOnly(r.itemDate ?? bookingDate),
               startTime: r.startTime,
               endTime: r.endTime,
+              startDatetime: r.startDatetime,
+              endDatetime: r.endDatetime,
             },
-            bookingDate,
             slotStepMinutes,
-          );
-          return windows.some(
-            (w) =>
-              w.slotDate === date &&
-              wallSlotOverlapsWindow(s, e, w.windowStart, w.windowEnd),
+            BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
           );
         });
         if (hit) {

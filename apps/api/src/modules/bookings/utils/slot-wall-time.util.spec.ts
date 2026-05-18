@@ -1,7 +1,9 @@
 import {
   buildItemFacilitySlotSyncWindows,
   facilitySlotEffectiveEndTime,
+  facilitySlotOverlapsBookingItem,
   facilitySlotOverlapsWallWindow,
+  resolveBookingMatchEndTime,
   wallSlotEffectiveEndTime,
 } from './slot-wall-time.util';
 
@@ -9,6 +11,35 @@ describe('slot-wall-time.util', () => {
   it('maps facility row 08:00–24:00 to one hour for overlap', () => {
     expect(facilitySlotEffectiveEndTime('08:00', '24:00', 60)).toBe('09:00');
     expect(wallSlotEffectiveEndTime('08:00', '24:00', 60)).toBe('09:00');
+  });
+
+  it('resolveBookingMatchEndTime uses one hour for short 19:00–24:00 items', () => {
+    expect(
+      resolveBookingMatchEndTime(
+        {
+          startTime: '19:00',
+          endTime: '24:00',
+          startDatetime: '2026-05-18T19:00:00.000Z',
+          endDatetime: '2026-05-18T20:00:00.000Z',
+        },
+        60,
+      ),
+    ).toBe('20:00');
+  });
+
+  it('facilitySlotOverlapsBookingItem matches only the booked hour', () => {
+    const item = {
+      startTime: '19:00',
+      endTime: '20:00',
+      startDatetime: '2026-05-18T19:00:00.000Z',
+      endDatetime: '2026-05-18T20:00:00.000Z',
+    };
+    expect(
+      facilitySlotOverlapsBookingItem('19:00', '24:00', item, 60),
+    ).toBe(true);
+    expect(
+      facilitySlotOverlapsBookingItem('18:00', '24:00', item, 60),
+    ).toBe(false);
   });
 
   it('booking 19:00–20:00 does not overlap earlier hourly facility rows ending 24:00', () => {
