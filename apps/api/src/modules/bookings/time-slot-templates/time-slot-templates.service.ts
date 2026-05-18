@@ -14,6 +14,11 @@ import { TableTennisCourt } from '../../arena/table-tennis-court/entities/table-
 import { TurfCourt } from '../../arena/turf/entities/turf-court.entity';
 import { CourtFacilitySlot } from '../entities/court-facility-slot.entity';
 import { BookingItem } from '../entities/booking-item.entity';
+import {
+  buildItemFacilitySlotSyncWindows,
+  facilitySlotOverlapsWallWindow,
+  formatDateOnlyYmd,
+} from '../utils/slot-wall-time.util';
 
 function toMinutes(time: string, isEndTime = false): number {
   if (time === '24:00' || (time === '00:00' && isEndTime)) return 24 * 60;
@@ -201,41 +206,62 @@ export class TimeSlotTemplatesService {
       .select([
         'item.courtKind AS "courtKind"',
         'item.courtId AS "courtId"',
-        'item.startDatetime AS "startDatetime"',
-        'item.endDatetime AS "endDatetime"',
+        'item.date AS "date"',
+        'booking.bookingDate AS "bookingDate"',
+        'item.startTime AS "startTime"',
+        'item.endTime AS "endTime"',
       ])
       .getRawMany<{
         courtKind: 'padel_court' | 'turf_court' | 'table_tennis_court';
         courtId: string;
-        startDatetime: string;
-        endDatetime: string;
+        date: string | null;
+        bookingDate: string;
+        startTime: string;
+        endTime: string;
       }>();
 
     for (const item of activeBookingItems) {
-      const startIso = new Date(item.startDatetime);
-      const endIso = new Date(item.endDatetime);
-      const startDate = startIso.toISOString().slice(0, 10);
-      const endDate = endIso.toISOString().slice(0, 10);
-      const touchedDates = new Set<string>([startDate, endDate]);
-
-      for (const slotDate of touchedDates) {
-        const windowStart =
-          slotDate === startDate ? startIso.toISOString().slice(11, 16) : '00:00';
-        const windowEnd =
-          slotDate === endDate ? endIso.toISOString().slice(11, 16) : '24:00';
-        const effectiveEnd = windowEnd === '00:00' ? '24:00' : windowEnd;
-
-        await this.facilitySlotRepo
-          .createQueryBuilder()
-          .update(CourtFacilitySlot)
-          .set({ status: 'blocked' })
-          .where('tenantId = :tenantId', { tenantId })
-          .andWhere('courtKind = :courtKind', { courtKind: item.courtKind })
-          .andWhere('courtId = :courtId', { courtId: item.courtId })
-          .andWhere('slotDate = :slotDate', { slotDate })
-          .andWhere('startTime < :endTime', { endTime: effectiveEnd })
-          .andWhere('endTime > :startTime', { startTime: windowStart })
-          .execute();
+      const bookingDate = formatDateOnlyYmd(item.bookingDate);
+      const windows = buildItemFacilitySlotSyncWindows(
+        {
+          date: item.date ?? bookingDate,
+          startTime: item.startTime,
+          endTime: item.endTime,
+        },
+        bookingDate,
+      );
+      for (const { slotDate, windowStart, windowEnd } of windows) {
+        const gridSlots = await this.facilitySlotRepo.find({
+          where: {
+            tenantId,
+            courtKind: item.courtKind,
+            courtId: item.courtId,
+            slotDate,
+          },
+          select: ['startTime', 'endTime'],
+        });
+        for (const gridSlot of gridSlots) {
+          if (
+            !facilitySlotOverlapsWallWindow(
+              gridSlot.startTime,
+              gridSlot.endTime,
+              windowStart,
+              windowEnd,
+            )
+          ) {
+            continue;
+          }
+          await this.facilitySlotRepo.update(
+            {
+              tenantId,
+              courtKind: item.courtKind,
+              courtId: item.courtId,
+              slotDate,
+              startTime: gridSlot.startTime,
+            },
+            { status: 'blocked' },
+          );
+        }
       }
     }
   }

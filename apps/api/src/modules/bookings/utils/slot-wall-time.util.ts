@@ -1,0 +1,112 @@
+/** Wall-clock slot helpers shared by bookings + facility-slot sync. */
+
+export const DEFAULT_SLOT_STEP_MINUTES = 60;
+
+export function wallToMinutes(time: string, isEndTime = false): number {
+  if (typeof time !== 'string' || !time.includes(':')) return 0;
+  if (time === '24:00' || (time === '00:00' && isEndTime)) return 24 * 60;
+  const [hRaw, mRaw] = time.split(':');
+  return Number(hRaw || 0) * 60 + Number(mRaw || 0);
+}
+
+export function wallMinutesToTime(m: number): string {
+  if (m >= 24 * 60) return '24:00';
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+export function formatDateOnlyYmd(d: Date | string): string {
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  return String(d).slice(0, 10);
+}
+
+export function addDaysYmdWall(date: string, days: number): string {
+  const d = new Date(`${date}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Normalizes facility-row / booking `endTime` when stored as `24:00`.
+ * Early slots (before 17:00) mean one step; 17:00+ means close-of-day.
+ */
+export function wallSlotEffectiveEndTime(
+  startTime: string,
+  endTime: string,
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+): string {
+  if (endTime !== '24:00') return endTime;
+  const startMin = wallToMinutes(startTime, false);
+  if (startMin >= 17 * 60) return '24:00';
+  return wallMinutesToTime(Math.min(startMin + slotStepMinutes, 24 * 60));
+}
+
+export function wallSlotOverlapsWindow(
+  slotStart: string,
+  slotEnd: string,
+  windowStart: string,
+  windowEnd: string,
+): boolean {
+  return (
+    wallToMinutes(slotStart, false) < wallToMinutes(windowEnd, true) &&
+    wallToMinutes(slotEnd, true) > wallToMinutes(windowStart, false)
+  );
+}
+
+/** Match a facility grid row (often `endTime: 24:00`) to a booking block window. */
+export function facilitySlotOverlapsWallWindow(
+  slotStart: string,
+  slotEnd: string,
+  windowStart: string,
+  windowEnd: string,
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+): boolean {
+  const slotEndEffective = wallSlotEffectiveEndTime(
+    slotStart,
+    slotEnd,
+    slotStepMinutes,
+  );
+  return wallSlotOverlapsWindow(
+    slotStart,
+    slotEndEffective,
+    windowStart,
+    windowEnd,
+  );
+}
+
+export function buildItemFacilitySlotSyncWindows(
+  item: { date?: string | null; startTime: string; endTime: string },
+  bookingDate: string,
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+): Array<{ slotDate: string; windowStart: string; windowEnd: string }> {
+  const date = formatDateOnlyYmd(item.date ?? bookingDate);
+  const effectiveEnd = wallSlotEffectiveEndTime(
+    item.startTime,
+    item.endTime,
+    slotStepMinutes,
+  );
+  const startMin = wallToMinutes(item.startTime, false);
+  const endMin = wallToMinutes(effectiveEnd, true);
+  if (endMin <= startMin) {
+    return [
+      {
+        slotDate: date,
+        windowStart: wallMinutesToTime(startMin),
+        windowEnd: '24:00',
+      },
+      {
+        slotDate: addDaysYmdWall(date, 1),
+        windowStart: '00:00',
+        windowEnd: wallMinutesToTime(endMin),
+      },
+    ];
+  }
+  return [
+    {
+      slotDate: date,
+      windowStart: wallMinutesToTime(startMin),
+      windowEnd: wallMinutesToTime(endMin),
+    },
+  ];
+}

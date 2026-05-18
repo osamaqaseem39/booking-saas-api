@@ -74,6 +74,12 @@ import { BookingItem } from './entities/booking-item.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { Booking } from './entities/booking.entity';
 import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
+import {
+  buildItemFacilitySlotSyncWindows,
+  facilitySlotOverlapsWallWindow,
+  wallSlotEffectiveEndTime,
+  wallSlotOverlapsWindow,
+} from './utils/slot-wall-time.util';
 
 function dec(n: number): string {
   return Number(n).toFixed(2);
@@ -985,19 +991,12 @@ export class BookingsService {
     return BookingsService.DEFAULT_SLOT_STEP_MINUTES;
   }
 
-  /**
-   * Wall-clock end for sync/overlap. Facility rows often store `24:00` as row end;
-   * only evening-to-close bookings (17:00+) should keep that as a day-long window.
-   */
   private bookingItemEffectiveEndTime(
     startTime: string,
     endTime: string,
     slotStepMinutes = BookingsService.DEFAULT_SLOT_STEP_MINUTES,
   ): string {
-    if (endTime !== '24:00') return endTime;
-    const startMin = toMinutes(startTime, false);
-    if (startMin >= 17 * 60) return '24:00';
-    return minutesToTimeString(Math.min(startMin + slotStepMinutes, 24 * 60));
+    return wallSlotEffectiveEndTime(startTime, endTime, slotStepMinutes);
   }
 
   private toSlotDateTimes(
@@ -1019,41 +1018,12 @@ export class BookingsService {
     };
   }
 
-  /** Wall-clock windows for facility-slot block/unblock (never span to EOD unless booked). */
   private itemFacilitySlotSyncWindows(
     item: Pick<BookingItem, 'date' | 'startTime' | 'endTime'>,
     bookingDate: string,
     slotStepMinutes = BookingsService.DEFAULT_SLOT_STEP_MINUTES,
   ): Array<{ slotDate: string; windowStart: string; windowEnd: string }> {
-    const date = formatDateOnly(item.date ?? bookingDate);
-    const effectiveEnd = this.bookingItemEffectiveEndTime(
-      item.startTime,
-      item.endTime,
-      slotStepMinutes,
-    );
-    const startMin = toMinutes(item.startTime, false);
-    const endMin = toMinutes(effectiveEnd, true);
-    if (endMin <= startMin) {
-      return [
-        {
-          slotDate: date,
-          windowStart: minutesToTimeString(startMin),
-          windowEnd: '24:00',
-        },
-        {
-          slotDate: addDays(date, 1),
-          windowStart: '00:00',
-          windowEnd: minutesToTimeString(endMin),
-        },
-      ];
-    }
-    return [
-      {
-        slotDate: date,
-        windowStart: minutesToTimeString(startMin),
-        windowEnd: minutesToTimeString(endMin),
-      },
-    ];
+    return buildItemFacilitySlotSyncWindows(item, bookingDate, slotStepMinutes);
   }
 
   private async updateFacilitySlotsInWindow(params: {
@@ -1065,30 +1035,46 @@ export class BookingsService {
     windowEnd: string;
     targetStatus: CourtFacilitySlotStatus;
   }): Promise<number> {
-    const result = await this.facilitySlotRepo
-      .createQueryBuilder()
-      .update(CourtFacilitySlot)
-      .set({ status: params.targetStatus })
-      .where('tenantId = :tenantId', { tenantId: params.tenantId })
-      .andWhere('courtKind = :courtKind', { courtKind: params.courtKind })
-      .andWhere('courtId = :courtId', { courtId: params.courtId })
-      .andWhere('slotDate = :slotDate', { slotDate: params.slotDate })
-      .andWhere('startTime < :windowEnd', { windowEnd: params.windowEnd })
-      .andWhere('endTime > :windowStart', { windowStart: params.windowStart })
-      .execute();
-    return result.affected ?? 0;
-  }
-
-  private wallSlotOverlapsWindow(
-    slotStart: string,
-    slotEnd: string,
-    windowStart: string,
-    windowEnd: string,
-  ): boolean {
-    return (
-      toMinutes(slotStart, false) < toMinutes(windowEnd, true) &&
-      toMinutes(slotEnd, true) > toMinutes(windowStart, false)
+    const slotStepMinutes = await this.resolveCourtSlotStepMinutes(
+      params.tenantId,
+      params.courtKind,
+      params.courtId,
     );
+    const slots = await this.facilitySlotRepo.find({
+      where: {
+        tenantId: params.tenantId,
+        courtKind: params.courtKind,
+        courtId: params.courtId,
+        slotDate: params.slotDate,
+      },
+      select: ['startTime', 'endTime'],
+    });
+    let affected = 0;
+    for (const slot of slots) {
+      if (
+        !facilitySlotOverlapsWallWindow(
+          slot.startTime,
+          slot.endTime,
+          params.windowStart,
+          params.windowEnd,
+          slotStepMinutes,
+        )
+      ) {
+        continue;
+      }
+      await this.facilitySlotRepo.update(
+        {
+          tenantId: params.tenantId,
+          courtKind: params.courtKind,
+          courtId: params.courtId,
+          slotDate: params.slotDate,
+          startTime: slot.startTime,
+        },
+        { status: params.targetStatus },
+      );
+      affected += 1;
+    }
+    return affected;
   }
 
   /** Recompute facility-slot blocked/available from all active bookings (fixes stale blocks). */
@@ -1103,6 +1089,12 @@ export class BookingsService {
       select: ['startTime', 'endTime'],
     });
     if (!slots.length) return;
+
+    const slotStepMinutes = await this.resolveCourtSlotStepMinutes(
+      tenantId,
+      courtKind,
+      courtId,
+    );
 
     const bookings = await this.bookingRepo.find({
       where: {
@@ -1128,18 +1120,24 @@ export class BookingsService {
     }
 
     for (const slot of slots) {
+      const slotEndEffective = wallSlotEffectiveEndTime(
+        slot.startTime,
+        slot.endTime,
+        slotStepMinutes,
+      );
       let shouldBlock = false;
       for (const item of activeItems) {
         const windows = this.itemFacilitySlotSyncWindows(
           item,
           formatDateOnly(item.date ?? slotDate),
+          slotStepMinutes,
         );
         for (const w of windows) {
           if (w.slotDate !== slotDate) continue;
           if (
-            this.wallSlotOverlapsWindow(
+            wallSlotOverlapsWindow(
               slot.startTime,
-              slot.endTime,
+              slotEndEffective,
               w.windowStart,
               w.windowEnd,
             )
@@ -1406,10 +1404,20 @@ export class BookingsService {
     date: string,
     item: CreateBookingItemDto,
   ) {
+    const slotStep = await this.resolveCourtSlotStepMinutes(
+      tenantId,
+      item.courtKind,
+      item.courtId,
+    );
+    const effectiveEnd = this.bookingItemEffectiveEndTime(
+      item.startTime,
+      item.endTime,
+      slotStep,
+    );
     const { startDatetime, endDatetime } = this.toSlotDateTimes(
       date,
       item.startTime,
-      item.endTime,
+      effectiveEnd,
     );
 
     const overlaps = await this.bookingRepo
@@ -1668,6 +1676,32 @@ export class BookingsService {
         courtToLocationMap,
         locationTimeZoneMap,
       );
+    } else if (
+      dto.payment?.paidAmount !== undefined &&
+      booking.bookingStatus === 'live'
+    ) {
+      const requestedPaid = Number(dto.payment.paidAmount);
+      if (
+        Number.isFinite(requestedPaid) &&
+        requestedPaid > numFromDec(booking.totalAmount) + 0.005
+      ) {
+        const { courtToLocationMap, locationTimeZoneMap } =
+          await this.resolveLocationMapping(booking);
+        const projection = this.computeLiveOvertimeProjection(
+          booking,
+          new Date(),
+          courtToLocationMap,
+          locationTimeZoneMap,
+        );
+        if (projection && projection.totalOvertimeCharge > 0) {
+          this.materializeLiveOvertimeOnBooking(
+            booking,
+            new Date(),
+            courtToLocationMap,
+            locationTimeZoneMap,
+          );
+        }
+      }
     }
 
     if (dto.bookingStatus !== undefined) {
@@ -2218,6 +2252,8 @@ export class BookingsService {
       endTime?: string;
       availableOnly?: boolean;
       skipCourtCheck?: boolean;
+      /** Re-apply wall-clock booking windows to facility rows (fixes stale day-wide blocks). */
+      reconcileFacility?: boolean;
     },
   ) {
     if (!params.skipCourtCheck) {
@@ -2243,7 +2279,7 @@ export class BookingsService {
 
     // Instead of completely generating grid steps, we will read the real slots from court_facility_slots
     // if they exist for this court and date, falling back to the configured grid loop if nothing exists.
-    const facilitySlots = await this.facilitySlotRepo.find({
+    let facilitySlots = await this.facilitySlotRepo.find({
       where: {
         tenantId,
         courtKind: params.kind,
@@ -2252,6 +2288,24 @@ export class BookingsService {
       },
       order: { startTime: 'ASC' },
     });
+
+    if (params.reconcileFacility && facilitySlots.length > 0) {
+      await this.reconcileFacilitySlotsForCourtDate(
+        tenantId,
+        params.kind,
+        params.courtId,
+        date,
+      );
+      facilitySlots = await this.facilitySlotRepo.find({
+        where: {
+          tenantId,
+          courtKind: params.kind,
+          courtId: params.courtId,
+          slotDate: date,
+        },
+        order: { startTime: 'ASC' },
+      });
+    }
 
     const queryStart = new Date(`${date}T00:00:00.000Z`);
     queryStart.setUTCMinutes(toMinutes(params.startTime ?? '00:00', false));
@@ -2298,17 +2352,26 @@ export class BookingsService {
       for (const fs of facilitySlots) {
         if (toMinutes(fs.startTime, false) >= end || toMinutes(fs.endTime, true) <= start)
           continue;
+        const fsEndEffective = wallSlotEffectiveEndTime(
+          fs.startTime,
+          fs.endTime,
+          slotStepMinutes,
+        );
         const hit = rows.find((r) => {
           const itemDate = formatDateOnly(r.itemDate ?? r.bookingDate ?? date);
           const slotWindow = this.toSlotDateTimes(
             date,
             fs.startTime,
-            fs.endTime,
+            fsEndEffective,
           );
           const bookingWindow = this.toSlotDateTimes(
             itemDate,
             r.startTime,
-            this.bookingItemEffectiveEndTime(r.startTime, r.endTime),
+            this.bookingItemEffectiveEndTime(
+              r.startTime,
+              r.endTime,
+              slotStepMinutes,
+            ),
           );
           return this.isOverlapBeyondGrace(
             bookingWindow.startDatetime,
@@ -2437,6 +2500,7 @@ export class BookingsService {
     const data = await this.getCourtSlots(tenantId, {
       ...params,
       availableOnly: false,
+      reconcileFacility: true,
     });
     let segments = data.slots.map((s: any) =>
       s.availability === 'booked'
@@ -2546,6 +2610,13 @@ export class BookingsService {
       .values(values as CourtFacilitySlot[])
       .orIgnore()
       .execute();
+
+    await this.reconcileFacilitySlotsForCourtDate(
+      tenantId,
+      params.kind,
+      params.courtId,
+      date,
+    );
 
     return { ok: true, upserted: values.length };
   }
@@ -3538,10 +3609,31 @@ export class BookingsService {
     if (!items.length) return;
 
     for (const item of items) {
+      const slotStep = await this.resolveCourtSlotStepMinutes(
+        tenantId,
+        item.courtKind,
+        item.courtId,
+      );
       const windows = this.itemFacilitySlotSyncWindows(
         item,
         formatDateOnly(item.date ?? item.startDatetime ?? new Date()),
+        slotStep,
       );
+      const activeOnCourt =
+        targetStatus === 'available'
+          ? await this.bookingRepo.find({
+              where: {
+                tenantId,
+                bookingStatus: In([
+                  'pending',
+                  'confirmed',
+                  'live',
+                  'completed',
+                ]),
+              },
+              relations: ['items'],
+            })
+          : [];
 
       for (const { slotDate, windowStart, windowEnd } of windows) {
         if (targetStatus === 'blocked') {
@@ -3568,34 +3660,54 @@ export class BookingsService {
         });
 
         for (const slot of candidateSlots) {
+          const slotEndEffective = wallSlotEffectiveEndTime(
+            slot.startTime,
+            slot.endTime,
+            slotStep,
+          );
           if (
-            toMinutes(slot.startTime, false) >= toMinutes(windowEnd, true) ||
-            toMinutes(slot.endTime, true) <= toMinutes(windowStart, false)
+            !wallSlotOverlapsWindow(
+              slot.startTime,
+              slotEndEffective,
+              windowStart,
+              windowEnd,
+            )
           ) {
             continue;
           }
 
-          const slotStart = new Date(`${slot.slotDate}T${slot.startTime}:00Z`);
-          const slotEnd = new Date(`${slot.slotDate}T${slot.endTime}:00Z`);
-          const overlapQb = this.bookingRepo
-            .createQueryBuilder('b')
-            .innerJoin('b.items', 'i')
-            .where('b.tenantId = :tenantId', { tenantId })
-            .andWhere("b.bookingStatus IN ('pending', 'confirmed', 'live', 'completed')")
-            .andWhere("i.itemStatus <> 'cancelled'")
-            .andWhere('i.courtKind = :courtKind', { courtKind: item.courtKind })
-            .andWhere('i.courtId = :courtId', { courtId: item.courtId })
-            .andWhere('i.startDatetime < :slotEnd', {
-              slotEnd: slotEnd.toISOString(),
-            })
-            .andWhere('i.endDatetime > :slotStart', {
-              slotStart: slotStart.toISOString(),
-            });
-          if (excludeBookingId) {
-            overlapQb.andWhere('b.id <> :excludeBookingId', { excludeBookingId });
+          let hasOtherBooking = false;
+          for (const b of activeOnCourt) {
+            if (excludeBookingId && b.id === excludeBookingId) continue;
+            const bd = formatDateOnly(b.bookingDate);
+            for (const bi of b.items ?? []) {
+              if (bi.itemStatus === 'cancelled') continue;
+              if (bi.courtKind !== item.courtKind || bi.courtId !== item.courtId)
+                continue;
+              const biWindows = this.itemFacilitySlotSyncWindows(
+                bi,
+                formatDateOnly(bi.date ?? bd),
+                slotStep,
+              );
+              for (const w of biWindows) {
+                if (w.slotDate !== slotDate) continue;
+                if (
+                  wallSlotOverlapsWindow(
+                    slot.startTime,
+                    slotEndEffective,
+                    w.windowStart,
+                    w.windowEnd,
+                  )
+                ) {
+                  hasOtherBooking = true;
+                  break;
+                }
+              }
+              if (hasOtherBooking) break;
+            }
+            if (hasOtherBooking) break;
           }
-          const overlapCount = await overlapQb.getCount();
-          if (overlapCount > 0) continue;
+          if (hasOtherBooking) continue;
 
           await this.facilitySlotRepo.update(
             {
