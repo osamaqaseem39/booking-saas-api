@@ -2073,6 +2073,19 @@ export class BookingsService {
       where: { id: bookingId, tenantId },
       relations: ['items'],
     });
+
+    /**
+     * Persist the slot grid for the newly created extension item so the facility-slot
+     * view reflects the booking. `markFacilitySlotsBookedForBooking` and
+     * `markFacilitySlotsBlockedForLiveBooking` are status-gated internally, so calling
+     * both is safe — only the relevant one acts.
+     */
+    if (full.bookingStatus === 'confirmed') {
+      await this.markFacilitySlotsBookedForBooking(full);
+    } else if (full.bookingStatus === 'live') {
+      await this.markFacilitySlotsBlockedForLiveBooking(full);
+    }
+
     return { ok: true, bookingId, blocked, extendedBy: addOnMinutes };
   }
 
