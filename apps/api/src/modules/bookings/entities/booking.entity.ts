@@ -16,6 +16,7 @@ import type {
   PaymentStatus,
 } from '../types/booking.types';
 import { BookingItem } from './booking-item.entity';
+import { PaymentTransaction } from './payment-transaction.entity';
 
 @Entity({ name: 'bookings' })
 export class Booking {
@@ -91,6 +92,9 @@ export class Booking {
 
   @OneToMany(() => BookingItem, (item) => item.booking, { cascade: true })
   items!: BookingItem[];
+
+  @OneToMany(() => PaymentTransaction, (txn) => txn.booking, { cascade: true })
+  paymentTransactions!: PaymentTransaction[];
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

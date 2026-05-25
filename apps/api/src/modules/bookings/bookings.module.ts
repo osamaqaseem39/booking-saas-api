@@ -13,6 +13,7 @@ import { CourtFacilitySlot } from './entities/court-facility-slot.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { BookingItem } from './entities/booking-item.entity';
 import { Booking } from './entities/booking.entity';
+import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { Business } from '../businesses/entities/business.entity';
 import { PlacePadelBookingController } from './public/place-padel-booking.controller';
@@ -28,6 +29,7 @@ import { BookingsSlotsTask } from './tasks/bookings-slots.task';
     TypeOrmModule.forFeature([
       Booking,
       BookingItem,
+      PaymentTransaction,
       User,
       PadelCourt,
       TurfCourt,

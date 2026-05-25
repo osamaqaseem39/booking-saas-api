@@ -73,6 +73,7 @@ import { CourtFacilitySlot, CourtFacilitySlotStatus } from './entities/court-fac
 import { BookingItem } from './entities/booking-item.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
 import { Booking } from './entities/booking.entity';
+import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
 import {
   buildItemFacilitySlotSyncWindows,
@@ -222,6 +223,15 @@ export type BookingApiRow = {
     paidAmount: number;
     remainingAmount: number;
   };
+  paymentTransactions?: Array<{
+    id: string;
+    method: PaymentMethod;
+    amount: number;
+    bankAccountId?: string;
+    transactionRef?: string;
+    note?: string;
+    paidAt: string;
+  }>;
   bookingStatus: BookingViewStatus;
   /**
    * When a booking is still `live` past the scheduled item end, projected overtime charges
@@ -263,6 +273,8 @@ export class BookingsService {
     private readonly slotTemplateRepo: Repository<TenantTimeSlotTemplate>,
     @InjectRepository(TenantTimeSlotTemplateLine)
     private readonly slotTemplateLineRepo: Repository<TenantTimeSlotTemplateLine>,
+    @InjectRepository(PaymentTransaction)
+    private readonly paymentTxnRepo: Repository<PaymentTransaction>,
     private readonly iamService: IamService,
   ) {}
 
@@ -772,6 +784,15 @@ export class BookingsService {
             },
           }
         : {}),
+      paymentTransactions: (booking.paymentTransactions ?? []).map((txn) => ({
+        id: txn.id,
+        method: txn.method,
+        amount: Number(txn.amount),
+        bankAccountId: txn.bankAccountId ?? undefined,
+        transactionRef: txn.transactionRef ?? undefined,
+        note: txn.note ?? undefined,
+        paidAt: txn.paidAt?.toISOString?.() ?? txn.paidAt,
+      })),
       notes: booking.notes,
       cancellationReason: booking.cancellationReason,
       createdAt: booking.createdAt.toISOString(),
@@ -847,7 +868,7 @@ export class BookingsService {
   async listByUserForProfile(userId: string): Promise<BookingApiRow[]> {
     const rows = await this.bookingRepo.find({
       where: { userId },
-      relations: ['items', 'user'],
+      relations: ['items', 'user', 'paymentTransactions'],
       order: { createdAt: 'DESC' },
     });
 
@@ -862,7 +883,7 @@ export class BookingsService {
   async getOne(tenantId: string, bookingId: string, requesterUserId?: string): Promise<BookingApiRow> {
     const row = await this.bookingRepo.findOne({
       where: { id: bookingId, tenantId },
-      relations: ['items', 'user'],
+      relations: ['items', 'user', 'paymentTransactions'],
     });
     if (!row) throw new NotFoundException(`Booking ${bookingId} not found`);
 
@@ -1645,7 +1666,7 @@ export class BookingsService {
 
     const full = await this.bookingRepo.findOneOrFail({
       where: { id: saved.id },
-      relations: ['items', 'user'],
+      relations: ['items', 'user', 'paymentTransactions'],
     });
 
     if (full.bookingStatus === 'confirmed') {
@@ -1664,7 +1685,7 @@ export class BookingsService {
   ): Promise<BookingApiRow> {
     const booking = await this.bookingRepo.findOne({
       where: { id: bookingId, tenantId },
-      relations: ['items', 'user'],
+      relations: ['items', 'user', 'paymentTransactions'],
     });
     if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
 
@@ -1848,7 +1869,7 @@ export class BookingsService {
 
     const full = await this.bookingRepo.findOneOrFail({
       where: { id: saved.id },
-      relations: ['items', 'user'],
+      relations: ['items', 'user', 'paymentTransactions'],
     });
 
     if (
@@ -1882,6 +1903,99 @@ export class BookingsService {
     });
   }
 
+
+  async addPaymentTransaction(
+    tenantId: string,
+    bookingId: string,
+    txn: {
+      method: PaymentMethod;
+      amount: number;
+      bankAccountId?: string;
+      transactionRef?: string;
+      note?: string;
+      paidAt?: string;
+    },
+  ): Promise<BookingApiRow> {
+    const booking = await this.bookingRepo.findOne({
+      where: { id: bookingId, tenantId },
+      relations: ['items', 'user', 'paymentTransactions'],
+    });
+    if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
+
+    const newTxn = this.paymentTxnRepo.create({
+      bookingId,
+      method: txn.method,
+      amount: dec(txn.amount),
+      bankAccountId: txn.bankAccountId,
+      transactionRef: txn.transactionRef,
+      note: txn.note,
+      paidAt: txn.paidAt ? new Date(txn.paidAt) : new Date(),
+    });
+    await this.paymentTxnRepo.save(newTxn);
+
+    const allTxns = await this.paymentTxnRepo.find({ where: { bookingId } });
+    const totalPaid = allTxns.reduce((sum, t) => sum + Number(t.amount), 0);
+    booking.paidAmount = dec(totalPaid);
+    const primaryMethod = this.derivePrimaryMethod(allTxns);
+    booking.paymentMethod = primaryMethod;
+    harmonizePaymentStatusWithAmounts(booking);
+    await this.bookingRepo.save(booking);
+
+    const full = await this.bookingRepo.findOneOrFail({
+      where: { id: bookingId },
+      relations: ['items', 'user', 'paymentTransactions'],
+    });
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
+      await this.resolveLocationMapping(full);
+    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
+  }
+
+  async removePaymentTransaction(
+    tenantId: string,
+    bookingId: string,
+    transactionId: string,
+  ): Promise<BookingApiRow> {
+    const booking = await this.bookingRepo.findOne({
+      where: { id: bookingId, tenantId },
+      relations: ['items', 'user', 'paymentTransactions'],
+    });
+    if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
+
+    const txn = booking.paymentTransactions?.find((t) => t.id === transactionId);
+    if (!txn) throw new NotFoundException(`Transaction ${transactionId} not found`);
+    await this.paymentTxnRepo.delete({ id: transactionId });
+
+    const remaining = await this.paymentTxnRepo.find({ where: { bookingId } });
+    const totalPaid = remaining.reduce((sum, t) => sum + Number(t.amount), 0);
+    booking.paidAmount = dec(totalPaid);
+    if (remaining.length > 0) {
+      booking.paymentMethod = this.derivePrimaryMethod(remaining);
+    }
+    harmonizePaymentStatusWithAmounts(booking);
+    await this.bookingRepo.save(booking);
+
+    const full = await this.bookingRepo.findOneOrFail({
+      where: { id: bookingId },
+      relations: ['items', 'user', 'paymentTransactions'],
+    });
+    const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
+      await this.resolveLocationMapping(full);
+    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
+  }
+
+  private derivePrimaryMethod(txns: PaymentTransaction[]): PaymentMethod {
+    if (txns.length === 0) return 'cash';
+    let maxAmt = 0;
+    let primary: PaymentMethod = txns[0].method;
+    for (const t of txns) {
+      const a = Number(t.amount);
+      if (a > maxAmt) {
+        maxAmt = a;
+        primary = t.method;
+      }
+    }
+    return primary;
+  }
 
   private applyLiveWindowToBooking(booking: Booking): void {
     const startMinutes = getCurrentMinutesInKarachi();
@@ -3129,7 +3243,7 @@ export class BookingsService {
             'live',
           ] as BookingStatus[]),
         },
-        relations: ['items', 'user'],
+        relations: ['items', 'user', 'paymentTransactions'],
       });
       liveBookings = rows.filter((b) =>
         b.items?.some((i) => courtSet.has(i.courtId)),

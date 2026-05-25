@@ -499,6 +499,41 @@ export class BookingsController {
     return await this.bookingsService.update(tenantId, bookingId, dto);
   }
 
+  @Post(':bookingId/payment-transactions')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  async addPaymentTransaction(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Body()
+    dto: {
+      method: string;
+      amount: number;
+      bankAccountId?: string;
+      transactionRef?: string;
+      note?: string;
+      paidAt?: string;
+    },
+  ) {
+    const tenantId = await this.resolveTenantForBooking(tenant, bookingId);
+    if (!tenantId) throw new BadRequestException('Unable to resolve tenant for booking.');
+    return this.bookingsService.addPaymentTransaction(tenantId, bookingId, dto as any);
+  }
+
+  @Delete(':bookingId/payment-transactions/:txnId')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @HttpCode(200)
+  async removePaymentTransaction(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('bookingId', ParseUUIDPipe) bookingId: string,
+    @Param('txnId', ParseUUIDPipe) txnId: string,
+  ) {
+    const tenantId = await this.resolveTenantForBooking(tenant, bookingId);
+    if (!tenantId) throw new BadRequestException('Unable to resolve tenant for booking.');
+    return this.bookingsService.removePaymentTransaction(tenantId, bookingId, txnId);
+  }
+
   @Patch(':bookingId/facility-slots')
   async editBookingFacilitySlots(
     @CurrentTenant() tenant: TenantContext,

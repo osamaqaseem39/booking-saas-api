@@ -38,6 +38,7 @@ export const PAYMENT_METHODS = [
   'card',
   'jazzcash',
   'easypaisa',
+  'bank_transfer',
 ] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
