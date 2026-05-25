@@ -12,6 +12,8 @@ import { Role } from '../modules/iam/entities/role.entity';
 import { UserRole } from '../modules/iam/entities/user-role.entity';
 import { User } from '../modules/iam/entities/user.entity';
 import { AuditEvent } from '../modules/audit/audit-event.entity';
+import { PaymentTransaction } from '../modules/bookings/entities/payment-transaction.entity';
+import { BankAccount } from '../modules/bank-accounts/entities/bank-account.entity';
 
 function createTypeOrmOptions(): DataSourceOptions {
   const poolMax = resolvePoolMax();
@@ -113,6 +115,8 @@ export const typeOrmOptions: DataSourceOptions = {
     Booking,
     BookingItem,
     CourtFacilitySlot,
+    PaymentTransaction,
+    BankAccount,
     AuditEvent,
   ],
   // Resolved from this file's directory (same for Nest and `migration:run -d dist/.../typeorm.config.js`).
