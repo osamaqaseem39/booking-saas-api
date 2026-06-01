@@ -140,6 +140,92 @@ export function facilitySlotOverlapsWallWindow(
   );
 }
 
+/** Wall-clock windows for an item on a single grid day (no datetime expansion to close). */
+export function bookingItemWindowsOnGridDate(
+  gridDate: string,
+  item: {
+    itemDate?: string | null;
+    bookingDate?: string;
+    startTime: string;
+    endTime: string;
+    startDatetime?: Date | string | null;
+    endDatetime?: Date | string | null;
+  },
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+): Array<{ windowStart: string; windowEnd: string }> {
+  const anchorDate = formatDateOnlyYmd(
+    item.itemDate ?? item.startDatetime ?? item.bookingDate ?? gridDate,
+  );
+  const wallEnd =
+    item.startDatetime != null && item.endDatetime != null
+      ? resolveBookingMatchEndTime(item, slotStepMinutes)
+      : item.endTime;
+  const windows = buildItemFacilitySlotSyncWindows(
+    { date: anchorDate, startTime: item.startTime, endTime: wallEnd },
+    anchorDate,
+    slotStepMinutes,
+  );
+  const onGrid = windows
+    .filter((w) => w.slotDate === gridDate)
+    .map((w) => ({ windowStart: w.windowStart, windowEnd: w.windowEnd }));
+  if (onGrid.length) return onGrid;
+
+  if (item.startDatetime == null || item.endDatetime == null) return [];
+
+  const dayStart = new Date(`${gridDate}T00:00:00.000Z`);
+  const dayEnd = new Date(`${addDaysYmdWall(gridDate, 1)}T00:00:00.000Z`);
+  const start = new Date(item.startDatetime);
+  const end = new Date(item.endDatetime);
+  if (start >= dayEnd || end <= dayStart) return [];
+
+  const clipStart = start > dayStart ? start : dayStart;
+  const clipEnd = end < dayEnd ? end : dayEnd;
+  const windowStart = clipStart.toISOString().slice(11, 16);
+  let windowEnd = clipEnd.toISOString().slice(11, 16);
+  if (windowEnd === '00:00' && clipEnd.getTime() === dayEnd.getTime()) {
+    windowEnd = '24:00';
+  }
+
+  return buildItemFacilitySlotSyncWindows(
+    { date: gridDate, startTime: windowStart, endTime: windowEnd },
+    gridDate,
+    slotStepMinutes,
+  )
+    .filter((w) => w.slotDate === gridDate)
+    .map((w) => ({ windowStart: w.windowStart, windowEnd: w.windowEnd }));
+}
+
+export function bookingItemCoversFacilitySlotOnGridDate(
+  gridDate: string,
+  slotStart: string,
+  slotEnd: string,
+  item: {
+    itemDate?: string | null;
+    bookingDate?: string;
+    startTime: string;
+    endTime: string;
+    startDatetime?: Date | string | null;
+    endDatetime?: Date | string | null;
+  },
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+): boolean {
+  const windows = bookingItemWindowsOnGridDate(gridDate, item, slotStepMinutes);
+  for (const w of windows) {
+    if (
+      facilitySlotOverlapsWallWindow(
+        slotStart,
+        slotEnd,
+        w.windowStart,
+        w.windowEnd,
+        slotStepMinutes,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function buildItemFacilitySlotSyncWindows(
   item: { date?: string | null; startTime: string; endTime: string },
   bookingDate: string,

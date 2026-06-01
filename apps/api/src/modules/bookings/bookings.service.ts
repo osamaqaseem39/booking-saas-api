@@ -79,10 +79,11 @@ import { Booking } from './entities/booking.entity';
 import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
 import {
+  bookingItemCoversFacilitySlotOnGridDate,
   buildItemFacilitySlotSyncWindows,
   facilitySlotEffectiveEndTime,
-  facilitySlotOverlapsBookingItem,
   facilitySlotOverlapsWallWindow,
+  resolveBookingMatchEndTime,
   wallSlotEffectiveEndTime,
   wallSlotOverlapsWindow,
 } from './utils/slot-wall-time.util';
@@ -1054,59 +1055,29 @@ export class BookingsService {
   }
 
   private itemFacilitySlotSyncWindows(
-    item: Pick<BookingItem, 'date' | 'startTime' | 'endTime'>,
+    item: Pick<
+      BookingItem,
+      'date' | 'startTime' | 'endTime' | 'startDatetime' | 'endDatetime'
+    >,
     bookingDate: string,
     slotStepMinutes = BookingsService.DEFAULT_SLOT_STEP_MINUTES,
   ): Array<{ slotDate: string; windowStart: string; windowEnd: string }> {
-    return buildItemFacilitySlotSyncWindows(item, bookingDate, slotStepMinutes);
-  }
-
-  /** Match a grid row on `gridDate` using sync windows (overnight) then booking overlap. */
-  private bookingItemCoversFacilitySlotOnGridDate(
-    gridDate: string,
-    slotStart: string,
-    slotEnd: string,
-    item: {
-      itemDate?: string | null;
-      bookingDate?: string;
-      startTime: string;
-      endTime: string;
-      startDatetime?: string | Date | null;
-      endDatetime?: string | Date | null;
-    },
-    slotStepMinutes: number,
-  ): boolean {
-    const anchorDate = formatDateOnly(item.itemDate ?? item.bookingDate ?? gridDate);
-    const windows = buildItemFacilitySlotSyncWindows(
-      { date: anchorDate, startTime: item.startTime, endTime: item.endTime },
-      anchorDate,
-      slotStepMinutes,
-    );
-    for (const w of windows) {
-      if (w.slotDate !== gridDate) continue;
-      if (
-        facilitySlotOverlapsWallWindow(
-          slotStart,
-          slotEnd,
-          w.windowStart,
-          w.windowEnd,
-          slotStepMinutes,
-        )
-      ) {
-        return true;
-      }
-    }
-    return facilitySlotOverlapsBookingItem(
-      slotStart,
-      slotEnd,
+    const wallEnd =
+      item.startDatetime != null && item.endDatetime != null
+        ? resolveBookingMatchEndTime(
+            item,
+            slotStepMinutes,
+            BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
+          )
+        : item.endTime;
+    return buildItemFacilitySlotSyncWindows(
       {
+        date: item.date ?? bookingDate,
         startTime: item.startTime,
-        endTime: item.endTime,
-        startDatetime: item.startDatetime,
-        endDatetime: item.endDatetime,
+        endTime: wallEnd,
       },
+      bookingDate,
       slotStepMinutes,
-      BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
     );
   }
 
@@ -1217,7 +1188,7 @@ export class BookingsService {
       let hasActiveBooking = false;
       for (const item of activeRows) {
         if (
-          this.bookingItemCoversFacilitySlotOnGridDate(
+          bookingItemCoversFacilitySlotOnGridDate(
             slotDate,
             slot.startTime,
             slot.endTime,
@@ -2543,7 +2514,7 @@ export class BookingsService {
           slotStepMinutes,
         );
         const hit = rows.find((r) =>
-          this.bookingItemCoversFacilitySlotOnGridDate(
+          bookingItemCoversFacilitySlotOnGridDate(
             date,
             fs.startTime,
             fs.endTime,
@@ -2586,7 +2557,7 @@ export class BookingsService {
         const s = minutesToTimeString(m);
         const e = minutesToTimeString(m + slotStepMinutes);
         const hit = rows.find((r) =>
-          this.bookingItemCoversFacilitySlotOnGridDate(
+          bookingItemCoversFacilitySlotOnGridDate(
             date,
             s,
             e,

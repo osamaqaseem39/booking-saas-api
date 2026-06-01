@@ -1,4 +1,5 @@
 import {
+  bookingItemCoversFacilitySlotOnGridDate,
   buildItemFacilitySlotSyncWindows,
   facilitySlotEffectiveEndTime,
   facilitySlotOverlapsBookingItem,
@@ -86,5 +87,81 @@ describe('slot-wall-time.util', () => {
         windowEnd: '02:00',
       },
     ]);
+  });
+
+  it('one-hour 14:00 booking does not cover the whole day on the grid', () => {
+    const item = {
+      itemDate: '2026-06-01',
+      bookingDate: '2026-06-01',
+      startTime: '14:00',
+      endTime: '15:00',
+      startDatetime: '2026-06-01T14:00:00.000Z',
+      endDatetime: '2026-06-01T15:00:00.000Z',
+    };
+    expect(
+      bookingItemCoversFacilitySlotOnGridDate(
+        '2026-06-01',
+        '14:00',
+        '24:00',
+        item,
+        60,
+      ),
+    ).toBe(true);
+    expect(
+      bookingItemCoversFacilitySlotOnGridDate(
+        '2026-06-01',
+        '08:00',
+        '24:00',
+        item,
+        60,
+      ),
+    ).toBe(false);
+    expect(
+      bookingItemCoversFacilitySlotOnGridDate(
+        '2026-06-01',
+        '18:00',
+        '24:00',
+        item,
+        60,
+      ),
+    ).toBe(false);
+  });
+
+  it('short evening booking with endTime 24:00 only covers one hour', () => {
+    const item = {
+      itemDate: '2026-06-01',
+      bookingDate: '2026-06-01',
+      startTime: '19:00',
+      endTime: '24:00',
+      startDatetime: '2026-06-01T19:00:00.000Z',
+      endDatetime: '2026-06-01T20:00:00.000Z',
+    };
+    expect(
+      bookingItemCoversFacilitySlotOnGridDate(
+        '2026-06-01',
+        '19:00',
+        '24:00',
+        item,
+        60,
+      ),
+    ).toBe(true);
+    expect(
+      bookingItemCoversFacilitySlotOnGridDate(
+        '2026-06-01',
+        '20:00',
+        '24:00',
+        item,
+        60,
+      ),
+    ).toBe(false);
+    expect(
+      bookingItemCoversFacilitySlotOnGridDate(
+        '2026-06-01',
+        '14:00',
+        '24:00',
+        item,
+        60,
+      ),
+    ).toBe(false);
   });
 });
