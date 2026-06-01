@@ -1,6 +1,7 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
@@ -110,6 +111,9 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
 
 export async function createNestExpressApp(): Promise<NestExpressApplication> {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  if ((process.env.WEBSOCKETS_ENABLED ?? 'true').toLowerCase() !== 'false') {
+    app.useWebSocketAdapter(new IoAdapter(app));
+  }
   applyHttpGlobals(app);
   return app;
 }

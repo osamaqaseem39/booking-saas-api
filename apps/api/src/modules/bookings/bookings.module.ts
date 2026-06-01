@@ -20,12 +20,14 @@ import { PlacePadelBookingController } from './public/place-padel-booking.contro
 import { PublicBookingsController } from './public/public-bookings.controller';
 import { PreviousBookingsController } from './user/previous-bookings.controller';
 import { IamModule } from '../iam/iam.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 import { BookingsSlotsTask } from './tasks/bookings-slots.task';
 
 @Module({
   imports: [
     IamModule,
+    RealtimeModule,
     TypeOrmModule.forFeature([
       Booking,
       BookingItem,

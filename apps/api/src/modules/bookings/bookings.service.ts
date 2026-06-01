@@ -5,9 +5,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { IamService } from '../iam/iam.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import type { BookingRealtimeAction } from '../realtime/realtime.events';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   Between,
@@ -276,9 +279,18 @@ export class BookingsService {
     @InjectRepository(PaymentTransaction)
     private readonly paymentTxnRepo: Repository<PaymentTransaction>,
     private readonly iamService: IamService,
+    @Optional() private readonly realtime?: RealtimeService,
   ) {}
 
   private readonly logger = new Logger(BookingsService.name);
+
+  private notifyBookingChange(
+    tenantId: string,
+    bookingId: string,
+    action: BookingRealtimeAction,
+  ): void {
+    this.realtime?.emitBookingChange(tenantId, bookingId, action);
+  }
 
   private computePayableAmount(
     subTotal: number,
@@ -1675,7 +1687,9 @@ export class BookingsService {
 
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
+    const row = this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
+    this.notifyBookingChange(tenantId, full.id, 'created');
+    return row;
   }
 
   async update(
@@ -1897,10 +1911,12 @@ export class BookingsService {
 
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap, {
+    const row = this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap, {
       projectLiveViewStatus: false,
       projectLiveOvertimePricing: true,
     });
+    this.notifyBookingChange(tenantId, full.id, 'updated');
+    return row;
   }
 
 
@@ -1947,7 +1963,9 @@ export class BookingsService {
     });
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
+    const row = this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
+    this.notifyBookingChange(tenantId, full.id, 'payment');
+    return row;
   }
 
   async removePaymentTransaction(
@@ -1980,7 +1998,9 @@ export class BookingsService {
     });
     const { locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap } =
       await this.resolveLocationMapping(full);
-    return this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
+    const row = this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
+    this.notifyBookingChange(tenantId, full.id, 'payment');
+    return row;
   }
 
   private derivePrimaryMethod(txns: PaymentTransaction[]): PaymentMethod {
@@ -2078,6 +2098,7 @@ export class BookingsService {
     );
     await this.releaseFacilitySlotsForBooking(booking);
     await this.bookingRepo.remove(booking);
+    this.notifyBookingChange(tenantId, bookingId, 'deleted');
     return { ok: true };
   }
 
@@ -2200,6 +2221,7 @@ export class BookingsService {
       await this.markFacilitySlotsBlockedForLiveBooking(full);
     }
 
+    this.notifyBookingChange(tenantId, bookingId, 'updated');
     return { ok: true, bookingId, blocked, extendedBy: addOnMinutes };
   }
 
