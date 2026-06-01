@@ -1061,6 +1061,55 @@ export class BookingsService {
     return buildItemFacilitySlotSyncWindows(item, bookingDate, slotStepMinutes);
   }
 
+  /** Match a grid row on `gridDate` using sync windows (overnight) then booking overlap. */
+  private bookingItemCoversFacilitySlotOnGridDate(
+    gridDate: string,
+    slotStart: string,
+    slotEnd: string,
+    item: {
+      itemDate?: string | null;
+      bookingDate?: string;
+      startTime: string;
+      endTime: string;
+      startDatetime?: string | Date | null;
+      endDatetime?: string | Date | null;
+    },
+    slotStepMinutes: number,
+  ): boolean {
+    const anchorDate = formatDateOnly(item.itemDate ?? item.bookingDate ?? gridDate);
+    const windows = buildItemFacilitySlotSyncWindows(
+      { date: anchorDate, startTime: item.startTime, endTime: item.endTime },
+      anchorDate,
+      slotStepMinutes,
+    );
+    for (const w of windows) {
+      if (w.slotDate !== gridDate) continue;
+      if (
+        facilitySlotOverlapsWallWindow(
+          slotStart,
+          slotEnd,
+          w.windowStart,
+          w.windowEnd,
+          slotStepMinutes,
+        )
+      ) {
+        return true;
+      }
+    }
+    return facilitySlotOverlapsBookingItem(
+      slotStart,
+      slotEnd,
+      {
+        startTime: item.startTime,
+        endTime: item.endTime,
+        startDatetime: item.startDatetime,
+        endDatetime: item.endDatetime,
+      },
+      slotStepMinutes,
+      BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
+    );
+  }
+
   private async updateFacilitySlotsInWindow(params: {
     tenantId: string;
     courtKind: CourtKind;
@@ -1167,20 +1216,13 @@ export class BookingsService {
     for (const slot of slots) {
       let hasActiveBooking = false;
       for (const item of activeRows) {
-        const itemDate = formatDateOnly(item.itemDate ?? item.bookingDate ?? slotDate);
-        if (itemDate !== slotDate) continue;
         if (
-          facilitySlotOverlapsBookingItem(
+          this.bookingItemCoversFacilitySlotOnGridDate(
+            slotDate,
             slot.startTime,
             slot.endTime,
-            {
-              startTime: item.startTime,
-              endTime: item.endTime,
-              startDatetime: item.startDatetime,
-              endDatetime: item.endDatetime,
-            },
+            item,
             slotStepMinutes,
-            BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
           )
         ) {
           hasActiveBooking = true;
@@ -1681,7 +1723,7 @@ export class BookingsService {
       relations: ['items', 'user', 'paymentTransactions'],
     });
 
-    if (full.bookingStatus === 'confirmed') {
+    if (full.bookingStatus === 'confirmed' || full.bookingStatus === 'pending') {
       await this.markFacilitySlotsBookedForBooking(full);
     }
 
@@ -1893,7 +1935,7 @@ export class BookingsService {
       await this.releaseFacilitySlotsForBooking(full);
     } else if (
       dto.bookingStatus !== undefined &&
-      full.bookingStatus === 'confirmed'
+      (full.bookingStatus === 'confirmed' || full.bookingStatus === 'pending')
     ) {
       await this.markFacilitySlotsBookedForBooking(full);
     } else if (
@@ -2215,7 +2257,7 @@ export class BookingsService {
      * `markFacilitySlotsBlockedForLiveBooking` are status-gated internally, so calling
      * both is safe — only the relevant one acts.
      */
-    if (full.bookingStatus === 'confirmed') {
+    if (full.bookingStatus === 'confirmed' || full.bookingStatus === 'pending') {
       await this.markFacilitySlotsBookedForBooking(full);
     } else if (full.bookingStatus === 'live') {
       await this.markFacilitySlotsBlockedForLiveBooking(full);
@@ -2500,22 +2542,15 @@ export class BookingsService {
           fs.endTime,
           slotStepMinutes,
         );
-        const hit = rows.find((r) => {
-          const itemDate = formatDateOnly(r.itemDate ?? r.bookingDate ?? date);
-          if (itemDate !== date) return false;
-          return facilitySlotOverlapsBookingItem(
+        const hit = rows.find((r) =>
+          this.bookingItemCoversFacilitySlotOnGridDate(
+            date,
             fs.startTime,
             fs.endTime,
-            {
-              startTime: r.startTime,
-              endTime: r.endTime,
-              startDatetime: r.startDatetime,
-              endDatetime: r.endDatetime,
-            },
+            r,
             slotStepMinutes,
-            BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
-          );
-        });
+          ),
+        );
         if (hit) {
           slots.push({
             startTime: fs.startTime,
@@ -2550,22 +2585,15 @@ export class BookingsService {
       for (let m = start; m < end; m += slotStepMinutes) {
         const s = minutesToTimeString(m);
         const e = minutesToTimeString(m + slotStepMinutes);
-        const hit = rows.find((r) => {
-          const itemDate = formatDateOnly(r.itemDate ?? r.bookingDate ?? date);
-          if (itemDate !== date) return false;
-          return facilitySlotOverlapsBookingItem(
+        const hit = rows.find((r) =>
+          this.bookingItemCoversFacilitySlotOnGridDate(
+            date,
             s,
             e,
-            {
-              startTime: r.startTime,
-              endTime: r.endTime,
-              startDatetime: r.startDatetime,
-              endDatetime: r.endDatetime,
-            },
+            r,
             slotStepMinutes,
-            BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
-          );
-        });
+          ),
+        );
         if (hit) {
           slots.push({
             startTime: s,
@@ -3691,7 +3719,9 @@ export class BookingsService {
   }
 
   private async markFacilitySlotsBookedForBooking(booking: Booking): Promise<void> {
-    if (booking.bookingStatus !== 'confirmed') return;
+    if (booking.bookingStatus !== 'confirmed' && booking.bookingStatus !== 'pending') {
+      return;
+    }
     const items = (booking.items ?? []).filter((i) => i.itemStatus !== 'cancelled');
     if (!items.length) return;
     await this.setFacilitySlotsStatusForItems({
