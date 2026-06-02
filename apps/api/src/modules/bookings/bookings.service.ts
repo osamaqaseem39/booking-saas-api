@@ -3800,6 +3800,12 @@ export class BookingsService {
           this.logger.log(
             `[booking-slot-done] tenant=${tenantId} court=${item.courtKind}:${item.courtId} date=${slotDate} slotId=${item.slotId} exact=true affected=${exactUpdate.affected ?? 0}`,
           );
+          await this.logFacilitySlotsSnapshot(
+            tenantId,
+            item.courtKind,
+            item.courtId,
+            slotDate,
+          );
           continue;
         }
       }
@@ -3864,6 +3870,12 @@ export class BookingsService {
           if (targetStatus === 'booked') {
             this.logger.log(
               `[booking-slot-done] tenant=${tenantId} court=${item.courtKind}:${item.courtId} date=${slotDate} window=${windowStart}-${windowEnd} bookedStarts=${updateResult.touchedStarts.join(',') || '-'} affected=${updateResult.affected}`,
+            );
+            await this.logFacilitySlotsSnapshot(
+              tenantId,
+              item.courtKind,
+              item.courtId,
+              slotDate,
             );
           }
           continue;
@@ -3939,6 +3951,24 @@ export class BookingsService {
         }
       }
     }
+  }
+
+  private async logFacilitySlotsSnapshot(
+    tenantId: string,
+    courtKind: CourtKind,
+    courtId: string,
+    slotDate: string,
+  ): Promise<void> {
+    const slots = await this.facilitySlotRepo.find({
+      where: { tenantId, courtKind, courtId, slotDate },
+      select: ['startTime', 'endTime', 'status'],
+      order: { startTime: 'ASC' },
+    });
+    const summary =
+      slots.map((s) => `${s.startTime}-${s.endTime}:${s.status}`).join(',') || '-';
+    this.logger.log(
+      `[booking-slot-snapshot] tenant=${tenantId} court=${courtKind}:${courtId} date=${slotDate} slots=${summary}`,
+    );
   }
 
   async completePastBookings() {
