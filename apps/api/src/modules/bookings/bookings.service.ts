@@ -1089,7 +1089,7 @@ export class BookingsService {
     windowStart: string;
     windowEnd: string;
     targetStatus: CourtFacilitySlotStatus;
-  }): Promise<number> {
+  }): Promise<{ affected: number; touchedStarts: string[] }> {
     const slotStepMinutes = await this.resolveCourtSlotStepMinutes(
       params.tenantId,
       params.courtKind,
@@ -1105,6 +1105,7 @@ export class BookingsService {
       select: ['startTime', 'endTime'],
     });
     let affected = 0;
+    const touchedStarts: string[] = [];
     for (const slot of slots) {
       if (
         !facilitySlotOverlapsWallWindow(
@@ -1128,8 +1129,9 @@ export class BookingsService {
         { status: params.targetStatus },
       );
       affected += 1;
+      touchedStarts.push(slot.startTime);
     }
-    return affected;
+    return { affected, touchedStarts };
   }
 
   /** Clear stale booking-driven blocks; availability is enforced via booking_items. */
@@ -3781,6 +3783,26 @@ export class BookingsService {
         item.courtKind,
         item.courtId,
       );
+      if (targetStatus === 'booked' && item.slotId) {
+        debugger;
+        const slotDate = formatDateOnly(item.date ?? item.startDatetime ?? new Date());
+        const exactUpdate = await this.facilitySlotRepo.update(
+          {
+            id: item.slotId,
+            tenantId,
+            courtKind: item.courtKind,
+            courtId: item.courtId,
+            slotDate,
+          },
+          { status: targetStatus },
+        );
+        if ((exactUpdate.affected ?? 0) > 0) {
+          this.logger.log(
+            `[booking-slot-done] tenant=${tenantId} court=${item.courtKind}:${item.courtId} date=${slotDate} slotId=${item.slotId} exact=true affected=${exactUpdate.affected ?? 0}`,
+          );
+          continue;
+        }
+      }
       const windows = this.itemFacilitySlotSyncWindows(
         item,
         formatDateOnly(item.date ?? item.startDatetime ?? new Date()),
@@ -3804,7 +3826,33 @@ export class BookingsService {
 
       for (const { slotDate, windowStart, windowEnd } of windows) {
         if (targetStatus === 'blocked' || targetStatus === 'booked') {
-          await this.updateFacilitySlotsInWindow({
+          if (targetStatus === 'booked') {
+            const candidateSlots = await this.facilitySlotRepo.find({
+              where: {
+                tenantId,
+                courtKind: item.courtKind,
+                courtId: item.courtId,
+                slotDate,
+              },
+              select: ['startTime', 'endTime'],
+            });
+            const plannedStarts = candidateSlots
+              .filter((slot) =>
+                facilitySlotOverlapsWallWindow(
+                  slot.startTime,
+                  slot.endTime,
+                  windowStart,
+                  windowEnd,
+                  slotStep,
+                ),
+              )
+              .map((slot) => slot.startTime);
+            this.logger.log(
+              `[booking-slot-plan] tenant=${tenantId} court=${item.courtKind}:${item.courtId} date=${slotDate} window=${windowStart}-${windowEnd} toBookStarts=${plannedStarts.join(',') || '-'}`,
+            );
+          }
+
+          const updateResult = await this.updateFacilitySlotsInWindow({
             tenantId,
             courtKind: item.courtKind,
             courtId: item.courtId,
@@ -3813,6 +3861,11 @@ export class BookingsService {
             windowEnd,
             targetStatus,
           });
+          if (targetStatus === 'booked') {
+            this.logger.log(
+              `[booking-slot-done] tenant=${tenantId} court=${item.courtKind}:${item.courtId} date=${slotDate} window=${windowStart}-${windowEnd} bookedStarts=${updateResult.touchedStarts.join(',') || '-'} affected=${updateResult.affected}`,
+            );
+          }
           continue;
         }
 
