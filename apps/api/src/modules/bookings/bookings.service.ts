@@ -2307,51 +2307,29 @@ export class BookingsService {
       }));
     }
 
-    // --- Find booked slots that overlap the requested window ---
+    // --- Find booked slots that overlap the requested window (from facility slots) ---
     const courtKindFilter: CourtKind = isTurf
       ? 'turf_court'
       : isTableTennis
         ? 'table_tennis_court'
         : 'padel_court';
-    const queryStart = new Date(`${date}T00:00:00.000Z`);
-    queryStart.setUTCMinutes(toMinutes(params.startTime, false));
-    const queryEnd = new Date(`${date}T00:00:00.000Z`);
-    queryEnd.setUTCMinutes(toMinutes(params.endTime, true));
-    if (queryEnd <= queryStart) queryEnd.setUTCDate(queryEnd.getUTCDate() + 1);
-
-    const busy = await this.bookingRepo
-      .createQueryBuilder('b')
-      .innerJoin('b.items', 'i')
-      .where('b.tenantId = :tenantId', { tenantId })
-      .andWhere("b.bookingStatus IN ('confirmed', 'pending', 'live')")
-      .andWhere("i.itemStatus IN ('confirmed', 'reserved')")
-      .andWhere('i.courtKind = :courtKind', { courtKind: courtKindFilter })
-      .andWhere('i.startDatetime < :queryEnd', {
-        queryEnd: queryEnd.toISOString(),
-      })
-      .andWhere('i.endDatetime > :queryStart', {
-        queryStart: queryStart.toISOString(),
-      })
-      .select([
-        'i.courtId AS courtId',
-        'i.courtKind AS courtKind',
-        'i.startTime AS startTime',
-        'i.endTime AS endTime',
-        'b.id AS bookingId',
-        'i.id AS id',
-        'i.itemStatus AS itemStatus',
-      ])
-      .getRawMany<{
-        courtId: string;
-        courtKind: string;
-        startTime: string;
-        endTime: string;
-        bookingId: string;
-        id: string;
-        itemStatus: BookingItemStatus;
-      }>();
-
-    const busyIds = new Set(busy.map((x) => x.courtId));
+    const bookedFacilitySlots = await this.facilitySlotRepo.find({
+      where: [
+        {
+          tenantId,
+          courtKind: courtKindFilter,
+          slotDate: date,
+          status: 'booked',
+        },
+        {
+          tenantId,
+          courtKind: courtKindFilter,
+          slotDate: nextDate,
+          status: 'booked',
+        },
+      ],
+      select: ['courtId', 'slotDate', 'startTime', 'endTime'],
+    });
 
     // --- Also check for slots explicitly marked as "blocked" (e.g. via templates) ---
     const blocked = await this.facilitySlotRepo.find({
@@ -2410,6 +2388,54 @@ export class BookingsService {
           toMinutes(fs.endTime, true) > 0
         ) {
           templateAvailableIds.add(fs.courtId);
+        }
+      }
+    }
+
+    const busyIds = new Set<string>();
+    const busy: Array<{
+      courtId: string;
+      courtKind: CourtKind;
+      startTime: string;
+      endTime: string;
+      bookingId: string | null;
+      id: string | null;
+      itemStatus: BookingItemStatus;
+    }> = [];
+    for (const fs of bookedFacilitySlots) {
+      if (fs.slotDate !== date && fs.slotDate !== nextDate) continue;
+      if (fs.slotDate === date) {
+        if (
+          toMinutes(fs.startTime, false) < qEndMin &&
+          toMinutes(fs.endTime, true) > qStartMin
+        ) {
+          busyIds.add(fs.courtId);
+          busy.push({
+            courtId: fs.courtId,
+            courtKind: courtKindFilter,
+            startTime: fs.startTime,
+            endTime: fs.endTime,
+            bookingId: null,
+            id: null,
+            itemStatus: 'confirmed',
+          });
+        }
+      } else if (qEndMin > 24 * 60 || qEndMin <= qStartMin) {
+        const nextEndMin = qEndMin > 24 * 60 ? qEndMin - 24 * 60 : qEndMin;
+        if (
+          toMinutes(fs.startTime, false) < nextEndMin &&
+          toMinutes(fs.endTime, true) > 0
+        ) {
+          busyIds.add(fs.courtId);
+          busy.push({
+            courtId: fs.courtId,
+            courtKind: courtKindFilter,
+            startTime: fs.startTime,
+            endTime: fs.endTime,
+            bookingId: null,
+            id: null,
+            itemStatus: 'confirmed',
+          });
         }
       }
     }
