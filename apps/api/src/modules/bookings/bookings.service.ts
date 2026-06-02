@@ -2374,6 +2374,46 @@ export class BookingsService {
 
     const qStartMin = toMinutes(params.startTime, false);
     const qEndMin = toMinutes(params.endTime, true);
+
+    // Require a real template slot for the requested window on each court.
+    const availableTemplateSlots = await this.facilitySlotRepo.find({
+      where: [
+        {
+          tenantId,
+          courtKind: courtKindFilter,
+          slotDate: date,
+          status: 'available',
+        },
+        {
+          tenantId,
+          courtKind: courtKindFilter,
+          slotDate: nextDate,
+          status: 'available',
+        },
+      ],
+      select: ['courtId', 'slotDate', 'startTime', 'endTime'],
+    });
+    const templateAvailableIds = new Set<string>();
+    for (const fs of availableTemplateSlots) {
+      if (fs.slotDate !== date && fs.slotDate !== nextDate) continue;
+      if (fs.slotDate === date) {
+        if (
+          toMinutes(fs.startTime, false) < qEndMin &&
+          toMinutes(fs.endTime, true) > qStartMin
+        ) {
+          templateAvailableIds.add(fs.courtId);
+        }
+      } else if (qEndMin > 24 * 60 || qEndMin <= qStartMin) {
+        const nextEndMin = qEndMin > 24 * 60 ? qEndMin - 24 * 60 : qEndMin;
+        if (
+          toMinutes(fs.startTime, false) < nextEndMin &&
+          toMinutes(fs.endTime, true) > 0
+        ) {
+          templateAvailableIds.add(fs.courtId);
+        }
+      }
+    }
+
     const blockedIds = new Set<string>();
     for (const fs of blocked) {
       if (fs.slotDate !== date && fs.slotDate !== nextDate) continue;
@@ -2400,7 +2440,12 @@ export class BookingsService {
       endTime: params.endTime,
       sportType: sport,
       availableCourts: allCourts
-        .filter((c) => !busyIds.has(c.id) && !blockedIds.has(c.id))
+        .filter(
+          (c) =>
+            templateAvailableIds.has(c.id) &&
+            !busyIds.has(c.id) &&
+            !blockedIds.has(c.id),
+        )
         .map((c) => ({
           kind: c.courtKind,
           id: c.id,
