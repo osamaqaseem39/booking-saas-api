@@ -2376,48 +2376,11 @@ export class BookingsService {
       }));
     }
 
-    // --- Find booked slots that overlap the requested window (from facility slots) ---
     const courtKindFilter: CourtKind = isTurf
       ? 'turf_court'
       : isTableTennis
         ? 'table_tennis_court'
         : 'padel_court';
-    const bookedFacilitySlots = await this.facilitySlotRepo.find({
-      where: [
-        {
-          tenantId,
-          courtKind: courtKindFilter,
-          slotDate: date,
-          status: 'booked',
-        },
-        {
-          tenantId,
-          courtKind: courtKindFilter,
-          slotDate: nextDate,
-          status: 'booked',
-        },
-      ],
-      select: ['courtId', 'slotDate', 'startTime', 'endTime'],
-    });
-
-    // --- Also check for slots explicitly marked as "blocked" (e.g. via templates) ---
-    const blocked = await this.facilitySlotRepo.find({
-      where: [
-        {
-          tenantId,
-          courtKind: courtKindFilter,
-          slotDate: date,
-          status: 'blocked',
-        },
-        {
-          tenantId,
-          courtKind: courtKindFilter,
-          slotDate: nextDate,
-          status: 'blocked',
-        },
-      ],
-      select: ['courtId', 'slotDate', 'startTime', 'endTime'],
-    });
 
     const qStartMin = toMinutes(params.startTime, false);
     const qEndMin = toMinutes(params.endTime, true);
@@ -2479,53 +2442,21 @@ export class BookingsService {
     const queryEnd = new Date(`${date}T00:00:00.000Z`);
     queryEnd.setUTCMinutes(qEndMin);
 
-    const busyIds = new Set<string>();
-    const busy: Array<{
-      courtId: string;
-      courtKind: CourtKind;
-      startTime: string;
-      endTime: string;
-      bookingId: string | null;
-      id: string | null;
-      itemStatus: BookingItemStatus;
-    }> = [];
-    for (const fs of bookedFacilitySlots) {
-      if (fs.slotDate !== date && fs.slotDate !== nextDate) continue;
-      if (fs.slotDate === date) {
-        if (
-          toMinutes(fs.startTime, false) < qEndMin &&
-          toMinutes(fs.endTime, true) > qStartMin
-        ) {
-          busyIds.add(fs.courtId);
-          busy.push({
-            courtId: fs.courtId,
-            courtKind: courtKindFilter,
-            startTime: fs.startTime,
-            endTime: fs.endTime,
-            bookingId: null,
-            id: null,
-            itemStatus: 'confirmed',
-          });
-        }
-      } else if (qEndMin > 24 * 60 || qEndMin <= qStartMin) {
-        const nextEndMin = qEndMin > 24 * 60 ? qEndMin - 24 * 60 : qEndMin;
-        if (
-          toMinutes(fs.startTime, false) < nextEndMin &&
-          toMinutes(fs.endTime, true) > 0
-        ) {
-          busyIds.add(fs.courtId);
-          busy.push({
-            courtId: fs.courtId,
-            courtKind: courtKindFilter,
-            startTime: fs.startTime,
-            endTime: fs.endTime,
-            bookingId: null,
-            id: null,
-            itemStatus: 'confirmed',
-          });
-        }
-      }
-    }
+    const candidateCourts = allCourts.filter((c) => templateAvailableIds.has(c.id));
+    const slotChecks = await Promise.all(
+      candidateCourts.map(async (court) => {
+        const { slots } = await this.getCourtSlots(tenantId, {
+          kind: court.courtKind,
+          courtId: court.id,
+          date,
+          startTime: params.startTime,
+          endTime: params.endTime,
+          availableOnly: true,
+          skipCourtCheck: true,
+        });
+        return { court, available: slots.length > 0 };
+      }),
+    );
 
     const activeBookingItems = await this.bookingRepo
       .createQueryBuilder('b')
@@ -2555,61 +2486,22 @@ export class BookingsService {
         itemStatus: BookingItemStatus;
       }>();
 
-    for (const row of activeBookingItems) {
-      if (busyIds.has(row.courtId)) continue;
-      busyIds.add(row.courtId);
-      busy.push({
-        courtId: row.courtId,
-        courtKind: courtKindFilter,
-        startTime: row.startTime,
-        endTime: row.endTime,
-        bookingId: row.bookingId,
-        id: row.id,
-        itemStatus: row.itemStatus,
-      });
-    }
-
-    const blockedIds = new Set<string>();
-    for (const fs of blocked) {
-      if (fs.slotDate !== date && fs.slotDate !== nextDate) continue;
-      if (fs.slotDate === date) {
-        if (
-          toMinutes(fs.startTime, false) < qEndMin &&
-          toMinutes(fs.endTime, true) > qStartMin
-        ) {
-          blockedIds.add(fs.courtId);
-        }
-      } else if (qEndMin > 24 * 60 || qEndMin <= qStartMin) {
-        const nextEndMin = qEndMin > 24 * 60 ? qEndMin - 24 * 60 : qEndMin;
-        if (
-          toMinutes(fs.startTime, false) < nextEndMin &&
-          toMinutes(fs.endTime, true) > 0
-        ) {
-          blockedIds.add(fs.courtId);
-        }
-      }
-    }
     return {
       date,
       startTime: params.startTime,
       endTime: params.endTime,
       sportType: sport,
-      availableCourts: allCourts
-        .filter(
-          (c) =>
-            templateAvailableIds.has(c.id) &&
-            !busyIds.has(c.id) &&
-            !blockedIds.has(c.id),
-        )
-        .map((c) => ({
-          kind: c.courtKind,
-          id: c.id,
-          name: c.name,
-          pricePerSlot: c.pricePerSlot ? Number(c.pricePerSlot) : null,
-          slotDurationMinutes: c.slotDurationMinutes ?? null,
+      availableCourts: slotChecks
+        .filter((x) => x.available)
+        .map((x) => ({
+          kind: x.court.courtKind,
+          id: x.court.id,
+          name: x.court.name,
+          pricePerSlot: x.court.pricePerSlot ? Number(x.court.pricePerSlot) : null,
+          slotDurationMinutes: x.court.slotDurationMinutes ?? null,
         })),
-      bookedSlots: busy.map((x) => ({
-        kind: x.courtKind,
+      bookedSlots: activeBookingItems.map((x) => ({
+        kind: courtKindFilter,
         courtId: x.courtId,
         startTime: x.startTime,
         endTime: x.endTime,
@@ -2738,6 +2630,12 @@ export class BookingsService {
             startTime: fs.startTime,
             endTime: displayEnd,
             availability: 'blocked',
+          });
+        } else if (fs.status === 'booked') {
+          slots.push({
+            startTime: fs.startTime,
+            endTime: displayEnd,
+            availability: 'booked',
           });
         } else {
           slots.push({
