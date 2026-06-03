@@ -153,6 +153,18 @@ export function facilitySlotOverlapsBookingItem(
   );
 }
 
+/** Facility row is marked when its start time falls in [windowStart, windowEnd). */
+export function facilitySlotStartInMarkWindow(
+  slotStart: string,
+  windowStart: string,
+  windowEnd: string,
+): boolean {
+  const s = wallToMinutes(slotStart, false);
+  const w0 = wallToMinutes(windowStart, false);
+  const w1 = wallToMinutes(windowEnd, true);
+  return s >= w0 && s < w1;
+}
+
 /** Match a facility grid row (often `endTime: 24:00`) to a booking block window. */
 export function facilitySlotOverlapsWallWindow(
   slotStart: string,

@@ -5,6 +5,7 @@ import {
   facilitySlotMarkingWallEnd,
   facilitySlotOverlapsBookingItem,
   facilitySlotOverlapsWallWindow,
+  facilitySlotStartInMarkWindow,
   resolveBookingMatchEndTime,
   wallSlotEffectiveEndTime,
 } from './slot-wall-time.util';
@@ -178,5 +179,11 @@ describe('slot-wall-time.util', () => {
         60,
       ),
     ).toBe(false);
+  });
+
+  it('facilitySlotStartInMarkWindow marks only rows starting inside the window', () => {
+    expect(facilitySlotStartInMarkWindow('14:00', '14:00', '15:00')).toBe(true);
+    expect(facilitySlotStartInMarkWindow('15:00', '14:00', '15:00')).toBe(false);
+    expect(facilitySlotStartInMarkWindow('13:00', '14:00', '15:00')).toBe(false);
   });
 });

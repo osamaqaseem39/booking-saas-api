@@ -84,6 +84,7 @@ import {
   facilitySlotEffectiveEndTime,
   facilitySlotMarkingWallEnd,
   facilitySlotOverlapsWallWindow,
+  facilitySlotStartInMarkWindow,
   resolveBookingMatchEndTime,
   wallSlotEffectiveEndTime,
   wallSlotOverlapsWindow,
@@ -1105,15 +1106,21 @@ export class BookingsService {
     let affected = 0;
     const touchedStarts: string[] = [];
     for (const slot of slots) {
-      if (
-        !facilitySlotOverlapsWallWindow(
-          slot.startTime,
-          slot.endTime,
-          params.windowStart,
-          params.windowEnd,
-          slotStepMinutes,
-        )
-      ) {
+      const inWindow =
+        params.targetStatus === 'booked' || params.targetStatus === 'blocked'
+          ? facilitySlotStartInMarkWindow(
+              slot.startTime,
+              params.windowStart,
+              params.windowEnd,
+            )
+          : facilitySlotOverlapsWallWindow(
+              slot.startTime,
+              slot.endTime,
+              params.windowStart,
+              params.windowEnd,
+              slotStepMinutes,
+            );
+      if (!inWindow) {
         continue;
       }
       await this.facilitySlotRepo.update(
@@ -2330,6 +2337,8 @@ export class BookingsService {
       startTime: string;
       endTime: string;
       sportType?: BookingSportType;
+      courtId?: string;
+      courtKind?: CourtKind;
     },
   ) {
     const date = formatDateOnly(params.date);
@@ -2456,7 +2465,14 @@ export class BookingsService {
     const queryEnd = new Date(`${date}T00:00:00.000Z`);
     queryEnd.setUTCMinutes(qEndMin);
 
-    const candidateCourts = allCourts.filter((c) => templateAvailableIds.has(c.id));
+    let candidateCourts = allCourts.filter((c) => templateAvailableIds.has(c.id));
+    const filterCourtId = params.courtId?.trim();
+    if (filterCourtId) {
+      candidateCourts = candidateCourts.filter((c) => c.id === filterCourtId);
+    }
+    if (params.courtKind) {
+      candidateCourts = candidateCourts.filter((c) => c.courtKind === params.courtKind);
+    }
     const slotChecks = await Promise.all(
       candidateCourts.map(async (court) => {
         const { slots } = await this.getCourtSlots(tenantId, {
@@ -2833,24 +2849,33 @@ export class BookingsService {
       });
     }
 
+    const slotStepMinutes = await this.resolveCourtSlotStepMinutes(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+
     if (templateLines.length > 0) {
       for (const line of templateLines) {
+        const endTime =
+          line.endTime === '24:00'
+            ? facilitySlotEffectiveEndTime(
+                line.startTime,
+                line.endTime,
+                slotStepMinutes,
+              )
+            : line.endTime;
         values.push({
           tenantId,
           courtKind: params.kind,
           courtId: params.courtId,
           slotDate: date,
           startTime: line.startTime,
-          endTime: line.endTime,
+          endTime,
           status: line.status as any,
         });
       }
     } else {
-      const slotStepMinutes = await this.resolveCourtSlotStepMinutes(
-        tenantId,
-        params.kind,
-        params.courtId,
-      );
       for (let m = 0; m < 24 * 60; m += slotStepMinutes) {
         values.push({
           tenantId,
@@ -3825,11 +3850,6 @@ export class BookingsService {
     }
     const items = (booking.items ?? []).filter((i) => i.itemStatus !== 'cancelled');
     if (!items.length) return;
-    await this.setFacilitySlotsStatusForItems({
-      tenantId: booking.tenantId,
-      items,
-      targetStatus: 'booked',
-    });
     await this.reconcileFacilitySlotsForBookingItems(
       booking.tenantId,
       items,
