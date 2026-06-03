@@ -6,6 +6,7 @@ import {
   facilitySlotOverlapsBookingItem,
   facilitySlotOverlapsWallWindow,
   facilitySlotStartInMarkWindow,
+  filterSlotsForBookingPicker,
   resolveBookingMatchEndTime,
   wallSlotEffectiveEndTime,
 } from './slot-wall-time.util';
@@ -216,5 +217,16 @@ describe('slot-wall-time.util', () => {
         ),
       ).toBe(false);
     }
+  });
+
+  it('filterSlotsForBookingPicker hides ended slots on today', () => {
+    const slots = [
+      { startTime: '14:00', endTime: '15:00' },
+      { startTime: '18:00', endTime: '19:00' },
+    ];
+    const now = new Date('2026-06-03T16:00:00+05:00');
+    expect(
+      filterSlotsForBookingPicker(slots, '2026-06-03', now, 'Asia/Karachi'),
+    ).toEqual([{ startTime: '18:00', endTime: '19:00' }]);
   });
 });

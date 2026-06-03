@@ -71,28 +71,25 @@ describe('BookingsService - booking wall times', () => {
   it('treats midnight start + end 24:00 as one slot step, not full day', () => {
     const { service } = makeService();
     const effective = (service as any).bookingItemEffectiveEndTime(
-      '00:00',
-      '24:00',
+      { startTime: '00:00', endTime: '24:00' },
       60,
     );
     expect(effective).toBe('01:00');
   });
 
-  it('keeps same-day 17:00–24:00 as end-of-day window', () => {
+  it('treats 17:00–24:00 without datetimes as one grid step', () => {
     const { service } = makeService();
     const effective = (service as any).bookingItemEffectiveEndTime(
-      '17:00',
-      '24:00',
+      { startTime: '17:00', endTime: '24:00' },
       60,
     );
-    expect(effective).toBe('24:00');
+    expect(effective).toBe('18:00');
   });
 
   it('maps 01:00–24:00 stored row to one slot step', () => {
     const { service } = makeService();
     const effective = (service as any).bookingItemEffectiveEndTime(
-      '01:00',
-      '24:00',
+      { startTime: '01:00', endTime: '24:00' },
       60,
     );
     expect(effective).toBe('02:00');

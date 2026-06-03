@@ -1,6 +1,62 @@
 /** Wall-clock slot helpers shared by bookings + facility-slot sync. */
 
 export const DEFAULT_SLOT_STEP_MINUTES = 60;
+export const DEFAULT_BOOKING_GRID_TZ = 'Asia/Karachi';
+
+export function bookingGridTodayYmd(
+  now = new Date(),
+  timeZone = DEFAULT_BOOKING_GRID_TZ,
+): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const y = parts.find((p) => p.type === 'year')?.value ?? '1970';
+  const m = parts.find((p) => p.type === 'month')?.value ?? '01';
+  const d = parts.find((p) => p.type === 'day')?.value ?? '01';
+  return `${y}-${m}-${d}`;
+}
+
+export function bookingGridNowParts(
+  now = new Date(),
+  timeZone = DEFAULT_BOOKING_GRID_TZ,
+): { hour: number; minute: number; timeStr: string } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+  const hh = parts.find((p) => p.type === 'hour')?.value ?? '00';
+  const mm = parts.find((p) => p.type === 'minute')?.value ?? '00';
+  return { hour: Number(hh), minute: Number(mm), timeStr: `${hh}:${mm}` };
+}
+
+/** Hide elapsed slots for “today”; hide current hour after minute 29 (picker rule). */
+export function filterSlotsForBookingPicker<T extends { startTime: string; endTime: string }>(
+  slots: T[],
+  date: string,
+  now = new Date(),
+  timeZone = DEFAULT_BOOKING_GRID_TZ,
+): T[] {
+  const todayStr = bookingGridTodayYmd(now, timeZone);
+  if (date < todayStr) return [];
+  if (date > todayStr) return slots;
+
+  const { hour, minute, timeStr: currentTimeStr } = bookingGridNowParts(now, timeZone);
+  let filtered = slots.filter((s) => s.endTime > currentTimeStr);
+  if (minute > 29) {
+    const currentHourStart = hour * 60;
+    const nextHourStart = (hour + 1) * 60;
+    filtered = filtered.filter((s) => {
+      const slotStart = wallToMinutes(s.startTime, false);
+      return slotStart < currentHourStart || slotStart >= nextHourStart;
+    });
+  }
+  return filtered;
+}
 
 export function wallToMinutes(time: string, isEndTime = false): number {
   if (typeof time !== 'string' || !time.includes(':')) return 0;
@@ -39,8 +95,8 @@ export function facilitySlotEffectiveEndTime(
 }
 
 /**
- * Booking item `endTime` when stored as `24:00`.
- * Before 17:00 means one step; 17:00+ means play until close.
+ * @deprecated Use `resolveBookingMatchEndTime` (duration from datetimes, else one grid step).
+ * Legacy: 17:00+ with `endTime` 24:00 meant play-until-close without datetimes.
  */
 export function wallSlotEffectiveEndTime(
   startTime: string,

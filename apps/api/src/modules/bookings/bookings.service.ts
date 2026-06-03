@@ -85,10 +85,18 @@ import {
   facilitySlotMarkingWallEnd,
   facilitySlotOverlapsWallWindow,
   facilitySlotStartInMarkWindow,
+  filterSlotsForBookingPicker,
   resolveBookingMatchEndTime,
-  wallSlotEffectiveEndTime,
   wallSlotOverlapsWindow,
 } from './utils/slot-wall-time.util';
+import {
+  bookingProcessError,
+  bookingProcessStep,
+  bookingProcessWarn,
+  summarizeActiveBookingItems,
+  summarizeCreateItems,
+  summarizeSlotAvailability,
+} from './utils/booking-process-log.util';
 
 function dec(n: number): string {
   return Number(n).toFixed(2);
@@ -1030,11 +1038,30 @@ export class BookingsService {
   }
 
   private bookingItemEffectiveEndTime(
-    startTime: string,
-    endTime: string,
+    item: {
+      startTime: string;
+      endTime: string;
+      startDatetime?: Date | string | null;
+      endDatetime?: Date | string | null;
+    },
     slotStepMinutes = BookingsService.DEFAULT_SLOT_STEP_MINUTES,
   ): string {
-    return wallSlotEffectiveEndTime(startTime, endTime, slotStepMinutes);
+    return resolveBookingMatchEndTime(
+      item,
+      slotStepMinutes,
+      BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
+    );
+  }
+
+  private itemDatetimeWallEnd(
+    date: string,
+    item: { startTime: string; endTime: string },
+    slotStepMinutes = BookingsService.DEFAULT_SLOT_STEP_MINUTES,
+  ): string {
+    return this.bookingItemEffectiveEndTime(
+      { startTime: item.startTime, endTime: item.endTime },
+      slotStepMinutes,
+    );
   }
 
   private toSlotDateTimes(
@@ -1171,14 +1198,18 @@ export class BookingsService {
       slotId?: string;
     },
   ): void {
-    const window =
-      params.windowStart && params.windowEnd
-        ? ` window=${params.windowStart}-${params.windowEnd}`
-        : '';
-    const slotId = params.slotId ? ` slotId=${params.slotId}` : '';
-    this.logger.log(
-      `[facility-slot] ${status.toUpperCase()} tenant=${params.tenantId} court=${params.courtKind}:${params.courtId} date=${params.slotDate} slot=${params.startTime}-${params.endTime}${window}${slotId}`,
-    );
+    bookingProcessStep(this.logger, 'facility-slot.status', {
+      status,
+      tenantId: params.tenantId,
+      courtKind: params.courtKind,
+      courtId: params.courtId,
+      slotDate: params.slotDate,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      windowStart: params.windowStart,
+      windowEnd: params.windowEnd,
+      slotId: params.slotId,
+    });
   }
 
   /** Clear stale booking-driven blocks; availability is enforced via booking_items. */
@@ -1560,11 +1591,7 @@ export class BookingsService {
       item.courtKind,
       item.courtId,
     );
-    const effectiveEnd = this.bookingItemEffectiveEndTime(
-      item.startTime,
-      item.endTime,
-      slotStep,
-    );
+    const effectiveEnd = this.bookingItemEffectiveEndTime(item, slotStep);
     const { startDatetime, endDatetime } = this.toSlotDateTimes(
       date,
       item.startTime,
@@ -1657,6 +1684,25 @@ export class BookingsService {
     tenantId: string,
     dto: CreateBookingDto,
   ): Promise<BookingApiRow> {
+    const createStarted = Date.now();
+    bookingProcessStep(this.logger, 'api.create.request', {
+      tenantId,
+      sportType: dto.sportType,
+      bookingDate: dto.bookingDate,
+      bookingStatus: dto.bookingStatus,
+      itemCount: dto.items?.length ?? 0,
+      items: summarizeCreateItems(
+        (dto.items ?? []).map((i) => ({
+          courtKind: i.courtKind,
+          courtId: i.courtId,
+          date: i.date,
+          startTime: i.startTime,
+          endTime: i.endTime,
+        })),
+      ),
+      notes: dto.notes,
+    });
+
     if (dto.bookingDate) {
       this.assertBookingDateInAllowedWindow(dto.bookingDate);
     }
@@ -1711,14 +1757,20 @@ export class BookingsService {
 
     const itemsPayload: DeepPartial<BookingItem>[] = [];
     for (const i of expandedItems) {
+      const slotStep = await this.resolveCourtSlotStepMinutes(
+        tenantId,
+        i.courtKind,
+        i.courtId,
+      );
+      const wallEnd = this.itemDatetimeWallEnd(i.date, i, slotStep);
       itemsPayload.push({
         courtKind: i.courtKind,
         courtId: i.courtId,
         slotId: i.slotId,
         date: i.date,
         startTime: i.startTime,
-        endTime: i.endTime,
-        ...this.toSlotDateTimes(i.date, i.startTime, i.endTime),
+        endTime: wallEnd,
+        ...this.toSlotDateTimes(i.date, i.startTime, wallEnd),
         price: dec(i.price),
         currency: i.currency ?? 'PKR',
         itemStatus: i.status ?? 'confirmed',
@@ -1776,11 +1828,30 @@ export class BookingsService {
           'uq_booking_items_court_start_datetime_active',
         )
       ) {
+        bookingProcessWarn(this.logger, 'api.create.conflict', {
+          tenantId,
+          bookingDate: booking.bookingDate,
+          items: summarizeCreateItems(
+            (booking.items ?? []).map((i) => ({
+              courtKind: i.courtKind,
+              courtId: i.courtId,
+              date: i.date,
+              startTime: i.startTime,
+              endTime: i.endTime,
+              startDatetime: i.startDatetime as Date | undefined,
+              endDatetime: i.endDatetime as Date | undefined,
+            })),
+          ),
+        });
         throw new ConflictException({
           reason:
             'Selected slot overlaps with an active booking. Please choose another time.',
         });
       }
+      bookingProcessError(this.logger, 'api.create.failed', error, {
+        tenantId,
+        ms: Date.now() - createStarted,
+      });
       throw error;
     }
 
@@ -1797,6 +1868,43 @@ export class BookingsService {
       await this.resolveLocationMapping(full);
     const row = this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
     this.notifyBookingChange(tenantId, full.id, 'created');
+
+    const firstItem = full.items?.[0];
+    let postGridSummary: Record<string, unknown> | undefined;
+    if (firstItem) {
+      try {
+        const post = await this.getCourtSlots(tenantId, {
+          kind: firstItem.courtKind,
+          courtId: firstItem.courtId,
+          date: formatDateOnly(firstItem.date ?? full.bookingDate),
+          skipCourtCheck: true,
+          quietLog: true,
+        });
+        postGridSummary = summarizeSlotAvailability(post.slots);
+      } catch {
+        postGridSummary = { error: 'post-create grid check failed' };
+      }
+    }
+
+    bookingProcessStep(this.logger, 'api.create.success', {
+      tenantId,
+      bookingId: full.id,
+      ms: Date.now() - createStarted,
+      bookingStatus: full.bookingStatus,
+      items: summarizeCreateItems(
+        (full.items ?? []).map((i) => ({
+          courtKind: i.courtKind,
+          courtId: i.courtId,
+          date: i.date,
+          startTime: i.startTime,
+          endTime: i.endTime,
+          startDatetime: i.startDatetime,
+          endDatetime: i.endDatetime,
+        })),
+      ),
+      postGrid: postGridSummary,
+    });
+
     return row;
   }
 
@@ -2555,6 +2663,8 @@ export class BookingsService {
       endTime?: string;
       availableOnly?: boolean;
       skipCourtCheck?: boolean;
+      /** Suppress slot-grid diagnostics (internal post-create refresh). */
+      quietLog?: boolean;
     },
   ) {
     if (!params.skipCourtCheck) {
@@ -2663,7 +2773,18 @@ export class BookingsService {
             date,
             fs.startTime,
             fs.endTime,
-            r,
+            {
+              ...r,
+              endTime: resolveBookingMatchEndTime(
+                {
+                  startTime: r.startTime,
+                  endTime: r.endTime,
+                  startDatetime: r.startDatetime,
+                  endDatetime: r.endDatetime,
+                },
+                slotStepMinutes,
+              ),
+            },
             slotStepMinutes,
           ),
         );
@@ -2700,7 +2821,18 @@ export class BookingsService {
             date,
             s,
             e,
-            r,
+            {
+              ...r,
+              endTime: resolveBookingMatchEndTime(
+                {
+                  startTime: r.startTime,
+                  endTime: r.endTime,
+                  startDatetime: r.startDatetime,
+                  endDatetime: r.endDatetime,
+                },
+                slotStepMinutes,
+              ),
+            },
             slotStepMinutes,
           ),
         );
@@ -2723,42 +2855,36 @@ export class BookingsService {
       slots = slots.filter((s) => s.availability === 'available');
     }
 
-    // --- Filter out past slots (today and older) ---
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Karachi',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    });
-    const parts = formatter.formatToParts(now);
-    const y = parts.find((p) => p.type === 'year')?.value;
-    const m = parts.find((p) => p.type === 'month')?.value;
-    const d = parts.find((p) => p.type === 'day')?.value;
-    const hh = parts.find((p) => p.type === 'hour')?.value;
-    const mm = parts.find((p) => p.type === 'minute')?.value;
+    slots = filterSlotsForBookingPicker(slots, date);
 
-    const todayStr = `${y}-${m}-${d}`;
-    const currentTimeStr = `${hh}:${mm}`;
-    const currentHour = Number(hh);
-    const currentMinute = Number(mm);
-
-    if (date < todayStr) {
-      slots = [];
-    } else if (date === todayStr) {
-      // Keep the current in-progress slot visible; hide only slots that already ended.
-      slots = slots.filter((s) => s.endTime > currentTimeStr);
-
-      // Current-hour slots should only be shown in the first 29 minutes.
-      if (currentMinute > 29) {
-        const currentHourStart = currentHour * 60;
-        const nextHourStart = (currentHour + 1) * 60;
-        slots = slots.filter((s) => {
-          const slotStart = toMinutes(s.startTime, false);
-          return slotStart < currentHourStart || slotStart >= nextHourStart;
+    if (!params.quietLog) {
+      const slotSummary = summarizeSlotAvailability(slots);
+      bookingProcessStep(this.logger, 'api.getCourtSlots', {
+        tenantId,
+        courtKind: params.kind,
+        courtId: params.courtId,
+        date,
+        window: `${params.startTime ?? '00:00'}-${params.endTime ?? '24:00'}`,
+        availableOnly: Boolean(params.availableOnly),
+        slotStepMinutes,
+        facilitySlotRows: facilitySlots.length,
+        gridSource: facilitySlots.length > 0 ? 'facility_slots' : 'fallback',
+        activeBookingItems: rows.length,
+        activeItems: summarizeActiveBookingItems(rows, slotStepMinutes),
+        ...slotSummary,
+      });
+      if (
+        slotSummary.segmentCount > 0 &&
+        slotSummary.availableCount === 0 &&
+        rows.length <= 2
+      ) {
+        bookingProcessWarn(this.logger, 'api.getCourtSlots.all-unavailable', {
+          tenantId,
+          courtId: params.courtId,
+          date,
+          activeBookingItems: rows.length,
+          activeItems: summarizeActiveBookingItems(rows, slotStepMinutes),
+          ...slotSummary,
         });
       }
     }
@@ -2778,6 +2904,17 @@ export class BookingsService {
       skipCourtCheck?: boolean;
     },
   ) {
+    const gridStarted = Date.now();
+    bookingProcessStep(this.logger, 'api.getCourtSlotGrid.request', {
+      tenantId,
+      courtKind: params.kind,
+      courtId: params.courtId,
+      date: params.date,
+      startTime: params.startTime,
+      endTime: params.endTime,
+      availableOnly: Boolean(params.availableOnly),
+    });
+
     const data = await this.getCourtSlots(tenantId, {
       ...params,
       availableOnly: false,
@@ -2803,7 +2940,7 @@ export class BookingsService {
       segments = segments.filter((s: any) => s.state === 'free');
     }
 
-    return {
+    const gridResult = {
       date: data.date,
       kind: data.kind,
       courtId: data.courtId,
@@ -2819,6 +2956,19 @@ export class BookingsService {
       availableOnly: params.availableOnly || undefined,
       segments,
     };
+
+    bookingProcessStep(this.logger, 'api.getCourtSlotGrid.success', {
+      tenantId,
+      courtKind: params.kind,
+      courtId: params.courtId,
+      date: params.date,
+      ms: Date.now() - gridStarted,
+      availableOnly: Boolean(params.availableOnly),
+      segmentMinutes: gridResult.segmentMinutes,
+      ...summarizeSlotAvailability(segments),
+    });
+
+    return gridResult;
   }
 
   async generateDayFacilitySlots(
