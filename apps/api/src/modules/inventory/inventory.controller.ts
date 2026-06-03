@@ -19,7 +19,7 @@ import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { InventoryService } from './inventory.service';
 
-@Controller('inventory')
+@Controller(['inventory', 'assets'])
 @UseGuards(RolesGuard)
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}

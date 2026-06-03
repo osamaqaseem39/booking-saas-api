@@ -31,6 +31,22 @@ X-Tenant-Id: {{tenantId}}
 ### Arena meta
 GET {{baseUrl}}/arena
 
+### Canteen (location stock)
+GET {{baseUrl}}/canteen?locationId=
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+### Expenses
+GET {{baseUrl}}/expenses?locationId=
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
+### Assets / inventory (same routes)
+GET {{baseUrl}}/assets?locationId=
+Authorization: Bearer {{token}}
+X-Tenant-Id: {{tenantId}}
+
 ### Full API surface
+# Vendor mobile: velay-mobile-api.postman_collection.json (sections 8–10)
 # Edit and import: booking-saas-all-endpoints.postman_collection.json (repo root)
 # or backend-saas/insomnia/booking-saas.insomnia.json — both are maintained manually in-repo.
