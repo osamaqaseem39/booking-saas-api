@@ -21,6 +21,7 @@ import { RedisModule } from '../../../libs/database/src/redis/redis.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { HttpMetricsModule } from './observability/http-metrics.module';
 import { BankAccountsModule } from './modules/bank-accounts/bank-accounts.module';
+import { TournamentsModule } from './modules/tournaments/tournaments.module';
 import { CanteenModule } from './modules/canteen/canteen.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
@@ -193,6 +194,7 @@ function sslModeFromEnv() {
     ExpensesModule,
     CanteenModule,
     BankAccountsModule,
+    TournamentsModule,
   ],
 })
 export class AppModule {}
