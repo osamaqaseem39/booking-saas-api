@@ -2,6 +2,7 @@ import {
   bookingItemCoversFacilitySlotOnGridDate,
   buildItemFacilitySlotSyncWindows,
   facilitySlotEffectiveEndTime,
+  facilitySlotMarkingWallEnd,
   facilitySlotOverlapsBookingItem,
   facilitySlotOverlapsWallWindow,
   resolveBookingMatchEndTime,
@@ -12,6 +13,20 @@ describe('slot-wall-time.util', () => {
   it('maps facility row 08:00–24:00 to one hour for overlap', () => {
     expect(facilitySlotEffectiveEndTime('08:00', '24:00', 60)).toBe('09:00');
     expect(wallSlotEffectiveEndTime('08:00', '24:00', 60)).toBe('09:00');
+  });
+
+  it('facilitySlotMarkingWallEnd uses datetime wall end for short 20:00–24:00 items', () => {
+    expect(
+      facilitySlotMarkingWallEnd(
+        {
+          startTime: '20:00',
+          endTime: '24:00',
+          startDatetime: '2026-06-06T20:00:00.000Z',
+          endDatetime: '2026-06-06T21:00:00.000Z',
+        },
+        60,
+      ),
+    ).toBe('21:00');
   });
 
   it('resolveBookingMatchEndTime uses one hour for short 19:00–24:00 items', () => {

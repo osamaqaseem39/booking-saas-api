@@ -65,6 +65,40 @@ export function wallSlotOverlapsWindow(
   );
 }
 
+/** Wall-clock end for marking `court_facility_slots` (never wider than real play time). */
+export function facilitySlotMarkingWallEnd(
+  item: {
+    startTime: string;
+    endTime: string;
+    startDatetime?: Date | string | null;
+    endDatetime?: Date | string | null;
+  },
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+  graceMinutes = 15,
+): string {
+  if (item.endTime !== '24:00') {
+    return item.endTime;
+  }
+  if (item.startDatetime != null && item.endDatetime != null) {
+    const durationMin =
+      (new Date(item.endDatetime).getTime() -
+        new Date(item.startDatetime).getTime()) /
+      60000;
+    if (durationMin > slotStepMinutes + graceMinutes) {
+      return '24:00';
+    }
+    const dtEnd = new Date(item.endDatetime).toISOString().slice(11, 16);
+    if (dtEnd !== '00:00') {
+      return dtEnd;
+    }
+  }
+  return facilitySlotEffectiveEndTime(
+    item.startTime,
+    item.endTime,
+    slotStepMinutes,
+  );
+}
+
 /** Wall-clock end used when matching a booking item to facility grid rows. */
 export function resolveBookingMatchEndTime(
   item: {

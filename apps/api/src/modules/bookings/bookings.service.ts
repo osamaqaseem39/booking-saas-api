@@ -82,6 +82,7 @@ import {
   bookingItemCoversFacilitySlotOnGridDate,
   buildItemFacilitySlotSyncWindows,
   facilitySlotEffectiveEndTime,
+  facilitySlotMarkingWallEnd,
   facilitySlotOverlapsWallWindow,
   resolveBookingMatchEndTime,
   wallSlotEffectiveEndTime,
@@ -1062,14 +1063,11 @@ export class BookingsService {
     bookingDate: string,
     slotStepMinutes = BookingsService.DEFAULT_SLOT_STEP_MINUTES,
   ): Array<{ slotDate: string; windowStart: string; windowEnd: string }> {
-    const wallEnd =
-      item.startDatetime != null && item.endDatetime != null
-        ? resolveBookingMatchEndTime(
-            item,
-            slotStepMinutes,
-            BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
-          )
-        : item.endTime;
+    const wallEnd = facilitySlotMarkingWallEnd(
+      item,
+      slotStepMinutes,
+      BookingsService.SLOT_OVERLAP_GRACE_MINUTES,
+    );
     return buildItemFacilitySlotSyncWindows(
       {
         date: item.date ?? bookingDate,
@@ -1182,7 +1180,7 @@ export class BookingsService {
   ): Promise<void> {
     const slots = await this.facilitySlotRepo.find({
       where: { tenantId, courtKind, courtId, slotDate },
-      select: ['startTime', 'endTime'],
+      select: ['startTime', 'endTime', 'status'],
     });
     if (!slots.length) return;
 
@@ -1242,7 +1240,9 @@ export class BookingsService {
         }
       }
 
-      if (!hasActiveBooking) availableStarts.push(slot.startTime);
+      if (!hasActiveBooking && slot.status === 'booked') {
+        availableStarts.push(slot.startTime);
+      }
     }
 
     if (availableStarts.length) {
@@ -1254,8 +1254,38 @@ export class BookingsService {
         .andWhere('courtKind = :courtKind', { courtKind })
         .andWhere('courtId = :courtId', { courtId })
         .andWhere('slotDate = :slotDate', { slotDate })
+        .andWhere("status = 'booked'")
         .andWhere('startTime IN (:...availableStarts)', { availableStarts })
         .execute();
+    }
+  }
+
+  private async reconcileFacilitySlotsForBookingItems(
+    tenantId: string,
+    items: BookingItem[],
+    bookingDate: string,
+  ): Promise<void> {
+    const touched = new Set<string>();
+    for (const item of items) {
+      if (item.itemStatus === 'cancelled') continue;
+      const bd = formatDateOnly(item.date ?? bookingDate);
+      const windows = this.itemFacilitySlotSyncWindows(item, bd);
+      for (const { slotDate } of windows) {
+        touched.add(`${item.courtKind}\t${item.courtId}\t${slotDate}`);
+      }
+    }
+    for (const key of touched) {
+      const [courtKind, courtId, slotDate] = key.split('\t') as [
+        CourtKind,
+        string,
+        string,
+      ];
+      await this.reconcileFacilitySlotsForCourtDate(
+        tenantId,
+        courtKind,
+        courtId,
+        slotDate,
+      );
     }
   }
 
@@ -2643,12 +2673,6 @@ export class BookingsService {
             itemId: hit.id,
             status: hit.itemStatus,
           });
-        } else if (fs.status === 'booked') {
-          slots.push({
-            startTime: fs.startTime,
-            endTime: displayEnd,
-            availability: 'booked',
-          });
         } else if (fs.status === 'blocked') {
           slots.push({
             startTime: fs.startTime,
@@ -3822,6 +3846,11 @@ export class BookingsService {
       items,
       targetStatus: 'booked',
     });
+    await this.reconcileFacilitySlotsForBookingItems(
+      booking.tenantId,
+      items,
+      formatDateOnly(booking.bookingDate),
+    );
   }
 
   private async markFacilitySlotsBlockedForLiveBooking(
