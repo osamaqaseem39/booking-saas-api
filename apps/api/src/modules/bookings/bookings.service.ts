@@ -1262,14 +1262,28 @@ export class BookingsService {
 
   private async reconcileFacilitySlotsForBookingItems(
     tenantId: string,
-    items: BookingItem[],
+    items: Array<
+      Pick<BookingItem, 'courtKind' | 'courtId' | 'date' | 'itemStatus'> & {
+        startTime?: string;
+        endTime?: string;
+        startDatetime?: Date | string | null;
+        endDatetime?: Date | string | null;
+      }
+    >,
     bookingDate: string,
   ): Promise<void> {
     const touched = new Set<string>();
     for (const item of items) {
       if (item.itemStatus === 'cancelled') continue;
       const bd = formatDateOnly(item.date ?? bookingDate);
-      const windows = this.itemFacilitySlotSyncWindows(item, bd);
+      const windows = this.itemFacilitySlotSyncWindows(
+        {
+          date: item.date ?? bd,
+          startTime: item.startTime ?? '00:00',
+          endTime: item.endTime ?? '01:00',
+        },
+        bd,
+      );
       for (const { slotDate } of windows) {
         touched.add(`${item.courtKind}\t${item.courtId}\t${slotDate}`);
       }
@@ -2557,6 +2571,24 @@ export class BookingsService {
       order: { startTime: 'ASC' },
     });
 
+    if (facilitySlots.length > 0) {
+      await this.reconcileFacilitySlotsForCourtDate(
+        tenantId,
+        params.kind,
+        params.courtId,
+        date,
+      );
+      facilitySlots = await this.facilitySlotRepo.find({
+        where: {
+          tenantId,
+          courtKind: params.kind,
+          courtId: params.courtId,
+          slotDate: date,
+        },
+        order: { startTime: 'ASC' },
+      });
+    }
+
     const queryStart = new Date(`${date}T00:00:00.000Z`);
     queryStart.setUTCMinutes(toMinutes(params.startTime ?? '00:00', false));
     const queryEnd = new Date(`${date}T00:00:00.000Z`);
@@ -2630,12 +2662,6 @@ export class BookingsService {
             startTime: fs.startTime,
             endTime: displayEnd,
             availability: 'blocked',
-          });
-        } else if (fs.status === 'booked') {
-          slots.push({
-            startTime: fs.startTime,
-            endTime: displayEnd,
-            availability: 'booked',
           });
         } else {
           slots.push({
@@ -3804,6 +3830,11 @@ export class BookingsService {
       items,
       targetStatus: 'booked',
     });
+    await this.reconcileFacilitySlotsForBookingItems(
+      booking.tenantId,
+      items,
+      formatDateOnly(booking.bookingDate),
+    );
   }
 
   private async markFacilitySlotsBlockedForLiveBooking(
