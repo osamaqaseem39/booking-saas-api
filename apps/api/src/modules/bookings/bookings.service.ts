@@ -3846,11 +3846,6 @@ export class BookingsService {
       items,
       targetStatus: 'booked',
     });
-    await this.reconcileFacilitySlotsForBookingItems(
-      booking.tenantId,
-      items,
-      formatDateOnly(booking.bookingDate),
-    );
   }
 
   private async markFacilitySlotsBlockedForLiveBooking(
