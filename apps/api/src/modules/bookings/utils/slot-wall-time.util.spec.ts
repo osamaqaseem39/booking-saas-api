@@ -186,4 +186,35 @@ describe('slot-wall-time.util', () => {
     expect(facilitySlotStartInMarkWindow('15:00', '14:00', '15:00')).toBe(false);
     expect(facilitySlotStartInMarkWindow('13:00', '14:00', '15:00')).toBe(false);
   });
+
+  it('23:00–24:00 one-hour booking does not cover earlier 17:00–24:00 template rows', () => {
+    const item = {
+      itemDate: '2026-06-03',
+      bookingDate: '2026-06-03',
+      startTime: '23:00',
+      endTime: '24:00',
+      startDatetime: '2026-06-03T23:00:00.000Z',
+      endDatetime: '2026-06-04T00:00:00.000Z',
+    };
+    expect(
+      bookingItemCoversFacilitySlotOnGridDate(
+        '2026-06-03',
+        '23:00',
+        '24:00',
+        item,
+        60,
+      ),
+    ).toBe(true);
+    for (const start of ['17:00', '18:00', '19:00', '20:00', '21:00', '22:00']) {
+      expect(
+        bookingItemCoversFacilitySlotOnGridDate(
+          '2026-06-03',
+          start,
+          '24:00',
+          item,
+          60,
+        ),
+      ).toBe(false);
+    }
+  });
 });

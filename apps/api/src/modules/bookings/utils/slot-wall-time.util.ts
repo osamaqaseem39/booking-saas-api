@@ -119,6 +119,16 @@ export function resolveBookingMatchEndTime(
     if (durationMin > slotStepMinutes + graceMinutes) {
       return '24:00';
     }
+    const dtEnd = new Date(item.endDatetime).toISOString().slice(11, 16);
+    if (dtEnd === '00:00') {
+      return wallMinutesToTime(
+        Math.min(
+          wallToMinutes(item.startTime, false) + Math.round(durationMin),
+          24 * 60,
+        ),
+      );
+    }
+    return dtEnd;
   }
   return facilitySlotEffectiveEndTime(
     item.startTime,
@@ -257,15 +267,7 @@ export function bookingItemCoversFacilitySlotOnGridDate(
 ): boolean {
   const windows = bookingItemWindowsOnGridDate(gridDate, item, slotStepMinutes);
   for (const w of windows) {
-    if (
-      facilitySlotOverlapsWallWindow(
-        slotStart,
-        slotEnd,
-        w.windowStart,
-        w.windowEnd,
-        slotStepMinutes,
-      )
-    ) {
+    if (facilitySlotStartInMarkWindow(slotStart, w.windowStart, w.windowEnd)) {
       return true;
     }
   }
@@ -273,16 +275,38 @@ export function bookingItemCoversFacilitySlotOnGridDate(
 }
 
 export function buildItemFacilitySlotSyncWindows(
-  item: { date?: string | null; startTime: string; endTime: string },
+  item: {
+    date?: string | null;
+    startTime: string;
+    endTime: string;
+    startDatetime?: Date | string | null;
+    endDatetime?: Date | string | null;
+    /** When true, `endTime` is already the marking wall end (do not re-expand). */
+    useMarkingWallEnd?: boolean;
+  },
   bookingDate: string,
   slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
 ): Array<{ slotDate: string; windowStart: string; windowEnd: string }> {
   const date = formatDateOnlyYmd(item.date ?? bookingDate);
-  const effectiveEnd = wallSlotEffectiveEndTime(
-    item.startTime,
-    item.endTime,
-    slotStepMinutes,
-  );
+  const effectiveEnd = item.useMarkingWallEnd
+    ? item.endTime
+    : item.startDatetime != null && item.endDatetime != null
+      ? resolveBookingMatchEndTime(
+          {
+            startTime: item.startTime,
+            endTime: item.endTime,
+            startDatetime: item.startDatetime,
+            endDatetime: item.endDatetime,
+          },
+          slotStepMinutes,
+        )
+      : item.endTime === '24:00'
+        ? wallSlotEffectiveEndTime(
+            item.startTime,
+            item.endTime,
+            slotStepMinutes,
+          )
+        : item.endTime;
   const startMin = wallToMinutes(item.startTime, false);
   const endMin = wallToMinutes(effectiveEnd, true);
   if (endMin <= startMin) {
