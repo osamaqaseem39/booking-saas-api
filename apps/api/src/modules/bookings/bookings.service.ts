@@ -2461,6 +2461,24 @@ export class BookingsService {
       }
     }
 
+    const facilitySlotsOnDate = await this.facilitySlotRepo.find({
+      where: { tenantId, courtKind: courtKindFilter, slotDate: date },
+      select: ['courtId'],
+    });
+    const courtsWithTemplateOnDate = new Set(
+      facilitySlotsOnDate.map((s) => s.courtId),
+    );
+    for (const court of allCourts) {
+      if (!courtsWithTemplateOnDate.has(court.id)) {
+        templateAvailableIds.add(court.id);
+      }
+    }
+
+    const queryStart = new Date(`${date}T00:00:00.000Z`);
+    queryStart.setUTCMinutes(qStartMin);
+    const queryEnd = new Date(`${date}T00:00:00.000Z`);
+    queryEnd.setUTCMinutes(qEndMin);
+
     const busyIds = new Set<string>();
     const busy: Array<{
       courtId: string;
@@ -2507,6 +2525,48 @@ export class BookingsService {
           });
         }
       }
+    }
+
+    const activeBookingItems = await this.bookingRepo
+      .createQueryBuilder('b')
+      .innerJoin('b.items', 'i')
+      .andWhere('b.tenantId = :tenantId', { tenantId })
+      .andWhere("b.bookingStatus IN ('confirmed', 'pending', 'live')")
+      .andWhere("i.itemStatus <> 'cancelled'")
+      .andWhere('i.courtKind = :kind', { kind: courtKindFilter })
+      .andWhere('i.startDatetime < :queryEnd', { queryEnd: queryEnd.toISOString() })
+      .andWhere('i.endDatetime > :queryStart', {
+        queryStart: queryStart.toISOString(),
+      })
+      .select([
+        'b.id AS bookingId',
+        'i.id AS id',
+        'i.courtId AS courtId',
+        'i.startTime AS startTime',
+        'i.endTime AS endTime',
+        'i.itemStatus AS itemStatus',
+      ])
+      .getRawMany<{
+        bookingId: string;
+        id: string;
+        courtId: string;
+        startTime: string;
+        endTime: string;
+        itemStatus: BookingItemStatus;
+      }>();
+
+    for (const row of activeBookingItems) {
+      if (busyIds.has(row.courtId)) continue;
+      busyIds.add(row.courtId);
+      busy.push({
+        courtId: row.courtId,
+        courtKind: courtKindFilter,
+        startTime: row.startTime,
+        endTime: row.endTime,
+        bookingId: row.bookingId,
+        id: row.id,
+        itemStatus: row.itemStatus,
+      });
     }
 
     const blockedIds = new Set<string>();
