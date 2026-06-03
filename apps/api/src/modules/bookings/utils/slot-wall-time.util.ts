@@ -252,6 +252,24 @@ export function facilitySlotOverlapsWallWindow(
   );
 }
 
+function hasPersistedWallDatetimes(
+  item: {
+    startDatetime?: Date | string | null;
+    endDatetime?: Date | string | null;
+  },
+): boolean {
+  const s = item.startDatetime;
+  const e = item.endDatetime;
+  if (s == null || e == null) return false;
+  const ss = s instanceof Date ? s.toISOString() : String(s).trim();
+  const ee = e instanceof Date ? e.toISOString() : String(e).trim();
+  return ss.length > 0 && ee.length > 0 && !Number.isNaN(new Date(ss).getTime());
+}
+
+function isValidWallStartTime(startTime: string): boolean {
+  return typeof startTime === 'string' && startTime.includes(':');
+}
+
 /** Wall-clock windows for an item on a single grid day (no datetime expansion to close). */
 export function bookingItemWindowsOnGridDate(
   gridDate: string,
@@ -265,13 +283,14 @@ export function bookingItemWindowsOnGridDate(
   },
   slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
 ): Array<{ windowStart: string; windowEnd: string }> {
+  if (!isValidWallStartTime(item.startTime)) return [];
+
   const anchorDate = formatDateOnlyYmd(
-    item.itemDate ?? item.startDatetime ?? item.bookingDate ?? gridDate,
+    item.itemDate ?? item.bookingDate ?? gridDate,
   );
-  const wallEnd =
-    item.startDatetime != null && item.endDatetime != null
-      ? resolveBookingMatchEndTime(item, slotStepMinutes)
-      : item.endTime;
+  const wallEnd = hasPersistedWallDatetimes(item)
+    ? resolveBookingMatchEndTime(item, slotStepMinutes)
+    : item.endTime;
   const windows = buildItemFacilitySlotSyncWindows(
     { date: anchorDate, startTime: item.startTime, endTime: wallEnd },
     anchorDate,
@@ -282,12 +301,21 @@ export function bookingItemWindowsOnGridDate(
     .map((w) => ({ windowStart: w.windowStart, windowEnd: w.windowEnd }));
   if (onGrid.length) return onGrid;
 
-  if (item.startDatetime == null || item.endDatetime == null) return [];
+  if (!hasPersistedWallDatetimes(item)) return [];
+
+  const startIso =
+    item.startDatetime instanceof Date
+      ? item.startDatetime.toISOString()
+      : String(item.startDatetime);
+  const endIso =
+    item.endDatetime instanceof Date
+      ? item.endDatetime.toISOString()
+      : String(item.endDatetime);
 
   const dayStart = new Date(`${gridDate}T00:00:00.000Z`);
   const dayEnd = new Date(`${addDaysYmdWall(gridDate, 1)}T00:00:00.000Z`);
-  const start = new Date(item.startDatetime);
-  const end = new Date(item.endDatetime);
+  const start = new Date(startIso);
+  const end = new Date(endIso);
   if (start >= dayEnd || end <= dayStart) return [];
 
   const clipStart = start > dayStart ? start : dayStart;
@@ -363,6 +391,13 @@ export function buildItemFacilitySlotSyncWindows(
             slotStepMinutes,
           )
         : item.endTime;
+  if (
+    typeof item.startTime !== 'string' ||
+    !item.startTime.includes(':') ||
+    wallToMinutes(item.startTime, false) >= 24 * 60
+  ) {
+    return [];
+  }
   const startMin = wallToMinutes(item.startTime, false);
   const endMin = wallToMinutes(effectiveEnd, true);
   if (endMin <= startMin) {

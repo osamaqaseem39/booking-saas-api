@@ -90,6 +90,10 @@ import {
   wallSlotOverlapsWindow,
 } from './utils/slot-wall-time.util';
 import {
+  normalizeBookingGridItemRow,
+  normalizeBookingGridItemRows,
+} from './utils/booking-grid-item-row.util';
+import {
   bookingProcessError,
   bookingProcessStep,
   bookingProcessWarn,
@@ -1233,7 +1237,7 @@ export class BookingsService {
 
     const dayStart = new Date(`${slotDate}T00:00:00.000Z`);
     const dayEnd = new Date(`${addDays(slotDate, 1)}T00:00:00.000Z`);
-    const activeRows = await this.bookingRepo
+    const activeRowsRaw = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
@@ -1253,14 +1257,9 @@ export class BookingsService {
         'i.startDatetime AS startDatetime',
         'i.endDatetime AS endDatetime',
       ])
-      .getRawMany<{
-        bookingDate: string;
-        itemDate: string | null;
-        startTime: string;
-        endTime: string;
-        startDatetime: string;
-        endDatetime: string;
-      }>();
+      .getRawMany<Record<string, unknown>>();
+
+    const activeRows = normalizeBookingGridItemRows(activeRowsRaw);
 
     const availableStarts: string[] = [];
 
@@ -1754,7 +1753,7 @@ export class BookingsService {
       }
       await this.assertNoOverlap(tenantId, item.date, item);
     }
-    
+
 
     const itemsPayload: DeepPartial<BookingItem>[] = [];
     for (const i of expandedItems) {
@@ -2724,7 +2723,7 @@ export class BookingsService {
     const queryEnd = new Date(`${date}T00:00:00.000Z`);
     queryEnd.setUTCMinutes(toMinutes(params.endTime ?? '24:00', true));
 
-    const rows = await this.bookingRepo
+    const rowsRaw = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .andWhere('b.tenantId = :tenantId', { tenantId })
@@ -2747,17 +2746,9 @@ export class BookingsService {
         'i.endDatetime AS endDatetime',
         'i.itemStatus AS itemStatus',
       ])
-      .getRawMany<{
-        bookingId: string;
-        bookingDate: string;
-        id: string;
-        itemDate: string | null;
-        startTime: string;
-        endTime: string;
-        startDatetime: string;
-        endDatetime: string;
-        itemStatus: BookingItemStatus;
-      }>();
+      .getRawMany<Record<string, unknown>>();
+
+    const rows = normalizeBookingGridItemRows(rowsRaw);
 
     let slots: Array<any> = [];
     if (facilitySlots.length > 0) {
