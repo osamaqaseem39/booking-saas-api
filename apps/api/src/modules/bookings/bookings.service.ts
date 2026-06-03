@@ -1754,6 +1754,7 @@ export class BookingsService {
       }
       await this.assertNoOverlap(tenantId, item.date, item);
     }
+    
 
     const itemsPayload: DeepPartial<BookingItem>[] = [];
     for (const i of expandedItems) {
