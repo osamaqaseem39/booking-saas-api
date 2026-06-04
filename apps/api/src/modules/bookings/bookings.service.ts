@@ -545,7 +545,7 @@ export class BookingsService {
   }
 
   /**
-   * Mirrors `completePastBookings` overtime math without mutating the entity.
+   * Projects per-minute overtime for live bookings past scheduled end (not persisted until checkout).
    * Only applies while the booking is still marked `live`.
    */
   private computeLiveOvertimeProjection(
@@ -800,7 +800,8 @@ export class BookingsService {
           ? booking.bookingStatus
           : this.resolveBookingViewStatus(
               booking,
-              locationId ? locationTimeZoneMap[locationId] : undefined,
+              courtToLocationMap,
+              locationTimeZoneMap,
             ),
       ...(useOvertimePricing && projection
         ? {
@@ -829,9 +830,20 @@ export class BookingsService {
 
   private resolveBookingViewStatus(
     booking: Booking,
-    locationTimeZone?: string,
+    courtToLocationMap: Record<string, string> = {},
+    locationTimeZoneMap: Record<string, string> = {},
   ): BookingViewStatus {
-    void locationTimeZone;
+    if (booking.bookingStatus === 'live') {
+      const projection = this.computeLiveOvertimeProjection(
+        booking,
+        new Date(),
+        courtToLocationMap,
+        locationTimeZoneMap,
+      );
+      if (projection && projection.totalOvertimeMinutes > 0) {
+        return 'overtime';
+      }
+    }
     return booking.bookingStatus;
   }
 
@@ -4376,72 +4388,6 @@ export class BookingsService {
       );
     }
 
-    // Complete only live bookings once their play window has ended.
-    const pastBookings = await this.bookingRepo
-      .createQueryBuilder('b')
-      .innerJoin('b.items', 'i')
-      .where("b.bookingStatus = 'live'")
-      .groupBy('b.id')
-      .having('MAX(i.endDatetime) < :now', { now: now.toISOString() })
-      .select('b.id', 'id')
-      .getRawMany<{ id: string }>();
-
-    if (pastBookings.length === 0) return;
-
-    const ids = pastBookings.map((b) => b.id);
-    const liveBookings = await this.bookingRepo.find({
-      where: { id: In(ids), bookingStatus: 'live' },
-      relations: ['items'],
-    });
-    for (const booking of liveBookings) {
-      let extraSubTotal = 0;
-      for (const item of booking.items ?? []) {
-        if (item.itemStatus === 'cancelled') continue;
-        if (!item.startDatetime || !item.endDatetime) continue;
-        if (now <= item.endDatetime) continue;
-
-        const durationMinutes = Math.max(
-          1,
-          Math.round(
-            (item.endDatetime.getTime() - item.startDatetime.getTime()) / 60000,
-          ),
-        );
-        const perMinuteRate = numFromDec(item.price) / durationMinutes;
-        const overtimeMinutes = Math.max(
-          0,
-          Math.ceil((now.getTime() - item.endDatetime.getTime()) / 60000),
-        );
-        if (overtimeMinutes <= 0) continue;
-
-        const overtimeCharge = Number((perMinuteRate * overtimeMinutes).toFixed(2));
-        extraSubTotal += overtimeCharge;
-        item.price = dec(numFromDec(item.price) + overtimeCharge);
-        item.endDatetime = now;
-        item.endTime = now.toISOString().slice(11, 16);
-        item.date = now.toISOString().slice(0, 10);
-        item.itemStatus = 'cancelled';
-      }
-
-      if (extraSubTotal > 0) {
-        booking.subTotal = dec(numFromDec(booking.subTotal) + extraSubTotal);
-        booking.totalAmount = dec(
-          this.computePayableAmount(
-            numFromDec(booking.subTotal),
-            numFromDec(booking.discount),
-            numFromDec(booking.tax),
-          ),
-        );
-        harmonizePaymentStatusWithAmounts(booking);
-      }
-      this.applyBookingWindowFields(booking);
-      await this.bookingRepo.save(booking);
-    }
-    await this.bookingRepo.update({ id: In(ids) }, { bookingStatus: 'completed' });
-    for (const booking of liveBookings) {
-      booking.bookingStatus = 'completed';
-      await this.releaseFacilitySlotsForBooking(booking);
-    }
-    this.logger.log(`Marked ${ids.length} active bookings as completed.`);
   }
 
   private async matchPadelCourtFromParsedText(params: {
