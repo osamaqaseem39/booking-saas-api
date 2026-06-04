@@ -270,6 +270,15 @@ export class BookingsSlotsTask {
     }
   }
 
+  @Cron(CronExpression.EVERY_MINUTE)
+  async handleLiveSessionTick() {
+    try {
+      await this.bookingsService.notifyLiveSessionTicks();
+    } catch (err) {
+      this.logger.error('Failed live session websocket tick', err);
+    }
+  }
+
   /**
    * Run every 10 minutes to:
    * Delete expired facility slots for both past days and elapsed time today.

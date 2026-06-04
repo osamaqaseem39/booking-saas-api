@@ -181,7 +181,57 @@ function collectItemWindows(
   return out.sort((a, b) => a.startMs - b.startMs);
 }
 
-/** Same per-line rule as booking completion / `computeLiveOvertimeProjection` for this court. */
+export type CourtSessionSegmentMs = {
+  itemId: string;
+  startMs: number;
+  endMs: number;
+  price: number;
+};
+
+/**
+ * Overtime is measured once from the latest segment end on a court (includes add-on extensions),
+ * not stacked from each earlier segment's end.
+ */
+export function computeOvertimeFromCourtSession(
+  nowMs: number,
+  segments: CourtSessionSegmentMs[],
+): { minutes: number; charge: number; lastItemId: string | null } {
+  if (!segments.length) {
+    return { minutes: 0, charge: 0, lastItemId: null };
+  }
+
+  let sessionEndMs = 0;
+  let totalScheduledMs = 0;
+  let totalScheduledPrice = 0;
+  let lastItemId: string | null = null;
+  let maxEnd = -1;
+
+  for (const seg of segments) {
+    sessionEndMs = Math.max(sessionEndMs, seg.endMs);
+    totalScheduledMs += seg.endMs - seg.startMs;
+    totalScheduledPrice += seg.price;
+    if (seg.endMs > maxEnd) {
+      maxEnd = seg.endMs;
+      lastItemId = seg.itemId;
+    }
+  }
+
+  if (nowMs <= sessionEndMs) {
+    return { minutes: 0, charge: 0, lastItemId: null };
+  }
+
+  const durationMinutes = Math.max(1, Math.round(totalScheduledMs / 60000));
+  const perMinuteRate = totalScheduledPrice / durationMinutes;
+  const minutes = Math.max(0, Math.ceil((nowMs - sessionEndMs) / 60000));
+  if (minutes <= 0) {
+    return { minutes: 0, charge: 0, lastItemId: null };
+  }
+
+  const charge = Number((perMinuteRate * minutes).toFixed(2));
+  return { minutes, charge, lastItemId };
+}
+
+/** Same session-level rule as `computeLiveOvertimeProjection` for this court. */
 function computeSessionOvertime(
   b: Booking,
   courtKind: CourtKind,
@@ -190,8 +240,7 @@ function computeSessionOvertime(
   timeZone: string,
 ): { minutes: number; charge: number } {
   const tz = resolveTimeZoneId(timeZone);
-  let totalMinutes = 0;
-  let totalCharge = 0;
+  const segments: CourtSessionSegmentMs[] = [];
 
   for (const it of b.items || []) {
     if (it.courtId !== courtId || it.courtKind !== courtKind) continue;
@@ -199,22 +248,16 @@ function computeSessionOvertime(
     const ymd = itemBookingYmd(b, it);
     if (!ymd) continue;
     const { startMs, endMs } = wallRangeToMs(ymd, it.startTime, it.endTime, tz);
-    if (nowMs <= endMs) continue;
-
-    const duration = Math.max(1, Math.round((endMs - startMs) / 60000));
-    const price = numFromDecLike(it.price);
-    const perMin = price / duration;
-    const overtimeMins = Math.max(0, Math.ceil((nowMs - endMs) / 60000));
-    if (overtimeMins > 0) {
-      totalMinutes += overtimeMins;
-      totalCharge += perMin * overtimeMins;
-    }
+    segments.push({
+      itemId: it.id,
+      startMs,
+      endMs,
+      price: numFromDecLike(it.price),
+    });
   }
 
-  return {
-    minutes: totalMinutes,
-    charge: Number(totalCharge.toFixed(2)),
-  };
+  const { minutes, charge } = computeOvertimeFromCourtSession(nowMs, segments);
+  return { minutes, charge };
 }
 
 function hoursBetween(a: number, b: number): number {

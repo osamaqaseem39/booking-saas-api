@@ -50,6 +50,8 @@ import type {
 import {
   addDaysYmd,
   buildPlaySnapshot,
+  computeOvertimeFromCourtSession,
+  type CourtSessionSegmentMs,
   type FacilityPlaySnapshot,
   wallRangeToMs,
   ymdInTimeZone,
@@ -305,6 +307,19 @@ export class BookingsService {
     action: BookingRealtimeAction,
   ): void {
     this.realtime?.emitBookingChange(tenantId, bookingId, action);
+  }
+
+  /** Pushes `live:tick` to connected dashboards for tenants with active live sessions. */
+  async notifyLiveSessionTicks(): Promise<void> {
+    if (!this.realtime) return;
+    const rows = await this.bookingRepo
+      .createQueryBuilder('b')
+      .select('DISTINCT b.tenantId', 'tenantId')
+      .where("b.bookingStatus = 'live'")
+      .getRawMany<{ tenantId: string }>();
+    for (const { tenantId } of rows) {
+      if (tenantId) this.realtime.emitLiveTick(tenantId);
+    }
   }
 
   private computePayableAmount(
@@ -565,10 +580,11 @@ export class BookingsService {
     const perItem: Record<string, { overtimeMinutes: number; overtimeCharge: number }> = {};
     let totalOvertimeMinutes = 0;
     let totalOvertimeCharge = 0;
+    const nowMs = now.getTime();
 
+    const byCourt = new Map<string, CourtSessionSegmentMs[]>();
     for (const item of booking.items ?? []) {
       if (item.itemStatus === 'cancelled') continue;
-
       const ymd = formatDateOnly(item.date ?? booking.bookingDate);
       const locId = courtToLocationMap[item.courtId];
       const rawTz = locId ? locationTimeZoneMap[locId] : undefined;
@@ -579,24 +595,26 @@ export class BookingsService {
               startMs: this.itemPlayStartMs(item, bd),
               endMs: this.itemPlayEndMs(item, bd),
             };
-      if (now.getTime() <= endMs) continue;
+      const key = `${item.courtKind}:${item.courtId}`;
+      const list = byCourt.get(key) ?? [];
+      list.push({
+        itemId: item.id,
+        startMs,
+        endMs,
+        price: numFromDec(item.price),
+      });
+      byCourt.set(key, list);
+    }
 
-      const durationMinutes = Math.max(
-        1,
-        Math.round((endMs - startMs) / 60000),
-      );
-      const basePrice = numFromDec(item.price);
-      const perMinuteRate = basePrice / durationMinutes;
-      const overtimeMinutes = Math.max(
-        0,
-        Math.ceil((now.getTime() - endMs) / 60000),
-      );
-      if (overtimeMinutes <= 0) continue;
-
-      const overtimeCharge = Number((perMinuteRate * overtimeMinutes).toFixed(2));
-      perItem[item.id] = { overtimeMinutes, overtimeCharge };
-      totalOvertimeMinutes += overtimeMinutes;
-      totalOvertimeCharge += overtimeCharge;
+    for (const segments of byCourt.values()) {
+      const ot = computeOvertimeFromCourtSession(nowMs, segments);
+      if (ot.minutes <= 0 || ot.charge <= 0 || !ot.lastItemId) continue;
+      perItem[ot.lastItemId] = {
+        overtimeMinutes: ot.minutes,
+        overtimeCharge: ot.charge,
+      };
+      totalOvertimeMinutes += ot.minutes;
+      totalOvertimeCharge += ot.charge;
     }
 
     if (totalOvertimeCharge <= 0) return null;
