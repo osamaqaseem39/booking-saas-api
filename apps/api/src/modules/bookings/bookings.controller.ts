@@ -544,11 +544,17 @@ export class BookingsController {
     if (!tenantId) {
       throw new BadRequestException('Unable to resolve tenant for booking.');
     }
+    if (dto.addOnMinutes != null && dto.removeAddOnMinutes != null) {
+      throw new BadRequestException(
+        'Specify either addOnMinutes or removeAddOnMinutes, not both',
+      );
+    }
     return this.bookingsService.editBookingFacilitySlots(
       tenantId,
       bookingId,
       dto.blocked ?? false,
       dto.addOnMinutes,
+      dto.removeAddOnMinutes,
     );
   }
 

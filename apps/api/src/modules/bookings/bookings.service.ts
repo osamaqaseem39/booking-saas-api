@@ -2324,7 +2324,17 @@ export class BookingsService {
     bookingId: string,
     blocked: boolean,
     addOnMinutes?: 30 | 60,
-  ): Promise<{ ok: true; bookingId: string; blocked: boolean; extendedBy?: number }> {
+    removeAddOnMinutes?: 30 | 60,
+  ): Promise<{
+    ok: true;
+    bookingId: string;
+    blocked: boolean;
+    extendedBy?: number;
+    removedBy?: number;
+  }> {
+    if (removeAddOnMinutes) {
+      return this.removeBookingTimeExtension(tenantId, bookingId, removeAddOnMinutes);
+    }
     if (!addOnMinutes) {
       return { ok: true, bookingId, blocked };
     }
@@ -2439,6 +2449,111 @@ export class BookingsService {
 
     this.notifyBookingChange(tenantId, bookingId, 'updated');
     return { ok: true, bookingId, blocked, extendedBy: addOnMinutes };
+  }
+
+  private async removeBookingTimeExtension(
+    tenantId: string,
+    bookingId: string,
+    removeMinutes: 30 | 60,
+  ): Promise<{ ok: true; bookingId: string; blocked: boolean; removedBy: number }> {
+    const booking = await this.bookingRepo.findOne({
+      where: { id: bookingId, tenantId },
+      relations: ['items'],
+    });
+    if (!booking) {
+      throw new NotFoundException(`Booking ${bookingId} not found`);
+    }
+    if (!booking.items?.length) {
+      throw new BadRequestException('Booking has no items to update');
+    }
+    if (booking.bookingStatus === 'cancelled' || booking.bookingStatus === 'no_show') {
+      throw new BadRequestException('Only active bookings can be updated');
+    }
+
+    const itemsSorted = [...booking.items]
+      .filter((i) => i.itemStatus !== 'cancelled')
+      .sort((a, b) => {
+        const aStart = (
+          a.startDatetime ??
+          this.toSlotDateTimes(formatDateOnly(a.date ?? booking.bookingDate), a.startTime, a.endTime)
+            .startDatetime
+        ).getTime();
+        const bStart = (
+          b.startDatetime ??
+          this.toSlotDateTimes(formatDateOnly(b.date ?? booking.bookingDate), b.startTime, b.endTime)
+            .startDatetime
+        ).getTime();
+        return aStart - bStart;
+      });
+
+    if (itemsSorted.length < 2) {
+      throw new BadRequestException('No time extension to remove');
+    }
+
+    const last = itemsSorted[itemsSorted.length - 1]!;
+    const prev = itemsSorted[itemsSorted.length - 2]!;
+    const lastWindow = this.toSlotDateTimes(
+      formatDateOnly(last.date ?? booking.bookingDate),
+      last.startTime,
+      last.endTime,
+    );
+    const durationMinutes = Math.max(
+      1,
+      Math.round(
+        (lastWindow.endDatetime.getTime() - lastWindow.startDatetime.getTime()) / 60000,
+      ),
+    );
+    if (durationMinutes !== removeMinutes) {
+      throw new BadRequestException(
+        `Last segment is ${durationMinutes} minutes; cannot remove ${removeMinutes} minutes`,
+      );
+    }
+
+    const prevEndHm = (prev.endDatetime ?? this.toSlotDateTimes(
+      formatDateOnly(prev.date ?? booking.bookingDate),
+      prev.startTime,
+      prev.endTime,
+    ).endDatetime)
+      .toISOString()
+      .slice(11, 16);
+    const lastStartHm = (last.startDatetime ?? lastWindow.startDatetime)
+      .toISOString()
+      .slice(11, 16);
+    if (prevEndHm !== lastStartHm) {
+      throw new BadRequestException('Last segment is not a contiguous time extension');
+    }
+
+    const removedPrice = numFromDec(last.price);
+    await this.bookingRepo.manager.getRepository(BookingItem).remove(last);
+    booking.items = await this.bookingRepo.manager.getRepository(BookingItem).find({
+      where: { bookingId: booking.id },
+    });
+
+    booking.subTotal = dec(Math.max(0, numFromDec(booking.subTotal) - removedPrice));
+    booking.totalAmount = dec(
+      Math.max(
+        0,
+        numFromDec(booking.subTotal) - numFromDec(booking.discount) + numFromDec(booking.tax),
+      ),
+    );
+    harmonizePaymentStatusWithAmounts(booking);
+    this.applyBookingWindowFields(booking);
+    await this.bookingRepo.save(booking);
+
+    const full = await this.bookingRepo.findOneOrFail({
+      where: { id: bookingId, tenantId },
+      relations: ['items'],
+    });
+
+    await this.releaseBookedFacilitySlotsForItems(tenantId, [last], bookingId);
+    if (full.bookingStatus === 'confirmed' || full.bookingStatus === 'pending') {
+      await this.markFacilitySlotsBookedForBooking(full);
+    } else if (full.bookingStatus === 'live') {
+      await this.markFacilitySlotsBlockedForLiveBooking(full);
+    }
+
+    this.notifyBookingChange(tenantId, bookingId, 'updated');
+    return { ok: true, bookingId, blocked: false, removedBy: removeMinutes };
   }
 
   async getAvailabilityByTime(
