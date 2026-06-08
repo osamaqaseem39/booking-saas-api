@@ -6,6 +6,7 @@ import { shouldRunStartupMigrations } from './database/migration-startup.util';
 let cachedServer: Express | null = null;
 let initializingServer: Promise<Express> | null = null;
 
+
 async function createServer(): Promise<Express> {
   if (cachedServer) {
     return cachedServer;
