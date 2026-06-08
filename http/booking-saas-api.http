@@ -47,6 +47,6 @@ Authorization: Bearer {{token}}
 X-Tenant-Id: {{tenantId}}
 
 ### Full API surface
-# Vendor mobile: velay-mobile-api.postman_collection.json (sections 8–10)
-# Edit and import: booking-saas-all-endpoints.postman_collection.json (repo root)
-# or backend-saas/insomnia/booking-saas.insomnia.json — both are maintained manually in-repo.
+# Dashboard / admin: velay-api.postman_collection.json + velay-api.md (repo root)
+# Vendor mobile: velay-mobile-api.postman_collection.json
+# Legacy full export: booking-saas-all-endpoints.postman_collection.json (repo root)

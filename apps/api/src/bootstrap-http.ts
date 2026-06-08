@@ -110,7 +110,9 @@ export function applyHttpGlobals(app: NestExpressApplication): void {
 }
 
 export async function createNestExpressApp(): Promise<NestExpressApplication> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   if ((process.env.WEBSOCKETS_ENABLED ?? 'true').toLowerCase() !== 'false') {
     app.useWebSocketAdapter(new IoAdapter(app));
   }

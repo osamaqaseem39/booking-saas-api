@@ -31,7 +31,9 @@ async function createServer(): Promise<Express> {
       }
     }
 
-    const app = await NestFactory.create<NestExpressApplication>(AppModule);
+    const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+      rawBody: true,
+    });
     applyHttpGlobals(app);
     await app.init();
     cachedServer = app.getHttpAdapter().getInstance();
@@ -46,7 +48,9 @@ async function createServer(): Promise<Express> {
 }
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   if (!(globalThis as any).__startupMigrationLogOnce) {
     (globalThis as any).__startupMigrationLogOnce = true;
     if (shouldRunStartupMigrations()) {
