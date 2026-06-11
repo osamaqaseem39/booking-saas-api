@@ -1,6 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import { DataSource, In, IsNull, LessThan, Not, Repository } from 'typeorm';
 import { BracketNode } from '../entities/bracket-node.entity';
 import { GroupMember } from '../entities/group-member.entity';
 import { Standing } from '../entities/standing.entity';
@@ -13,7 +13,16 @@ import { Tournament } from '../entities/tournament.entity';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
 import { generateKnockoutBracket } from '../engines/bracket.engine';
 import { generateRoundRobinFixtures } from '../engines/fixture.engine';
-import type { StructureBlueprint } from '../types/tournament.types';
+import {
+  DEFAULT_STANDINGS_RULES,
+  TOURNAMENT_ERROR_CODES,
+  type StandingsRules,
+  type StructureBlueprint,
+} from '../types/tournament.types';
+import {
+  pickAdvancingTeams,
+  type GroupStandingInput,
+} from '../engines/advancement.engine';
 
 @Injectable()
 export class FixtureGenerationService {
@@ -69,7 +78,33 @@ export class FixtureGenerationService {
         status: 'approved' as const,
       },
     });
-    const teamIds = approved.map((r) => r.teamId);
+    let teamIds = approved.map((r) => r.teamId);
+
+    if (stage.stageType === 'knockout' && blueprint.knockout) {
+      const prevGroup = await this.stages.findOne({
+        where: {
+          tournamentId,
+          stageType: 'group',
+          order: LessThan(stageOrder),
+        },
+        order: { order: 'DESC' },
+      });
+      if (prevGroup) {
+        await this.assertGroupStageComplete(tournamentId, prevGroup.id);
+        teamIds = await this.resolveAdvancingTeamIds(
+          tournamentId,
+          prevGroup.id,
+          blueprint,
+          (config.standingsRules as StandingsRules) ?? DEFAULT_STANDINGS_RULES,
+        );
+        if (teamIds.length < 2) {
+          throw new ConflictException({
+            code: TOURNAMENT_ERROR_CODES.STAGE_NOT_READY,
+            message: 'Not enough teams qualified for knockout',
+          });
+        }
+      }
+    }
 
     let matchesCreated = 0;
 
@@ -182,6 +217,68 @@ export class FixtureGenerationService {
       });
     }
     return count;
+  }
+
+  private async assertGroupStageComplete(
+    tournamentId: string,
+    stageId: string,
+  ): Promise<void> {
+    const open = await this.matches.count({
+      where: {
+        tournamentId,
+        stageId,
+        deletedAt: IsNull(),
+        status: Not(In(['approved', 'walkover', 'cancelled'])),
+      },
+    });
+    if (open > 0) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.STAGE_NOT_READY,
+        message: 'Complete all group matches before generating knockout',
+      });
+    }
+  }
+
+  private async resolveAdvancingTeamIds(
+    tournamentId: string,
+    groupStageId: string,
+    blueprint: StructureBlueprint,
+    rules: StandingsRules,
+  ): Promise<string[]> {
+    const grps = await this.groups.find({ where: { stageId: groupStageId } });
+    const inputs: GroupStandingInput[] = [];
+
+    for (const g of grps) {
+      const members = await this.groupMembers.find({
+        where: { groupId: g.id },
+      });
+      const memberTeamIds = members.map((m) => m.teamId);
+      const completed = await this.matches.find({
+        where: {
+          tournamentId,
+          groupId: g.id,
+          status: In(['approved', 'walkover']),
+          deletedAt: IsNull(),
+        },
+      });
+      const results = completed
+        .filter((m) => m.homeTeamId && m.awayTeamId)
+        .map((m) => ({
+          homeTeamId: m.homeTeamId!,
+          awayTeamId: m.awayTeamId!,
+          homeScore: m.homeScore ?? 0,
+          awayScore: m.awayScore ?? 0,
+        }));
+      inputs.push({
+        groupId: g.id,
+        groupName: g.name,
+        teamIds: memberTeamIds,
+        results,
+        rules,
+      });
+    }
+
+    return pickAdvancingTeams(inputs, blueprint.advancement);
   }
 
   async buildStagesFromBlueprint(

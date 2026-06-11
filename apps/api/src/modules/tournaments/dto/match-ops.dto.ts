@@ -25,6 +25,11 @@ export class ScheduleMatchDto {
 
   @IsOptional()
   @IsInt()
+  @Min(15)
+  durationMinutes?: number;
+
+  @IsOptional()
+  @IsInt()
   @Min(1)
   expectedVersion?: number;
 }

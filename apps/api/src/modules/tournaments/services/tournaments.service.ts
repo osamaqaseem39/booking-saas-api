@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { Tournament } from '../entities/tournament.entity';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
 import { TournamentStage } from '../entities/tournament-stage.entity';
@@ -326,10 +326,43 @@ export class TournamentsService {
 
   async getMatches(tenantId: string, tournamentId: string) {
     await this.findTournament(tenantId, tournamentId);
-    return this.matches.find({
+    const rows = await this.matches.find({
       where: { tournamentId, deletedAt: IsNull() },
       order: { scheduledAt: 'ASC' },
     });
+    const teamIds = new Set<string>();
+    for (const m of rows) {
+      if (m.homeTeamId) teamIds.add(m.homeTeamId);
+      if (m.awayTeamId) teamIds.add(m.awayTeamId);
+    }
+    const teams =
+      teamIds.size > 0
+        ? await this.teams.find({ where: { id: In([...teamIds]) } })
+        : [];
+    const teamNames = new Map(teams.map((t) => [t.id, t.name]));
+
+    return rows.map((m) => ({
+      id: m.id,
+      tournamentId: m.tournamentId,
+      stageId: m.stageId,
+      groupId: m.groupId ?? null,
+      status: m.status,
+      scheduledAt: m.scheduledAt?.toISOString() ?? null,
+      venueId: m.venueId ?? null,
+      courtKind: m.courtKind ?? null,
+      courtId: m.courtId ?? null,
+      homeTeamId: m.homeTeamId ?? null,
+      awayTeamId: m.awayTeamId ?? null,
+      homeTeamName: m.homeTeamId
+        ? (teamNames.get(m.homeTeamId) ?? null)
+        : null,
+      awayTeamName: m.awayTeamId
+        ? (teamNames.get(m.awayTeamId) ?? null)
+        : null,
+      homeScore: m.homeScore ?? null,
+      awayScore: m.awayScore ?? null,
+      version: m.version,
+    }));
   }
 
   async getStandings(tenantId: string, tournamentId: string) {
@@ -357,15 +390,39 @@ export class TournamentsService {
     const knockoutStages = await this.stages.find({
       where: { tournamentId, stageType: 'knockout' },
     });
-    const result: BracketNode[] = [];
+    const nodes: BracketNode[] = [];
     for (const s of knockoutStages) {
-      const nodes = await this.bracketNodes.find({
+      const stageNodes = await this.bracketNodes.find({
         where: { stageId: s.id },
         order: { round: 'ASC', slotIndex: 'ASC' },
       });
-      result.push(...nodes);
+      nodes.push(...stageNodes);
     }
-    return result;
+
+    const teamIds = [
+      ...new Set(
+        nodes.map((n) => n.teamId).filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const teams =
+      teamIds.length > 0
+        ? await this.teams.find({ where: { id: In(teamIds) } })
+        : [];
+    const teamNames = new Map(teams.map((t) => [t.id, t.name]));
+
+    return nodes.map((n) => ({
+      id: n.id,
+      stageId: n.stageId,
+      round: n.round,
+      slotIndex: n.slotIndex,
+      parentNodeId: n.parentNodeId ?? null,
+      teamId: n.teamId ?? null,
+      teamName: n.teamId ? (teamNames.get(n.teamId) ?? null) : null,
+      isBye: n.isBye,
+      winnerAdvancesToNodeId: n.winnerAdvancesToNodeId ?? null,
+      matchId: n.matchId ?? null,
+      bracketVersion: n.bracketVersion,
+    }));
   }
 
   private async findTournament(

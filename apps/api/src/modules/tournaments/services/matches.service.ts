@@ -4,7 +4,9 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
+import { TournamentStage } from '../entities/tournament-stage.entity';
+import { BookingItem } from '../../bookings/entities/booking-item.entity';
 import { TournamentMatch } from '../entities/tournament-match.entity';
 import { Tournament } from '../entities/tournament.entity';
 import { Standing } from '../entities/standing.entity';
@@ -24,12 +26,18 @@ import {
 import { DEFAULT_STANDINGS_RULES } from '../types/tournament.types';
 import { TournamentAuditService } from './tournament-audit.service';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
+import { TournamentMatchBookingService } from './tournament-match-booking.service';
+import { normalizeCourtKind } from '../utils/court-kind.util';
+
+const DEFAULT_MATCH_DURATION_MINUTES = 60;
 
 @Injectable()
 export class MatchesService {
   constructor(
     @InjectRepository(TournamentMatch)
     private readonly matches: Repository<TournamentMatch>,
+    @InjectRepository(BookingItem)
+    private readonly bookingItems: Repository<BookingItem>,
     @InjectRepository(Tournament)
     private readonly tournaments: Repository<Tournament>,
     @InjectRepository(Standing)
@@ -38,7 +46,10 @@ export class MatchesService {
     private readonly groups: Repository<TournamentGroup>,
     @InjectRepository(TournamentConfigVersion)
     private readonly configs: Repository<TournamentConfigVersion>,
+    @InjectRepository(TournamentStage)
+    private readonly stages: Repository<TournamentStage>,
     private readonly audit: TournamentAuditService,
+    private readonly matchBooking: TournamentMatchBookingService,
   ) {}
 
   async schedule(
@@ -57,13 +68,49 @@ export class MatchesService {
         code: TOURNAMENT_ERROR_CODES.CONFLICT_RETRY,
       });
     }
+
+    const durationMinutes =
+      dto.durationMinutes ?? DEFAULT_MATCH_DURATION_MINUTES;
+    const scheduledAt = new Date(dto.scheduledAt);
+    const courtKind = normalizeCourtKind(dto.courtKind) ?? dto.courtKind ?? null;
+    if (dto.courtId && courtKind) {
+      await this.assertNoCourtConflict(
+        matchId,
+        dto.courtId,
+        courtKind,
+        scheduledAt,
+        durationMinutes,
+      );
+    }
+
     match.status = 'scheduled';
-    match.scheduledAt = new Date(dto.scheduledAt);
+    match.scheduledAt = scheduledAt;
     match.venueId = dto.venueId ?? null;
-    match.courtKind = dto.courtKind ?? null;
+    match.courtKind = courtKind;
     match.courtId = dto.courtId ?? null;
     match.version += 1;
     await this.matches.save(match);
+
+    const tournament = await this.tournaments.findOne({
+      where: { id: match.tournamentId, tenantId },
+    });
+    if (tournament && dto.courtId && courtKind && dto.venueId && actorId) {
+      const bookingId = await this.matchBooking.syncCourtHold({
+        tenantId,
+        match,
+        scheduledAt,
+        durationMinutes,
+        courtKind,
+        courtId: dto.courtId,
+        venueId: dto.venueId,
+        actorId,
+        tournamentName: tournament.name,
+      });
+      if (bookingId) {
+        match.metadata = { ...(match.metadata ?? {}), bookingId };
+        await this.matches.save(match);
+      }
+    }
     await this.audit.log({
       tenantId,
       entityType: 'match',
@@ -143,6 +190,7 @@ export class MatchesService {
     if (match.groupId) {
       await this.recomputeGroupStandings(match.groupId, tenantId);
     }
+    await this.tryCompleteGroupStage(match.stageId, match.tournamentId);
     return match;
   }
 
@@ -171,7 +219,30 @@ export class MatchesService {
     if (match.groupId) {
       await this.recomputeGroupStandings(match.groupId, tenantId);
     }
+    await this.tryCompleteGroupStage(match.stageId, match.tournamentId);
     return match;
+  }
+
+  private async tryCompleteGroupStage(
+    stageId: string,
+    tournamentId: string,
+  ): Promise<void> {
+    const stage = await this.stages.findOne({ where: { id: stageId } });
+    if (!stage || stage.stageType !== 'group' || stage.status === 'completed') {
+      return;
+    }
+    const open = await this.matches.count({
+      where: {
+        tournamentId,
+        stageId,
+        deletedAt: IsNull(),
+        status: Not(In(['approved', 'walkover', 'cancelled'])),
+      },
+    });
+    if (open === 0) {
+      stage.status = 'completed';
+      await this.stages.save(stage);
+    }
   }
 
   private async recomputeGroupStandings(groupId: string, tenantId: string) {
@@ -224,6 +295,58 @@ export class MatchesService {
           rank: row.rank ?? null,
         },
       );
+    }
+  }
+
+  private async assertNoCourtConflict(
+    matchId: string,
+    courtId: string,
+    courtKind: string,
+    start: Date,
+    durationMinutes: number,
+  ): Promise<void> {
+    const end = new Date(start.getTime() + durationMinutes * 60_000);
+
+    const bookingOverlap = await this.bookingItems
+      .createQueryBuilder('i')
+      .innerJoin('i.booking', 'b')
+      .where('i.courtKind = :courtKind', { courtKind })
+      .andWhere('i.courtId = :courtId', { courtId })
+      .andWhere("i.itemStatus <> 'cancelled'")
+      .andWhere("b.bookingStatus NOT IN ('cancelled', 'no_show', 'completed')")
+      .andWhere('i.startDatetime < :end', { end: end.toISOString() })
+      .andWhere('i.endDatetime > :start', { start: start.toISOString() })
+      .getCount();
+
+    if (bookingOverlap > 0) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.COURT_CONFLICT,
+        message: 'Court is already booked for this time',
+      });
+    }
+
+    const otherMatches = await this.matches.find({
+      where: {
+        courtId,
+        courtKind,
+        id: Not(matchId),
+        deletedAt: IsNull(),
+        status: Not('cancelled' as const),
+      },
+    });
+
+    const startMs = start.getTime();
+    const endMs = end.getTime();
+    for (const other of otherMatches) {
+      if (!other.scheduledAt) continue;
+      const otherStart = other.scheduledAt.getTime();
+      const otherEnd = otherStart + durationMinutes * 60_000;
+      if (otherStart < endMs && otherEnd > startMs) {
+        throw new ConflictException({
+          code: TOURNAMENT_ERROR_CODES.COURT_CONFLICT,
+          message: 'Another tournament match is scheduled on this court',
+        });
+      }
     }
   }
 

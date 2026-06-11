@@ -96,6 +96,11 @@ import {
   normalizeBookingGridItemRows,
 } from './utils/booking-grid-item-row.util';
 import {
+  findOverlappingItemIndices,
+  normalizeCourtKindForOverlap,
+  wallTimeWindowsOverlap,
+} from './utils/booking-overlap.util';
+import {
   bookingProcessError,
   bookingProcessStep,
   bookingProcessWarn,
@@ -1373,31 +1378,27 @@ export class BookingsService {
     }
   }
 
-  private isOverlapBeyondGrace(
-    existingStart: Date,
-    existingEnd: Date,
-    requestedStart: Date,
-    requestedEnd: Date,
-  ): boolean {
-    const overlapStartMs = Math.max(
-      existingStart.getTime(),
-      requestedStart.getTime(),
+  private assertItemsDoNotOverlapOnSameFacility(
+    items: Array<CreateBookingItemDto & { date: string }>,
+  ): void {
+    const windows = items.map((item, index) => {
+      const { startDatetime, endDatetime } = this.toSlotDateTimes(
+        item.date,
+        item.startTime,
+        item.endTime,
+      );
+      return {
+        index,
+        courtKey: `${normalizeCourtKindForOverlap(item.courtKind)}:${item.courtId}`,
+        start: startDatetime,
+        end: endDatetime,
+      };
+    });
+    const overlap = findOverlappingItemIndices(windows);
+    if (!overlap) return;
+    throw new ConflictException(
+      'Two booking lines overlap on the same facility. Adjust times or remove a line.',
     );
-    const overlapEndMs = Math.min(existingEnd.getTime(), requestedEnd.getTime());
-    if (overlapEndMs <= overlapStartMs) return false;
-
-    const overlapMinutes = (overlapEndMs - overlapStartMs) / 60000;
-    if (overlapMinutes > BookingsService.SLOT_OVERLAP_GRACE_MINUTES) {
-      return true;
-    }
-
-    const touchesRequestedStart =
-      existingStart.getTime() < requestedStart.getTime() &&
-      existingEnd.getTime() > requestedStart.getTime();
-    const touchesRequestedEnd =
-      existingStart.getTime() < requestedEnd.getTime() &&
-      existingEnd.getTime() > requestedEnd.getTime();
-    return !(touchesRequestedStart || touchesRequestedEnd);
   }
 
   /** Same-night chronological order before expanding/splitting (aligns with web app overnight sorting). */
@@ -1614,26 +1615,23 @@ export class BookingsService {
     tenantId: string,
     date: string,
     item: CreateBookingItemDto,
+    opts?: { repo?: Repository<Booking>; excludeBookingId?: string },
   ) {
-    const slotStep = await this.resolveCourtSlotStepMinutes(
-      tenantId,
-      item.courtKind,
-      item.courtId,
-    );
-    const effectiveEnd = this.bookingItemEffectiveEndTime(item, slotStep);
+    const courtKind = normalizeCourtKindForOverlap(item.courtKind) as CourtKind;
     const { startDatetime, endDatetime } = this.toSlotDateTimes(
       date,
       item.startTime,
-      effectiveEnd,
+      item.endTime,
     );
 
-    const overlaps = await this.bookingRepo
+    const repo = opts?.repo ?? this.bookingRepo;
+    const qb = repo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
-      .where('i.courtKind = :kind', { kind: item.courtKind })
+      .where('b.tenantId = :tenantId', { tenantId })
+      .andWhere('i.courtKind = :kind', { kind: courtKind })
       .andWhere('i.courtId = :courtId', { courtId: item.courtId })
       .andWhere("i.itemStatus <> 'cancelled'")
-      // Ignore terminal bookings that should not block new reservations.
       .andWhere("b.bookingStatus NOT IN ('cancelled', 'no_show', 'completed')")
       .andWhere('i.startDatetime < :endDatetime', {
         endDatetime: endDatetime.toISOString(),
@@ -1641,26 +1639,49 @@ export class BookingsService {
       .andWhere('i.endDatetime > :startDatetime', {
         startDatetime: startDatetime.toISOString(),
       })
-      .select(['i.startDatetime AS startDatetime', 'i.endDatetime AS endDatetime'])
-      .getRawMany<{ startDatetime: string; endDatetime: string }>();
+      .select([
+        'i.startDatetime AS "startDatetime"',
+        'i.endDatetime AS "endDatetime"',
+        'i.startTime AS "startTime"',
+        'i.endTime AS "endTime"',
+        'i.date AS "itemDate"',
+      ]);
+    if (opts?.excludeBookingId) {
+      qb.andWhere('b.id <> :excludeBookingId', {
+        excludeBookingId: opts.excludeBookingId,
+      });
+    }
 
-    const hasHardOverlap = overlaps.some((row) =>
-      this.isOverlapBeyondGrace(
-        new Date(row.startDatetime),
-        new Date(row.endDatetime),
+    const overlaps = await qb.getRawMany<{
+      startDatetime: string | null;
+      endDatetime: string | null;
+      startTime: string;
+      endTime: string;
+      itemDate: string;
+    }>();
+
+    const hasOverlap = overlaps.some((row) => {
+      const itemDate = formatDateOnly(row.itemDate ?? date);
+      const { startDatetime: existingStart, endDatetime: existingEnd } =
+        row.startDatetime && row.endDatetime
+          ? {
+              startDatetime: new Date(row.startDatetime),
+              endDatetime: new Date(row.endDatetime),
+            }
+          : this.toSlotDateTimes(itemDate, row.startTime, row.endTime);
+      return wallTimeWindowsOverlap(
+        existingStart,
+        existingEnd,
         startDatetime,
         endDatetime,
-      ),
-    );
+      );
+    });
 
-    if (hasHardOverlap)
-      throw new ConflictException({
-        bookingDate: date,
-        startTime: item.startTime,
-        endTime: item.endTime,
-        courtId: item.courtId,
-        reason: 'Selected slot is already booked',
-      });
+    if (hasOverlap) {
+      throw new ConflictException(
+        'This facility is already booked for the selected time. Choose another slot.',
+      );
+    }
   }
 
   private async assertNoOtherLiveBookingOnFields(
@@ -1752,6 +1773,8 @@ export class BookingsService {
       this.assertBookingDateInAllowedWindow(item.date);
     }
 
+    this.assertItemsDoNotOverlapOnSameFacility(expandedItems);
+
     for (const item of expandedItems) {
       this.assertBookingItem(item);
       if (item.courtKind === 'padel_court') {
@@ -1781,7 +1804,6 @@ export class BookingsService {
           );
         }
       }
-      await this.assertNoOverlap(tenantId, item.date, item);
     }
 
 
@@ -1849,8 +1871,19 @@ export class BookingsService {
 
     let saved: Booking;
     try {
-      saved = await this.bookingRepo.save(booking);
+      saved = await this.bookingRepo.manager.transaction(async (em) => {
+        const bookingRepo = em.getRepository(Booking);
+        for (const item of expandedItems) {
+          await this.assertNoOverlap(tenantId, item.date, item, {
+            repo: bookingRepo,
+          });
+        }
+        return bookingRepo.save(booking);
+      });
     } catch (error) {
+      if (error instanceof ConflictException) {
+        throw error;
+      }
       if (
         error instanceof QueryFailedError &&
         (error as any).driverError?.code === '23505' &&

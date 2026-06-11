@@ -49,6 +49,20 @@ export class RegistrationsController {
     );
   }
 
+  @Patch(':id/mark-paid')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  markPaid(
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.registrationsService.markPaid(
+      this.tenantId(tenant),
+      id,
+      this.userId(req),
+    );
+  }
+
   @Patch(':id/reject')
   @Roles('platform-owner', 'business-admin', 'location-admin')
   reject(

@@ -150,6 +150,21 @@ export class TournamentsController {
     );
   }
 
+  @Patch('tournaments/:id/mark-ready')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  markReady(
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tournamentsService.transition(
+      this.tenantId(tenant),
+      id,
+      'mark_ready',
+      this.userId(req),
+    );
+  }
+
   @Patch('tournaments/:id/start')
   @Roles('platform-owner', 'business-admin', 'location-admin')
   start(

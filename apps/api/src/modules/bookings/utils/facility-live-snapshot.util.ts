@@ -453,6 +453,8 @@ export function buildPlaySnapshot(
     playStatus = 'live';
   } else if (overtime) {
     playStatus = 'overtime';
+  } else if (startedButNotLive.length > 0) {
+    playStatus = 'soon';
   } else if (next) {
     const ms = next.startMs - now;
     if (ms >= 0 && ms <= SOON_MS) {

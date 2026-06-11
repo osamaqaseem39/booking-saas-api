@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { In, IsNull, Repository } from 'typeorm';
 import { Tournament } from '../entities/tournament.entity';
 import { TournamentRegistration } from '../entities/tournament-registration.entity';
 import { Team } from '../entities/team.entity';
@@ -29,10 +29,29 @@ export class RegistrationsService {
   ) {}
 
   async listForTournament(tournamentId: string) {
-    return this.registrations.find({
+    const rows = await this.registrations.find({
       where: { tournamentId, deletedAt: IsNull() },
       order: { createdAt: 'ASC' },
     });
+    if (rows.length === 0) return [];
+
+    const teams = await this.teams.find({
+      where: { id: In(rows.map((r) => r.teamId)) },
+    });
+    const teamNames = new Map(teams.map((t) => [t.id, t.name]));
+
+    return rows.map((r) => ({
+      id: r.id,
+      tournamentId: r.tournamentId,
+      teamId: r.teamId,
+      teamName: teamNames.get(r.teamId) ?? null,
+      status: r.status,
+      paymentStatus: r.paymentStatus,
+      waitlistPosition: r.waitlistPosition ?? null,
+      approvedAt: r.approvedAt?.toISOString() ?? null,
+      rejectedReason: r.rejectedReason ?? null,
+      createdAt: r.createdAt.toISOString(),
+    }));
   }
 
   async register(
@@ -130,6 +149,19 @@ export class RegistrationsService {
     actorId?: string,
   ) {
     const reg = await this.findRegistration(tenantId, registrationId);
+    const tournament = await this.tournaments.findOne({
+      where: { id: reg.tournamentId, tenantId, deletedAt: IsNull() },
+    });
+    if (!tournament) throw new NotFoundException('Tournament not found');
+
+    const entryFee = Number(tournament.entryFeeAmount ?? 0);
+    if (entryFee > 0 && reg.paymentStatus !== 'paid') {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.PAYMENT_NOT_CONFIRMED,
+        message: 'Entry fee must be paid before approval',
+      });
+    }
+
     reg.status = 'approved';
     reg.approvedAt = new Date();
     reg.version += 1;
@@ -140,6 +172,31 @@ export class RegistrationsService {
       entityId: reg.id,
       actorId,
       afterState: { status: 'approved' },
+    });
+    return reg;
+  }
+
+  async markPaid(
+    tenantId: string,
+    registrationId: string,
+    actorId?: string,
+  ) {
+    const reg = await this.findRegistration(tenantId, registrationId);
+    if (reg.paymentStatus === 'paid') {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.PAYMENT_ALREADY_PROCESSED,
+        message: 'Payment already recorded',
+      });
+    }
+    reg.paymentStatus = 'paid';
+    reg.version += 1;
+    await this.registrations.save(reg);
+    await this.audit.log({
+      tenantId,
+      entityType: 'registration',
+      entityId: reg.id,
+      actorId,
+      afterState: { paymentStatus: 'paid' },
     });
     return reg;
   }
