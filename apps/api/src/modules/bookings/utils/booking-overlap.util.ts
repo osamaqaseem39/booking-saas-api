@@ -12,6 +12,38 @@ export function wallTimeWindowsOverlap(
   return aStart.getTime() < bEnd.getTime() && aEnd.getTime() > bStart.getTime();
 }
 
+/** Live sessions still occupy the field through `now` when past scheduled end (overtime). */
+export function liveBookingOccupiedEnd(
+  bookingStatus: string,
+  endDatetime: Date,
+  now = new Date(),
+): Date {
+  if (bookingStatus !== 'live') return endDatetime;
+  return new Date(Math.max(endDatetime.getTime(), now.getTime()));
+}
+
+export function itemWallWindowFromParts(
+  itemDate: string,
+  startTime: string,
+  endTime: string,
+  toSlotDateTimes: (
+    date: string,
+    start: string,
+    end: string,
+  ) => { startDatetime: Date; endDatetime: Date },
+  startDatetime?: Date | string | null,
+  endDatetime?: Date | string | null,
+): { start: Date; end: Date } {
+  if (startDatetime != null && endDatetime != null) {
+    return {
+      start: new Date(startDatetime),
+      end: new Date(endDatetime),
+    };
+  }
+  const wall = toSlotDateTimes(itemDate, startTime, endTime);
+  return { start: wall.startDatetime, end: wall.endDatetime };
+}
+
 export type OverlapCheckWindow = {
   courtKey: string;
   start: Date;

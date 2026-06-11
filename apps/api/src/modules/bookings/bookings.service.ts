@@ -97,6 +97,8 @@ import {
 } from './utils/booking-grid-item-row.util';
 import {
   findOverlappingItemIndices,
+  itemWallWindowFromParts,
+  liveBookingOccupiedEnd,
   normalizeCourtKindForOverlap,
   wallTimeWindowsOverlap,
 } from './utils/booking-overlap.util';
@@ -1396,8 +1398,17 @@ export class BookingsService {
     });
     const overlap = findOverlappingItemIndices(windows);
     if (!overlap) return;
+    const [aIdx, bIdx] = overlap;
+    const a = items[aIdx];
+    const b = items[bIdx];
+    const sameStart = a.startTime === b.startTime && a.date === b.date;
+    if (sameStart) {
+      throw new ConflictException(
+        `Lines ${aIdx + 1} and ${bIdx + 1} both start at ${a.startTime} on ${a.date} for the same facility. Use one line or choose a different start time.`,
+      );
+    }
     throw new ConflictException(
-      'Two booking lines overlap on the same facility. Adjust times or remove a line.',
+      `Lines ${aIdx + 1} (${a.startTime}–${a.endTime}) and ${bIdx + 1} (${b.startTime}–${b.endTime}) overlap on the same facility on ${a.date}. Adjust times or remove a line.`,
     );
   }
 
@@ -1618,11 +1629,20 @@ export class BookingsService {
     opts?: { repo?: Repository<Booking>; excludeBookingId?: string },
   ) {
     const courtKind = normalizeCourtKindForOverlap(item.courtKind) as CourtKind;
-    const { startDatetime, endDatetime } = this.toSlotDateTimes(
-      date,
-      item.startTime,
-      item.endTime,
+    const slotStep = await this.resolveCourtSlotStepMinutes(
+      tenantId,
+      courtKind,
+      item.courtId,
     );
+    const wallEnd = this.itemDatetimeWallEnd(
+      date,
+      { startTime: item.startTime, endTime: item.endTime },
+      slotStep,
+    );
+    const requested = this.toSlotDateTimes(date, item.startTime, wallEnd);
+    const requestedStart = requested.startDatetime;
+    const requestedEnd = requested.endDatetime;
+    const itemDateYmd = formatDateOnly(date);
 
     const repo = opts?.repo ?? this.bookingRepo;
     const qb = repo
@@ -1633,13 +1653,15 @@ export class BookingsService {
       .andWhere('i.courtId = :courtId', { courtId: item.courtId })
       .andWhere("i.itemStatus <> 'cancelled'")
       .andWhere("b.bookingStatus NOT IN ('cancelled', 'no_show', 'completed')")
-      .andWhere('i.startDatetime < :endDatetime', {
-        endDatetime: endDatetime.toISOString(),
-      })
-      .andWhere('i.endDatetime > :startDatetime', {
-        startDatetime: startDatetime.toISOString(),
-      })
+      .andWhere(
+        new Brackets((sub) => {
+          sub
+            .where('i.date = :itemDateYmd', { itemDateYmd })
+            .orWhere("b.bookingStatus = 'live'");
+        }),
+      )
       .select([
+        'b.bookingStatus AS "bookingStatus"',
         'i.startDatetime AS "startDatetime"',
         'i.endDatetime AS "endDatetime"',
         'i.startTime AS "startTime"',
@@ -1652,7 +1674,8 @@ export class BookingsService {
       });
     }
 
-    const overlaps = await qb.getRawMany<{
+    const candidates = await qb.getRawMany<{
+      bookingStatus: string;
       startDatetime: string | null;
       endDatetime: string | null;
       startTime: string;
@@ -1660,26 +1683,76 @@ export class BookingsService {
       itemDate: string;
     }>();
 
-    const hasOverlap = overlaps.some((row) => {
-      const itemDate = formatDateOnly(row.itemDate ?? date);
-      const { startDatetime: existingStart, endDatetime: existingEnd } =
-        row.startDatetime && row.endDatetime
-          ? {
-              startDatetime: new Date(row.startDatetime),
-              endDatetime: new Date(row.endDatetime),
-            }
-          : this.toSlotDateTimes(itemDate, row.startTime, row.endTime);
-      return wallTimeWindowsOverlap(
-        existingStart,
-        existingEnd,
-        startDatetime,
-        endDatetime,
+    const now = new Date();
+    for (const row of candidates) {
+      const rowDate = formatDateOnly(row.itemDate ?? date);
+      const existingWall = itemWallWindowFromParts(
+        rowDate,
+        row.startTime,
+        row.endTime,
+        (d, s, e) => this.toSlotDateTimes(d, s, e),
+        row.startDatetime,
+        row.endDatetime,
       );
-    });
-
-    if (hasOverlap) {
+      const existingEnd = liveBookingOccupiedEnd(
+        row.bookingStatus,
+        existingWall.end,
+        now,
+      );
+      if (
+        !wallTimeWindowsOverlap(
+          existingWall.start,
+          existingEnd,
+          requestedStart,
+          requestedEnd,
+        )
+      ) {
+        continue;
+      }
+      if (row.bookingStatus === 'live') {
+        throw new ConflictException(
+          `This facility is in use by a live booking (${row.startTime}–${row.endTime} on ${rowDate}). End the live session before booking this time.`,
+        );
+      }
+      if (existingWall.start.getTime() === requestedStart.getTime()) {
+        throw new ConflictException(
+          `A booking already starts at ${item.startTime} on ${date} for this facility. Pick a different start time.`,
+        );
+      }
       throw new ConflictException(
-        'This facility is already booked for the selected time. Choose another slot.',
+        `This facility is already booked from ${row.startTime} to ${row.endTime} on ${rowDate}, which overlaps your selection (${item.startTime}–${wallEnd}). Choose another slot.`,
+      );
+    }
+  }
+
+  private async assertBookingItemsMayStartOnFields(
+    tenantId: string,
+    bookingId: string,
+    items: Array<{
+      courtKind: CourtKind;
+      courtId: string;
+      date?: string | null;
+      startTime: string;
+      endTime: string;
+      itemStatus?: BookingItemStatus;
+    }>,
+    opts?: { repo?: Repository<Booking> },
+  ): Promise<void> {
+    for (const item of items) {
+      if (item.itemStatus === 'cancelled') continue;
+      const itemDate = formatDateOnly(item.date ?? '');
+      if (!itemDate) continue;
+      await this.assertNoOverlap(
+        tenantId,
+        itemDate,
+        {
+          courtKind: item.courtKind,
+          courtId: item.courtId,
+          startTime: item.startTime,
+          endTime: item.endTime,
+          price: 0,
+        },
+        { repo: opts?.repo, excludeBookingId: bookingId },
       );
     }
   }
@@ -1692,8 +1765,8 @@ export class BookingsService {
       itemStatus?: BookingItemStatus;
     }>,
     excludeBookingId?: string,
+    opts?: { repo?: Repository<Booking> },
   ): Promise<void> {
-    const nowIso = new Date().toISOString();
     const uniqueFields = new Map<string, { courtKind: string; courtId: string }>();
     for (const item of items) {
       if (item.itemStatus === 'cancelled') continue;
@@ -1706,25 +1779,37 @@ export class BookingsService {
       }
     }
 
+    const repo = opts?.repo ?? this.bookingRepo;
     for (const field of uniqueFields.values()) {
-      const qb = this.bookingRepo
+      const courtKind = normalizeCourtKindForOverlap(field.courtKind) as CourtKind;
+      const qb = repo
         .createQueryBuilder('b')
         .innerJoin('b.items', 'i')
         .where('b.tenantId = :tenantId', { tenantId })
         .andWhere("b.bookingStatus = 'live'")
         .andWhere("i.itemStatus <> 'cancelled'")
-        // Guard against stale "live" rows: only block if currently live in time.
-        .andWhere('i.startDatetime <= :nowIso', { nowIso })
-        .andWhere('i.endDatetime > :nowIso', { nowIso })
-        .andWhere('i.courtKind = :courtKind', { courtKind: field.courtKind })
+        .andWhere('i.courtKind = :courtKind', { courtKind })
         .andWhere('i.courtId = :courtId', { courtId: field.courtId });
       if (excludeBookingId) {
         qb.andWhere('b.id <> :excludeBookingId', { excludeBookingId });
       }
-      const liveCount = await qb.getCount();
-      if (liveCount > 0) {
+      const otherLive = await qb
+        .select([
+          'i.startTime AS "startTime"',
+          'i.endTime AS "endTime"',
+          'i.date AS "itemDate"',
+        ])
+        .orderBy('i.startDatetime', 'ASC')
+        .limit(1)
+        .getRawOne<{
+          startTime: string;
+          endTime: string;
+          itemDate: string;
+        }>();
+      if (otherLive) {
+        const liveDate = formatDateOnly(otherLive.itemDate);
         throw new ConflictException(
-          'Field is already live. End the current live booking before starting another one.',
+          `This facility already has a live booking (${otherLive.startTime}–${otherLive.endTime} on ${liveDate}). End it before starting another session on this field.`,
         );
       }
     }
@@ -1906,10 +1991,13 @@ export class BookingsService {
             })),
           ),
         });
-        throw new ConflictException({
-          reason:
-            'Selected slot overlaps with an active booking. Please choose another time.',
-        });
+        const firstItem = (booking.items ?? [])[0];
+        const slotHint = firstItem
+          ? ` (${firstItem.startTime} on ${formatDateOnly(firstItem.date ?? booking.bookingDate)})`
+          : '';
+        throw new ConflictException(
+          `This facility already has an active booking at that start time${slotHint}. Choose a different slot.`,
+        );
       }
       bookingProcessError(this.logger, 'api.create.failed', error, {
         tenantId,
@@ -2047,15 +2135,35 @@ export class BookingsService {
             });
           });
 
-        await this.assertNoOtherLiveBookingOnFields(
-          tenantId,
-          booking.items.map((item) => ({
-            courtKind: item.courtKind,
-            courtId: item.courtId,
-            itemStatus: item.itemStatus,
-          })),
-          booking.id,
+        const activeItems = booking.items.filter(
+          (item) => item.itemStatus !== 'cancelled',
         );
+        await this.bookingRepo.manager.transaction(async (em) => {
+          const bookingRepo = em.getRepository(Booking);
+          await this.assertNoOtherLiveBookingOnFields(
+            tenantId,
+            activeItems.map((item) => ({
+              courtKind: item.courtKind,
+              courtId: item.courtId,
+              itemStatus: item.itemStatus,
+            })),
+            booking.id,
+            { repo: bookingRepo },
+          );
+          await this.assertBookingItemsMayStartOnFields(
+            tenantId,
+            booking.id,
+            activeItems.map((item) => ({
+              courtKind: item.courtKind,
+              courtId: item.courtId,
+              date: item.date ?? booking.bookingDate,
+              startTime: item.startTime,
+              endTime: item.endTime,
+              itemStatus: item.itemStatus,
+            })),
+            { repo: bookingRepo },
+          );
+        });
         this.applyLiveWindowToBooking(booking);
       } else {
         booking.bookingStatus = requestedStatus;

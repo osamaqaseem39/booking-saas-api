@@ -1,5 +1,6 @@
 import {
   findOverlappingItemIndices,
+  liveBookingOccupiedEnd,
   normalizeCourtKindForOverlap,
   wallTimeWindowsOverlap,
 } from './booking-overlap.util';
@@ -21,6 +22,16 @@ describe('booking-overlap.util', () => {
     const c0 = new Date('2026-06-11T15:00:00.000Z');
     const c1 = new Date('2026-06-11T16:00:00.000Z');
     expect(wallTimeWindowsOverlap(a0, a1, c0, c1)).toBe(false);
+  });
+
+  it('extends live booking occupied end through now during overtime', () => {
+    const scheduledEnd = new Date('2026-06-11T15:00:00.000Z');
+    const now = new Date('2026-06-11T15:30:00.000Z');
+    const occupied = liveBookingOccupiedEnd('live', scheduledEnd, now);
+    expect(occupied.getTime()).toBe(now.getTime());
+    expect(liveBookingOccupiedEnd('confirmed', scheduledEnd, now).getTime()).toBe(
+      scheduledEnd.getTime(),
+    );
   });
 
   it('finds overlapping items on the same facility', () => {
