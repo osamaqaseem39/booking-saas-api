@@ -118,12 +118,11 @@ export class WhatsappWebhookService {
 
         if (msg.kind === 'unsupported') {
           try {
-            await this.send.sendText({
-              phoneNumberId: channel.phoneNumberId,
-              accessToken: channel.accessToken,
-              toWaId: msg.from,
-              body: 'Please send a text message to book a court. Reply *menu* to see options.',
-            });
+            await this.send.sendForChannel(
+              channel,
+              msg.from,
+              'Please send a text message to book a court. Reply *menu* to see options.',
+            );
           } catch (e) {
             const detail = e instanceof Error ? e.message : String(e);
             this.logger.error(`WhatsApp unsupported-type reply failed: ${detail}`);

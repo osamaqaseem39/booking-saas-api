@@ -15,6 +15,8 @@ import { Standing } from '../entities/standing.entity';
 import { TournamentGroup } from '../entities/tournament-group.entity';
 import { GroupMember } from '../entities/group-member.entity';
 import { Team } from '../entities/team.entity';
+import { TournamentRegistration } from '../entities/tournament-registration.entity';
+import { BusinessLocation } from '../../businesses/entities/business-location.entity';
 import {
   CreateTournamentDto,
   PreviewStructureDto,
@@ -80,6 +82,10 @@ export class TournamentsService {
     private readonly groupMembers: Repository<GroupMember>,
     @InjectRepository(Team)
     private readonly teams: Repository<Team>,
+    @InjectRepository(TournamentRegistration)
+    private readonly registrations: Repository<TournamentRegistration>,
+    @InjectRepository(BusinessLocation)
+    private readonly locations: Repository<BusinessLocation>,
     private readonly audit: TournamentAuditService,
     private readonly fixtureGen: FixtureGenerationService,
   ) {}
@@ -423,6 +429,199 @@ export class TournamentsService {
       matchId: n.matchId ?? null,
       bracketVersion: n.bracketVersion,
     }));
+  }
+
+  async listPublic(
+    tenantId: string,
+    opts?: { sport?: string; status?: string; page?: number; limit?: number },
+  ) {
+    const page = Math.max(1, opts?.page ?? 1);
+    const limit = Math.min(50, Math.max(1, opts?.limit ?? 20));
+    const defaultStatuses = ['registration_open', 'in_progress', 'published'];
+    const statuses = opts?.status
+      ? opts.status.split(',').map((s) => s.trim()).filter(Boolean)
+      : defaultStatuses;
+
+    const qb = this.tournaments
+      .createQueryBuilder('t')
+      .where('t.tenantId = :tenantId', { tenantId })
+      .andWhere('t.deletedAt IS NULL')
+      .andWhere('t.status IN (:...statuses)', { statuses });
+
+    if (opts?.sport?.trim()) {
+      qb.andWhere('t.sport = :sport', { sport: opts.sport.trim() });
+    }
+
+    const total = await qb.getCount();
+    const rows = await qb
+      .orderBy('t.startsAt', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .getMany();
+
+    const items = await Promise.all(
+      rows.map((t) => this.toPublicSummary(t)),
+    );
+    return { items, page, limit, total };
+  }
+
+  async getPublic(tenantId: string, id: string) {
+    const t = await this.findTournament(tenantId, id);
+    const summary = await this.toPublicSummary(t);
+    const stageRows = await this.stages.find({
+      where: { tournamentId: id, deletedAt: IsNull() },
+      order: { order: 'ASC' },
+    });
+    return {
+      ...summary,
+      stages: stageRows.map((s) => ({
+        id: s.id,
+        order: s.order,
+        name: s.name,
+        stageType: s.stageType,
+        status: s.status,
+      })),
+    };
+  }
+
+  private async toPublicSummary(t: Tournament) {
+    const approvedTeamsCount = await this.registrations.count({
+      where: { tournamentId: t.id, status: 'approved' as const, deletedAt: IsNull() },
+    });
+    const venueNames: string[] = [];
+    if (t.venueIds?.length) {
+      const locs = await this.locations.find({
+        where: { id: In(t.venueIds) },
+        select: ['id', 'name'],
+      });
+      venueNames.push(...locs.map((l) => l.name));
+    }
+    return {
+      id: t.id,
+      name: t.name,
+      sport: t.sport,
+      status: t.status,
+      venueIds: t.venueIds ?? [],
+      venueNames,
+      registrationOpensAt: t.registrationOpensAt?.toISOString() ?? null,
+      registrationClosesAt: t.registrationClosesAt?.toISOString() ?? null,
+      startsAt: t.startsAt.toISOString(),
+      endsAt: t.endsAt?.toISOString() ?? null,
+      maxTeams: t.maxTeams,
+      approvedTeamsCount,
+      spotsRemaining: Math.max(0, t.maxTeams - approvedTeamsCount),
+      entryFeeAmount:
+        t.entryFeeAmount != null ? Number(t.entryFeeAmount) : null,
+      entryFeeCurrency: t.entryFeeCurrency,
+      structureType: t.structureType,
+      rules: t.rules ?? null,
+      prizePool: (t.prizePool as Record<string, unknown>) ?? null,
+    };
+  }
+
+  async getPublicStandings(tenantId: string, tournamentId: string) {
+    await this.findTournament(tenantId, tournamentId);
+    const raw = await this.getStandings(tenantId, tournamentId);
+    const teamIds = new Set<string>();
+    for (const g of raw) {
+      for (const s of g.standings) teamIds.add(s.teamId);
+    }
+    const teams =
+      teamIds.size > 0
+        ? await this.teams.find({ where: { id: In([...teamIds]) } })
+        : [];
+    const teamNames = new Map(teams.map((t) => [t.id, t.name]));
+
+    return raw.map((g) => ({
+      groupId: g.groupId,
+      groupName: g.groupName,
+      standings: g.standings.map((s) => ({
+        teamId: s.teamId,
+        teamName: teamNames.get(s.teamId) ?? null,
+        played: s.played,
+        won: s.won,
+        drawn: s.drawn,
+        lost: s.lost,
+        goalsFor: s.goalsFor,
+        goalsAgainst: s.goalsAgainst,
+        goalDifference: s.goalsFor - s.goalsAgainst,
+        points: s.points,
+        rank: s.rank ?? null,
+      })),
+    }));
+  }
+
+  async getPublicBracket(tenantId: string, tournamentId: string) {
+    await this.findTournament(tenantId, tournamentId);
+    const knockoutStages = await this.stages.find({
+      where: { tournamentId, stageType: 'knockout', deletedAt: IsNull() },
+      order: { order: 'ASC' },
+    });
+
+    const matchIds = new Set<string>();
+    const stagesOut: {
+      stageId: string;
+      stageName: string;
+      nodes: unknown[];
+    }[] = [];
+
+    for (const stage of knockoutStages) {
+      const nodes = await this.bracketNodes.find({
+        where: { stageId: stage.id },
+        order: { round: 'ASC', slotIndex: 'ASC' },
+      });
+      for (const n of nodes) {
+        if (n.matchId) matchIds.add(n.matchId);
+      }
+
+      const teamIds = [
+        ...new Set(nodes.map((n) => n.teamId).filter(Boolean) as string[]),
+      ];
+      const teams =
+        teamIds.length > 0
+          ? await this.teams.find({ where: { id: In(teamIds) } })
+          : [];
+      const teamNames = new Map(teams.map((t) => [t.id, t.name]));
+
+      stagesOut.push({
+        stageId: stage.id,
+        stageName: stage.name,
+        nodes: nodes.map((n) => ({
+          id: n.id,
+          round: n.round,
+          slotIndex: n.slotIndex,
+          matchId: n.matchId ?? null,
+          homeTeamId: n.teamId ?? null,
+          awayTeamId: null,
+          homeTeamName: n.teamId ? (teamNames.get(n.teamId) ?? null) : null,
+          awayTeamName: null,
+          winnerTeamId: null,
+          nextNodeId: n.winnerAdvancesToNodeId ?? null,
+        })),
+      });
+    }
+
+    if (matchIds.size > 0) {
+      const matches = await this.matches.find({
+        where: { id: In([...matchIds]) },
+      });
+      const matchMap = new Map(matches.map((m) => [m.id, m]));
+      for (const stage of stagesOut) {
+        for (const node of stage.nodes as Array<Record<string, unknown>>) {
+          const match = node.matchId
+            ? matchMap.get(node.matchId as string)
+            : null;
+          if (match) {
+            node.homeTeamId = match.homeTeamId;
+            node.awayTeamId = match.awayTeamId;
+            node.homeTeamName = null;
+            node.awayTeamName = null;
+          }
+        }
+      }
+    }
+
+    return { stages: stagesOut };
   }
 
   private async findTournament(

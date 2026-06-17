@@ -12,14 +12,17 @@ import { Business } from '../businesses/entities/business.entity';
 import { IamService } from '../iam/iam.service';
 import {
   WhatsappChannel,
+  type WhatsappChannelProvider,
   type WhatsappChannelStatus,
 } from './entities/whatsapp-channel.entity';
+import { OpenwaProvider } from './providers/openwa.provider';
 import { WhatsappSendService } from './whatsapp-send.service';
 
 export type WhatsappChannelRow = {
   id: string;
   tenantId: string;
   locationId: string | null;
+  provider: WhatsappChannelProvider;
   phoneNumberId: string;
   displayNumber: string;
   wabaId: string;
@@ -45,6 +48,7 @@ export class WhatsappChannelsService {
     private readonly businessesService: BusinessesService,
     private readonly iamService: IamService,
     private readonly send: WhatsappSendService,
+    private readonly openwa: OpenwaProvider,
   ) {}
 
   private toRow(channel: WhatsappChannel): WhatsappChannelRow {
@@ -52,6 +56,7 @@ export class WhatsappChannelsService {
       id: channel.id,
       tenantId: channel.tenantId,
       locationId: channel.locationId ?? null,
+      provider: channel.provider ?? 'meta',
       phoneNumberId: channel.phoneNumberId,
       displayNumber: channel.displayNumber,
       wabaId: channel.wabaId,
@@ -108,21 +113,27 @@ export class WhatsappChannelsService {
     requesterUserId: string,
     tenantId: string,
     dto: {
+      provider?: WhatsappChannelProvider;
       locationId?: string;
       phoneNumberId: string;
       displayNumber: string;
-      wabaId: string;
+      wabaId?: string;
       accessToken: string;
       greetingMessage?: string;
       defaultLocationId?: string;
       botEnabled?: boolean;
+      registerWebhook?: boolean;
     },
   ): Promise<WhatsappChannelRow> {
     await this.assertCanManageTenant(requesterUserId, tenantId);
+    const provider = dto.provider ?? 'meta';
     const phoneNumberId = dto.phoneNumberId.trim();
     const accessToken = dto.accessToken.trim();
     if (!phoneNumberId || !accessToken) {
       throw new BadRequestException('phoneNumberId and accessToken are required');
+    }
+    if (provider === 'meta' && !dto.wabaId?.trim()) {
+      throw new BadRequestException('wabaId is required for Meta Cloud API channels');
     }
     if (dto.locationId) {
       await this.businessesService.assertLocationBelongsToTenant(
@@ -143,9 +154,10 @@ export class WhatsappChannelsService {
     const payload = {
       tenantId,
       locationId: dto.locationId ?? null,
+      provider,
       phoneNumberId,
       displayNumber: dto.displayNumber.trim(),
-      wabaId: dto.wabaId.trim(),
+      wabaId: dto.wabaId?.trim() || 'openwa',
       accessToken,
       status: 'connected' as const,
       botEnabled: dto.botEnabled ?? true,
@@ -155,7 +167,56 @@ export class WhatsappChannelsService {
     const saved = existing
       ? await this.channels.save({ ...existing, ...payload })
       : await this.channels.save(this.channels.create(payload));
+
+    if (provider === 'openwa' && dto.registerWebhook !== false) {
+      await this.registerOpenWaWebhook(saved).catch(() => undefined);
+    }
+
     return this.toRow(saved);
+  }
+
+  private resolvePublicWebhookUrl(path: string): string {
+    const base =
+      process.env.API_PUBLIC_URL?.trim() ||
+      process.env.PUBLIC_API_URL?.trim() ||
+      process.env.APP_URL?.trim();
+    if (!base) {
+      throw new BadRequestException(
+        'Set API_PUBLIC_URL to register OpenWA webhooks automatically',
+      );
+    }
+    return `${base.replace(/\/$/, '')}${path}`;
+  }
+
+  async registerOpenWaWebhook(channel: WhatsappChannel): Promise<void> {
+    const secret = process.env.OPENWA_WEBHOOK_SECRET?.trim();
+    if (!secret) {
+      throw new BadRequestException('OPENWA_WEBHOOK_SECRET is not configured');
+    }
+    const url = this.resolvePublicWebhookUrl('/webhooks/openwa');
+    await this.openwa.registerWebhook({
+      sessionId: channel.phoneNumberId,
+      accessToken: channel.accessToken,
+      url,
+      secret,
+    });
+  }
+
+  async registerOpenWaWebhookForChannel(
+    requesterUserId: string,
+    tenantId: string,
+    channelId: string,
+  ): Promise<{ ok: true; webhookUrl: string }> {
+    await this.assertCanManageTenant(requesterUserId, tenantId);
+    const channel = await this.channels.findOne({
+      where: { id: channelId, tenantId },
+    });
+    if (!channel) throw new NotFoundException('WhatsApp channel not found');
+    if ((channel.provider ?? 'meta') !== 'openwa') {
+      throw new BadRequestException('Channel is not an OpenWA session');
+    }
+    await this.registerOpenWaWebhook(channel);
+    return { ok: true, webhookUrl: this.resolvePublicWebhookUrl('/webhooks/openwa') };
   }
 
   async update(
@@ -211,7 +272,13 @@ export class WhatsappChannelsService {
 
   async findByPhoneNumberId(phoneNumberId: string): Promise<WhatsappChannel | null> {
     return this.channels.findOne({
-      where: { phoneNumberId, status: 'connected' },
+      where: { phoneNumberId, status: 'connected', provider: 'meta' },
+    });
+  }
+
+  async findByOpenWaSessionId(sessionId: string): Promise<WhatsappChannel | null> {
+    return this.channels.findOne({
+      where: { phoneNumberId: sessionId, status: 'connected', provider: 'openwa' },
     });
   }
 
@@ -236,12 +303,11 @@ export class WhatsappChannelsService {
     if (digits.length < 10) {
       throw new BadRequestException('toWaId must be a WhatsApp phone number');
     }
-    await this.send.sendText({
-      phoneNumberId: channel.phoneNumberId,
-      accessToken: channel.accessToken,
-      toWaId: digits,
-      body: 'Velay WhatsApp test — your number is connected.',
-    });
+    await this.send.sendForChannel(
+      channel,
+      digits,
+      'Velay WhatsApp test — your number is connected.',
+    );
     return { ok: true };
   }
 }

@@ -35,6 +35,14 @@ export class CourtSlotGridQueryDto {
   @IsIn(['true', 'false'])
   availableOnly?: string;
 
+  /**
+   * When `true`, return the full day grid (past slots and past dates included).
+   * Used by calendar/live views. Booking pickers omit this so elapsed slots stay hidden.
+   */
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  fullDay?: string;
+
   /** Cache-buster (timestamp) */
   @IsOptional()
   _t?: string;

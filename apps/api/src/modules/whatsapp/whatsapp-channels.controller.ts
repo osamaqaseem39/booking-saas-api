@@ -18,7 +18,7 @@ import { TenantContext } from '../../tenancy/tenant-context.interface';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
 import { WhatsappChannelsService } from './whatsapp-channels.service';
-import type { WhatsappChannelStatus } from './entities/whatsapp-channel.entity';
+import type { WhatsappChannelStatus, WhatsappChannelProvider } from './entities/whatsapp-channel.entity';
 
 @Controller('whatsapp/channels')
 @UseGuards(RolesGuard)
@@ -54,14 +54,16 @@ export class WhatsappChannelsController {
     @CurrentTenant() tenant: TenantContext,
     @Body()
     dto: {
+      provider?: WhatsappChannelProvider;
       locationId?: string;
       phoneNumberId: string;
       displayNumber: string;
-      wabaId: string;
+      wabaId?: string;
       accessToken: string;
       greetingMessage?: string;
       defaultLocationId?: string;
       botEnabled?: boolean;
+      registerWebhook?: boolean;
     },
   ) {
     return this.service.connect(this.uid(req), this.tenantId(tenant), dto);
@@ -108,6 +110,20 @@ export class WhatsappChannelsController {
       this.tenantId(tenant),
       id,
       dto.toWaId,
+    );
+  }
+
+  @Post(':id/openwa/register-webhook')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  registerOpenWaWebhook(
+    @Req() req: Request,
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.service.registerOpenWaWebhookForChannel(
+      this.uid(req),
+      this.tenantId(tenant),
+      id,
     );
   }
 }

@@ -1,16 +1,20 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { BusinessMembership } from '../businesses/entities/business-membership.entity';
+import { Booking } from '../bookings/entities/booking.entity';
 import { IamService } from '../iam/iam.service';
 import { CreateCanteenItemDto } from './dto/create-canteen-item.dto';
 import { UpdateCanteenItemDto } from './dto/update-canteen-item.dto';
 import { CanteenItem } from './entities/canteen-item.entity';
+import { CanteenOrder } from './entities/canteen-order.entity';
+import { CanteenOrderItem } from './entities/canteen-order-item.entity';
 
 export type CanteenItemRow = {
   id: string;
@@ -33,6 +37,10 @@ export class CanteenService {
   constructor(
     @InjectRepository(CanteenItem)
     private readonly items: Repository<CanteenItem>,
+    @InjectRepository(CanteenOrder)
+    private readonly orders: Repository<CanteenOrder>,
+    @InjectRepository(Booking)
+    private readonly bookings: Repository<Booking>,
     @InjectRepository(BusinessLocation)
     private readonly locations: Repository<BusinessLocation>,
     @InjectRepository(BusinessMembership)
@@ -181,5 +189,189 @@ export class CanteenService {
     }
     await this.assertCanAccessLocation(requesterUserId, existing.locationId);
     await this.items.delete({ id });
+  }
+
+  async getPublicMenu(locationId: string) {
+    const lid = locationId?.trim();
+    if (!lid) throw new BadRequestException('locationId is required');
+    const loc = await this.locations.findOne({ where: { id: lid } });
+    if (!loc) throw new NotFoundException(`Location ${lid} not found`);
+
+    const rows = await this.items.find({
+      where: { locationId: lid, status: 'active' },
+      order: { category: 'ASC', name: 'ASC' },
+    });
+
+    const categoryMap = new Map<string, typeof rows>();
+    for (const item of rows) {
+      const cat = item.category || 'General';
+      if (!categoryMap.has(cat)) categoryMap.set(cat, []);
+      categoryMap.get(cat)!.push(item);
+    }
+
+    return {
+      locationId: lid,
+      categories: [...categoryMap.entries()].map(([name, items]) => ({
+        name,
+        items: items.map((i) => ({
+          id: i.id,
+          name: i.name,
+          category: i.category,
+          sellingPrice: Number(i.sellingPrice),
+          currency: 'PKR',
+          unit: i.unit,
+          inStock: i.stockQuantity > 0,
+          stockQuantity: i.stockQuantity,
+          imageUrl: null,
+        })),
+      })),
+    };
+  }
+
+  async createOrder(
+    userId: string,
+    dto: {
+      locationId: string;
+      bookingId?: string;
+      pickupAt?: string;
+      notes?: string;
+      items: { itemId: string; quantity: number }[];
+      payment?: { method?: string };
+    },
+    idempotencyKey?: string,
+  ) {
+    if (idempotencyKey) {
+      const existing = await this.orders.findOne({ where: { idempotencyKey } });
+      if (existing) return this.formatOrder(existing);
+    }
+
+    const lid = dto.locationId.trim();
+    const loc = await this.locations.findOne({ where: { id: lid } });
+    if (!loc) throw new NotFoundException(`Location ${lid} not found`);
+
+    if (dto.bookingId) {
+      const booking = await this.bookings.findOne({
+        where: { id: dto.bookingId, userId },
+      });
+      if (!booking) throw new ForbiddenException('Booking not found or not yours');
+    }
+
+    const lineItems: CanteenOrderItem[] = [];
+    let subTotal = 0;
+    for (const line of dto.items) {
+      const item = await this.items.findOne({
+        where: { id: line.itemId, locationId: lid, status: 'active' },
+      });
+      if (!item || item.stockQuantity < line.quantity) {
+        throw new BadRequestException(`Item ${line.itemId} unavailable`);
+      }
+      const unitPrice = Number(item.sellingPrice);
+      const lineTotal = unitPrice * line.quantity;
+      subTotal += lineTotal;
+      lineItems.push(
+        this.orders.manager.create(CanteenOrderItem, {
+          itemId: item.id,
+          name: item.name,
+          quantity: line.quantity,
+          unitPrice: String(unitPrice),
+          lineTotal: String(lineTotal),
+        }),
+      );
+    }
+
+    const order = await this.orders.save({
+      locationId: lid,
+      userId,
+      bookingId: dto.bookingId ?? null,
+      status: 'pending',
+      paymentStatus: 'pending',
+      paymentMethod: dto.payment?.method ?? 'pay_at_venue',
+      subTotal: String(subTotal),
+      tax: '0',
+      totalAmount: String(subTotal),
+      currency: 'PKR',
+      pickupAt: dto.pickupAt ? new Date(dto.pickupAt) : null,
+      notes: dto.notes ?? null,
+      idempotencyKey: idempotencyKey ?? null,
+      items: lineItems,
+    });
+
+    for (const line of dto.items) {
+      await this.items.decrement({ id: line.itemId }, 'stockQuantity', line.quantity);
+    }
+
+    const saved = await this.orders.findOne({
+      where: { id: order.id },
+      relations: ['items'],
+    });
+    return this.formatOrder(saved!);
+  }
+
+  async listOrders(userId: string, page = 1, limit = 20) {
+    const take = Math.min(50, Math.max(1, limit));
+    const skip = (Math.max(1, page) - 1) * take;
+    const [rows, total] = await this.orders.findAndCount({
+      where: { userId },
+      order: { createdAt: 'DESC' },
+      skip,
+      take,
+    });
+    const locIds = [...new Set(rows.map((r) => r.locationId))];
+    const locs =
+      locIds.length > 0
+        ? await this.locations.find({ where: { id: In(locIds) } })
+        : [];
+    const locNames = new Map(locs.map((l) => [l.id, l.name]));
+
+    return {
+      items: rows.map((o) => ({
+        orderId: o.id,
+        locationId: o.locationId,
+        locationName: locNames.get(o.locationId) ?? null,
+        status: o.status,
+        paymentStatus: o.paymentStatus,
+        totalAmount: Number(o.totalAmount),
+        currency: o.currency,
+        pickupAt: o.pickupAt?.toISOString() ?? null,
+        createdAt: o.createdAt.toISOString(),
+      })),
+      page: Math.max(1, page),
+      limit: take,
+      total,
+    };
+  }
+
+  async getOrder(userId: string, orderId: string) {
+    const order = await this.orders.findOne({
+      where: { id: orderId, userId },
+      relations: ['items'],
+    });
+    if (!order) throw new NotFoundException('Order not found');
+    return this.formatOrder(order);
+  }
+
+  private formatOrder(order: CanteenOrder) {
+    return {
+      orderId: order.id,
+      locationId: order.locationId,
+      bookingId: order.bookingId ?? null,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      items: (order.items ?? []).map((i) => ({
+        itemId: i.itemId,
+        name: i.name,
+        quantity: i.quantity,
+        unitPrice: Number(i.unitPrice),
+        lineTotal: Number(i.lineTotal),
+      })),
+      pricing: {
+        subTotal: Number(order.subTotal),
+        tax: Number(order.tax),
+        totalAmount: Number(order.totalAmount),
+        currency: order.currency,
+      },
+      pickupAt: order.pickupAt?.toISOString() ?? null,
+      createdAt: order.createdAt.toISOString(),
+    };
   }
 }

@@ -13,6 +13,8 @@ export type WhatsappChannelStatus =
   | 'error'
   | 'disconnected';
 
+export type WhatsappChannelProvider = 'meta' | 'openwa';
+
 @Entity({ name: 'whatsapp_channels' })
 export class WhatsappChannel {
   @PrimaryGeneratedColumn('uuid')
@@ -23,6 +25,9 @@ export class WhatsappChannel {
 
   @Column({ type: 'uuid', nullable: true })
   locationId?: string | null;
+
+  @Column({ type: 'varchar', length: 16, default: 'meta' })
+  provider!: WhatsappChannelProvider;
 
   @Column({ type: 'varchar', length: 64, unique: true })
   phoneNumberId!: string;

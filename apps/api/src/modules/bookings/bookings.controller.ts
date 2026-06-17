@@ -285,6 +285,7 @@ export class BookingsController {
       startTime: query.startTime,
       endTime: query.endTime,
       availableOnly: query.availableOnly === 'true',
+      fullDay: query.fullDay === 'true',
     });
   }
 

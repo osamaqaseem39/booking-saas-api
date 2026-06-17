@@ -26,6 +26,8 @@ import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { CanteenModule } from './modules/canteen/canteen.module';
 import { ExpensesModule } from './modules/expenses/expenses.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
+import { JourneyModule } from './modules/journey/journey.module';
+import { SupportModule } from './modules/support/support.module';
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
   const poolMax = resolvePoolMax();
@@ -196,6 +198,8 @@ function sslModeFromEnv() {
     CanteenModule,
     BankAccountsModule,
     TournamentsModule,
+    JourneyModule,
+    SupportModule,
     WhatsappModule,
   ],
 })

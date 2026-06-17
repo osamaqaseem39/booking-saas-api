@@ -2949,6 +2949,8 @@ export class BookingsService {
       endTime?: string;
       availableOnly?: boolean;
       skipCourtCheck?: boolean;
+      /** Return full day grid without booking-picker time filtering. */
+      fullDay?: boolean;
       /** Suppress slot-grid diagnostics (internal post-create refresh). */
       quietLog?: boolean;
     },
@@ -3133,7 +3135,9 @@ export class BookingsService {
       slots = slots.filter((s) => s.availability === 'available');
     }
 
-    slots = filterSlotsForBookingPicker(slots, date);
+    if (!params.fullDay) {
+      slots = filterSlotsForBookingPicker(slots, date);
+    }
 
     if (!params.quietLog) {
       const slotSummary = summarizeSlotAvailability(slots);
@@ -3180,6 +3184,7 @@ export class BookingsService {
       endTime?: string;
       availableOnly?: boolean;
       skipCourtCheck?: boolean;
+      fullDay?: boolean;
     },
   ) {
     const gridStarted = Date.now();
@@ -4769,7 +4774,7 @@ export class BookingsService {
     }
   > {
     const ref = input.referenceDateYmd?.trim() || getCurrentDateInKarachi();
-    let parsed = parseFreeTextBookingMessage(input.message, ref);
+        let parsed = parseFreeTextBookingMessage(input.message, ref);
     const mergeLlmIfPresent = async (
       label: 'OpenAI' | 'Gemini',
       fetcher: () => Promise<

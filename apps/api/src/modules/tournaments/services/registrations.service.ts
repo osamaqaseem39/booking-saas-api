@@ -77,7 +77,14 @@ export class RegistrationsService {
       const existing = await this.registrations.findOne({
         where: { idempotencyKey },
       });
-      if (existing) return existing;
+      if (existing) {
+        const team = await this.teams.findOne({
+          where: { id: existing.teamId },
+        });
+        if (team) {
+          return this.formatPublicRegistration(existing, team, tournament);
+        }
+      }
     }
 
     const approvedCount = await this.registrations.count({
@@ -140,7 +147,7 @@ export class RegistrationsService {
       afterState: { status: reg.status, teamId: team.id },
     });
 
-    return { registration: reg, team };
+    return this.formatPublicRegistration(reg, team, tournament);
   }
 
   async approve(
@@ -220,6 +227,69 @@ export class RegistrationsService {
       afterState: { status: 'rejected', reason },
     });
     return reg;
+  }
+
+  async listForUser(userId: string) {
+    const memberships = await this.members.find({ where: { userId } });
+    if (memberships.length === 0) return { items: [] };
+
+    const teamIds = memberships.map((m) => m.teamId);
+    const rows = await this.registrations.find({
+      where: { teamId: In(teamIds), deletedAt: IsNull() },
+      order: { createdAt: 'DESC' },
+    });
+    if (rows.length === 0) return { items: [] };
+
+    const tournaments = await this.tournaments.find({
+      where: { id: In(rows.map((r) => r.tournamentId)) },
+    });
+    const tMap = new Map(tournaments.map((t) => [t.id, t]));
+    const teams = await this.teams.find({
+      where: { id: In(rows.map((r) => r.teamId)) },
+    });
+    const teamNames = new Map(teams.map((t) => [t.id, t.name]));
+
+    return {
+      items: rows.map((r) => {
+        const t = tMap.get(r.tournamentId);
+        return {
+          id: r.id,
+          tournamentId: r.tournamentId,
+          tournamentName: t?.name ?? null,
+          teamId: r.teamId,
+          teamName: teamNames.get(r.teamId) ?? null,
+          status: r.status,
+          paymentStatus: r.paymentStatus,
+          sport: t?.sport ?? null,
+          startsAt: t?.startsAt.toISOString() ?? null,
+          entryFeeAmount:
+            t?.entryFeeAmount != null ? Number(t.entryFeeAmount) : null,
+          createdAt: r.createdAt.toISOString(),
+        };
+      }),
+    };
+  }
+
+  formatPublicRegistration(reg: TournamentRegistration, team: Team, tournament: Tournament) {
+    const entryFee = Number(tournament.entryFeeAmount ?? 0);
+    const paymentExpiresAt = new Date(
+      reg.createdAt.getTime() + 15 * 60_000,
+    ).toISOString();
+    return {
+      registration: {
+        id: reg.id,
+        tournamentId: reg.tournamentId,
+        teamId: reg.teamId,
+        status: reg.status,
+        paymentStatus: reg.paymentStatus,
+        waitlistPosition: reg.waitlistPosition ?? null,
+        entryFeeAmount: entryFee > 0 ? entryFee : null,
+        entryFeeCurrency: tournament.entryFeeCurrency,
+        paymentExpiresAt: entryFee > 0 ? paymentExpiresAt : null,
+        createdAt: reg.createdAt.toISOString(),
+      },
+      team: { id: team.id, name: team.name },
+    };
   }
 
   private async findRegistration(tenantId: string, id: string) {

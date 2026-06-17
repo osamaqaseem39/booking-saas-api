@@ -21,6 +21,10 @@ import { Booking } from '../bookings/entities/booking.entity';
 import { TournamentsController } from './controllers/tournaments.controller';
 import { RegistrationsController } from './controllers/registrations.controller';
 import { MatchesController } from './controllers/matches.controller';
+import {
+  MyTournamentRegistrationsController,
+  PublicTournamentsController,
+} from './controllers/public-tournaments.controller';
 import { TournamentsService } from './services/tournaments.service';
 import { RegistrationsService } from './services/registrations.service';
 import { MatchesService } from './services/matches.service';
@@ -55,6 +59,8 @@ import { TournamentMatchBookingService } from './services/tournament-match-booki
     TournamentsController,
     RegistrationsController,
     MatchesController,
+    PublicTournamentsController,
+    MyTournamentRegistrationsController,
   ],
   providers: [
     TournamentsService,

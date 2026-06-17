@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
 import { RolesGuard } from './authz/roles.guard';
+import { ConsumerAuthGuard } from './authz/consumer-auth.guard';
 import { IamController } from './iam.controller';
 import { Business } from '../businesses/entities/business.entity';
 import { BusinessMembership } from '../businesses/entities/business-membership.entity';
@@ -33,9 +34,7 @@ import { IamService } from './iam.service';
     }),
   ],
   controllers: [IamController],
-  providers: [IamService, RolesGuard],
-  // Re-export JwtModule so guards/controllers in importing modules
-  // can resolve JwtService via DI.
-  exports: [IamService, RolesGuard, JwtModule],
+  providers: [IamService, RolesGuard, ConsumerAuthGuard],
+  exports: [IamService, RolesGuard, ConsumerAuthGuard, JwtModule],
 })
 export class IamModule {}

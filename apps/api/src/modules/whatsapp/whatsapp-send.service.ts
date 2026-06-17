@@ -1,8 +1,35 @@
 import { Injectable, Logger } from '@nestjs/common';
+import type { WhatsappChannel } from './entities/whatsapp-channel.entity';
+import { OpenwaProvider } from './providers/openwa.provider';
 
 @Injectable()
 export class WhatsappSendService {
   private readonly logger = new Logger(WhatsappSendService.name);
+
+  constructor(private readonly openwa: OpenwaProvider) {}
+
+  async sendForChannel(
+    channel: WhatsappChannel,
+    toWaId: string,
+    body: string,
+  ): Promise<void> {
+    const provider = channel.provider ?? 'meta';
+    if (provider === 'openwa') {
+      await this.openwa.sendText({
+        sessionId: channel.phoneNumberId,
+        accessToken: channel.accessToken,
+        toWaId,
+        body,
+      });
+      return;
+    }
+    await this.sendText({
+      phoneNumberId: channel.phoneNumberId,
+      accessToken: channel.accessToken,
+      toWaId,
+      body,
+    });
+  }
 
   async sendText(input: {
     phoneNumberId: string;

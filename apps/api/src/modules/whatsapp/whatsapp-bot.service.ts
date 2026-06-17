@@ -128,12 +128,7 @@ export class WhatsappBotService {
 
   private async reply(channel: WhatsappChannel, toWaId: string, body: string) {
     try {
-      await this.send.sendText({
-        phoneNumberId: channel.phoneNumberId,
-        accessToken: channel.accessToken,
-        toWaId,
-        body,
-      });
+      await this.send.sendForChannel(channel, toWaId, body);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       this.logger.error(`WhatsApp reply failed to=${toWaId}: ${msg}`);

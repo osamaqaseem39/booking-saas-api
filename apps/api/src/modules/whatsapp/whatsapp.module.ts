@@ -19,6 +19,9 @@ import { WhatsappSendService } from './whatsapp-send.service';
 import { WhatsappInboundDedupService } from './whatsapp-inbound-dedup.service';
 import { WhatsappWebhookController } from './whatsapp-webhook.controller';
 import { WhatsappWebhookService } from './whatsapp-webhook.service';
+import { WhatsappOpenwaWebhookController } from './whatsapp-openwa-webhook.controller';
+import { WhatsappOpenwaWebhookService } from './whatsapp-openwa-webhook.service';
+import { OpenwaProvider } from './providers/openwa.provider';
 
 @Module({
   imports: [
@@ -35,14 +38,20 @@ import { WhatsappWebhookService } from './whatsapp-webhook.service';
     BusinessesModule,
     BookingsModule,
   ],
-  controllers: [WhatsappChannelsController, WhatsappWebhookController],
+  controllers: [
+    WhatsappChannelsController,
+    WhatsappWebhookController,
+    WhatsappOpenwaWebhookController,
+  ],
   providers: [
     WhatsappChannelsService,
     WhatsappConversationsService,
     WhatsappBookingService,
     WhatsappBotService,
     WhatsappWebhookService,
+    WhatsappOpenwaWebhookService,
     WhatsappInboundDedupService,
+    OpenwaProvider,
     WhatsappSendService,
   ],
   exports: [

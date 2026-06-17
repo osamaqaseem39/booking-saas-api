@@ -5,7 +5,7 @@ describe('WhatsappWebhookService', () => {
   const channels = { findByPhoneNumberId: jest.fn(), touchWebhook: jest.fn() };
   const bot = { handleInbound: jest.fn() };
   const dedup = { tryAcquire: jest.fn(), release: jest.fn() };
-  const send = { sendText: jest.fn() };
+  const send = { sendText: jest.fn(), sendForChannel: jest.fn() };
 
   let service: WhatsappWebhookService;
 
