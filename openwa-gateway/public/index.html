@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Velay OpenWA Gateway</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 52rem; color: #111; }
+      h1 { margin-bottom: 0.25rem; }
+      .muted { color: #555; }
+      code, pre { background: #f4f4f4; padding: 0.15rem 0.35rem; border-radius: 4px; }
+      pre { padding: 1rem; overflow: auto; }
+      button { margin-right: 0.5rem; margin-top: 0.5rem; }
+      table { border-collapse: collapse; width: 100%; margin-top: 1rem; }
+      th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+      .ok { color: #0a7; }
+      .warn { color: #a60; }
+    </style>
+  </head>
+  <body>
+    <h1>OpenWA Gateway</h1>
+    <p class="muted">Dashboard for local WhatsApp sessions. API listens on port <code id="api-port">2785</code>.</p>
+    <p>Mode: <strong id="mode">…</strong></p>
+    <p>
+      Use <code>OPENWA_API_KEY</code> as <code>X-API-Key</code> when calling the gateway, and the same value as
+      <code>accessToken</code> when connecting a Velay channel (<code>provider=openwa</code>).
+    </p>
+    <button id="refresh">Refresh</button>
+    <button id="create">Create session</button>
+    <table>
+      <thead>
+        <tr><th>Session ID</th><th>Label</th><th>Status</th><th>Copy for Velay</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <h2>Velay API env</h2>
+    <pre id="env-hint"></pre>
+    <script>
+      const apiKey = new URLSearchParams(location.search).get('apiKey') || 'dev-openwa-key';
+      const apiBase = `http://${location.hostname}:2785`;
+
+      async function load() {
+        const info = await fetch('/api/info').then((r) => r.json());
+        document.getElementById('mode').textContent = info.mode;
+        document.getElementById('api-port').textContent = String(info.apiPort);
+        const tbody = document.getElementById('rows');
+        tbody.innerHTML = '';
+        for (const s of info.sessions) {
+          const tr = document.createElement('tr');
+          const copy = JSON.stringify({ provider: 'openwa', phoneNumberId: s.id, accessToken: apiKey }, null, 2);
+          tr.innerHTML = `<td><code>${s.id}</code></td><td>${s.label}</td><td>${s.status}</td><td><button data-copy='${copy.replace(/'/g, '&#39;')}'>Copy channel body</button></td>`;
+          tbody.appendChild(tr);
+        }
+        document.getElementById('env-hint').textContent =
+`OPENWA_BASE_URL=${apiBase}
+OPENWA_API_KEY=${apiKey}
+OPENWA_WEBHOOK_SECRET=change-me-openwa-webhook-secret
+API_PUBLIC_URL=http://localhost:3000`;
+        tbody.querySelectorAll('button[data-copy]').forEach((btn) => {
+          btn.onclick = () => navigator.clipboard.writeText(btn.getAttribute('data-copy'));
+        });
+      }
+
+      document.getElementById('refresh').onclick = () => load();
+      document.getElementById('create').onclick = async () => {
+        const label = prompt('Session label', 'main') || 'main';
+        const res = await fetch(`${apiBase}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
+          body: JSON.stringify({ label }),
+        });
+        if (!res.ok) {
+          alert(await res.text());
+          return;
+        }
+        await load();
+      };
+      load();
+    </script>
+  </body>
+</html>

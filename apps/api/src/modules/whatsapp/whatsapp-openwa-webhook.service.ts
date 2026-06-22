@@ -19,15 +19,29 @@ export class WhatsappOpenwaWebhookService {
     private readonly send: WhatsappSendService,
   ) {}
 
-  assertValidSignature(payload: unknown, signature?: string): void {
+  assertValidSignature(
+    payload: unknown,
+    signature?: string,
+    rawBody?: Buffer | string,
+  ): void {
     const secret = process.env.OPENWA_WEBHOOK_SECRET?.trim();
     if (!secret) return;
-    if (!signature?.startsWith('sha256=') || payload == null) {
+    if (!signature?.startsWith('sha256=')) {
       throw new Error('Missing OpenWA webhook signature');
     }
+    const body =
+      rawBody != null
+        ? Buffer.isBuffer(rawBody)
+          ? rawBody
+          : Buffer.from(rawBody, 'utf8')
+        : payload == null
+          ? null
+          : Buffer.from(JSON.stringify(payload), 'utf8');
+    if (body == null) {
+      throw new Error('Missing OpenWA webhook body');
+    }
     const expected =
-      'sha256=' +
-      createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+      'sha256=' + createHmac('sha256', secret).update(body).digest('hex');
     const a = Buffer.from(signature);
     const b = Buffer.from(expected);
     if (a.length !== b.length || !timingSafeEqual(a, b)) {

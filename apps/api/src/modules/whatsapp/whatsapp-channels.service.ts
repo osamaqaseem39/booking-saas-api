@@ -2,8 +2,10 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { resolveApiPublicBaseUrl } from '../../common/utils/api-public-url.util';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BusinessesService } from '../businesses/businesses.service';
@@ -36,8 +38,15 @@ export type WhatsappChannelRow = {
   updatedAt: string;
 };
 
+export type WhatsappChannelConnectResult = WhatsappChannelRow & {
+  openwaWebhookUrl?: string;
+  webhookWarning?: string;
+};
+
 @Injectable()
 export class WhatsappChannelsService {
+  private readonly logger = new Logger(WhatsappChannelsService.name);
+
   constructor(
     @InjectRepository(WhatsappChannel)
     private readonly channels: Repository<WhatsappChannel>,
@@ -124,7 +133,7 @@ export class WhatsappChannelsService {
       botEnabled?: boolean;
       registerWebhook?: boolean;
     },
-  ): Promise<WhatsappChannelRow> {
+  ): Promise<WhatsappChannelConnectResult> {
     await this.assertCanManageTenant(requesterUserId, tenantId);
     const provider = dto.provider ?? 'meta';
     const phoneNumberId = dto.phoneNumberId.trim();
@@ -168,24 +177,33 @@ export class WhatsappChannelsService {
       ? await this.channels.save({ ...existing, ...payload })
       : await this.channels.save(this.channels.create(payload));
 
+    let openwaWebhookUrl: string | undefined;
+    let webhookWarning: string | undefined;
     if (provider === 'openwa' && dto.registerWebhook !== false) {
-      await this.registerOpenWaWebhook(saved).catch(() => undefined);
+      try {
+        openwaWebhookUrl = this.resolvePublicWebhookUrl('/webhooks/openwa');
+        await this.registerOpenWaWebhook(saved);
+      } catch (e) {
+        webhookWarning = e instanceof Error ? e.message : String(e);
+        this.logger.warn(`OpenWA webhook registration failed: ${webhookWarning}`);
+      }
     }
 
-    return this.toRow(saved);
+    return {
+      ...this.toRow(saved),
+      ...(openwaWebhookUrl ? { openwaWebhookUrl } : {}),
+      ...(webhookWarning ? { webhookWarning } : {}),
+    };
   }
 
   private resolvePublicWebhookUrl(path: string): string {
-    const base =
-      process.env.API_PUBLIC_URL?.trim() ||
-      process.env.PUBLIC_API_URL?.trim() ||
-      process.env.APP_URL?.trim();
+    const base = resolveApiPublicBaseUrl();
     if (!base) {
       throw new BadRequestException(
-        'Set API_PUBLIC_URL to register OpenWA webhooks automatically',
+        'Set API_PUBLIC_URL (or deploy on Vercel so VERCEL_URL is set) to register OpenWA webhooks',
       );
     }
-    return `${base.replace(/\/$/, '')}${path}`;
+    return `${base}${path}`;
   }
 
   async registerOpenWaWebhook(channel: WhatsappChannel): Promise<void> {

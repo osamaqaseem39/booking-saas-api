@@ -1,0 +1,56 @@
+# OpenWA — official self-hosted WhatsApp gateway
+# https://github.com/rmyndharis/OpenWA
+#
+# Quick start (this file):
+#   docker compose -f docker-compose.dev.yml up -d
+#
+# Or clone upstream and use their compose:
+#   git clone https://github.com/rmyndharis/OpenWA.git
+#   cd OpenWA && docker compose -f docker-compose.dev.yml up -d
+#
+# Docker (single port): dashboard + API at http://localhost:2785
+#   REST API: http://localhost:2785/api
+#   Swagger:  http://localhost:2785/api/docs
+#
+# npm run dev in the OpenWA repo only: dashboard hot-reload on :2886, API on :2785
+
+services:
+  openwa:
+    image: ghcr.io/rmyndharis/openwa:latest
+    container_name: openwa-api
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:2785:2785'
+    environment:
+      NODE_ENV: development
+      PORT: 2785
+      HOME: /tmp
+      XDG_CONFIG_HOME: /tmp/.config
+      XDG_CACHE_HOME: /tmp/.cache
+      DATABASE_TYPE: sqlite
+      DATABASE_NAME: /app/data/openwa.sqlite
+      DATABASE_SYNCHRONIZE: 'true'
+      ENGINE_TYPE: whatsapp-web.js
+      SESSION_DATA_PATH: /app/data/sessions
+      STORAGE_TYPE: local
+      STORAGE_LOCAL_PATH: /app/data/media
+      PUPPETEER_HEADLESS: 'true'
+      PUPPETEER_ARGS: --no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage,--disable-gpu
+      WEBHOOK_TIMEOUT: 10000
+      WEBHOOK_MAX_RETRIES: 3
+      QUEUE_ENABLED: 'false'
+    volumes:
+      - openwa_data:/app/data
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:2785/api/health/ready']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  openwa_data:
+
+networks:
+  default:
+    name: openwa-network

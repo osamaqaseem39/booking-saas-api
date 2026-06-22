@@ -23,16 +23,16 @@ describe('WhatsappOpenwaWebhookService', () => {
     );
   });
 
-  it('assertValidSignature accepts valid HMAC', () => {
+  it('assertValidSignature accepts valid HMAC from raw body', () => {
     const prev = process.env.OPENWA_WEBHOOK_SECRET;
     process.env.OPENWA_WEBHOOK_SECRET = 'openwa-secret';
-    const payload = { event: 'message.received', sessionId: 'sess_1' };
+    const raw = JSON.stringify({ event: 'message.received', sessionId: 'sess_1' });
     const sig =
       'sha256=' +
-      createHmac('sha256', 'openwa-secret')
-        .update(JSON.stringify(payload))
-        .digest('hex');
-    expect(() => service.assertValidSignature(payload, sig)).not.toThrow();
+      createHmac('sha256', 'openwa-secret').update(raw).digest('hex');
+    expect(() =>
+      service.assertValidSignature(JSON.parse(raw), sig, raw),
+    ).not.toThrow();
     process.env.OPENWA_WEBHOOK_SECRET = prev;
   });
 
