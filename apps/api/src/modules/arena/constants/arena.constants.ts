@@ -6,4 +6,5 @@ export const ARENA_SUB_TYPE_CODES = [
   'turf',
 ] as const;
 
+
 export type ArenaSubTypeCode = (typeof ARENA_SUB_TYPE_CODES)[number];
