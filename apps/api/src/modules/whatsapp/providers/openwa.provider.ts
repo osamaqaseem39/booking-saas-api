@@ -5,7 +5,9 @@ import { toOpenWaChatId } from '../utils/whatsapp-wa-id.util';
 export class OpenwaProvider {
   private readonly logger = new Logger(OpenwaProvider.name);
 
-  private baseUrl(): string {
+  private baseUrl(override?: string | null): string {
+    const custom = override?.trim();
+    if (custom) return custom.replace(/\/$/, '');
     return (process.env.OPENWA_BASE_URL?.trim() || 'http://localhost:2785').replace(
       /\/$/,
       '',
@@ -23,11 +25,12 @@ export class OpenwaProvider {
   async sendText(input: {
     sessionId: string;
     accessToken?: string;
+    apiBaseUrl?: string | null;
     toWaId: string;
     body: string;
   }): Promise<void> {
     const apiKey = this.resolveApiKey(input.accessToken);
-    const url = `${this.baseUrl()}/api/sessions/${encodeURIComponent(input.sessionId)}/messages/send-text`;
+    const url = `${this.baseUrl(input.apiBaseUrl)}/api/sessions/${encodeURIComponent(input.sessionId)}/messages/send-text`;
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -52,11 +55,12 @@ export class OpenwaProvider {
   async registerWebhook(input: {
     sessionId: string;
     accessToken?: string;
+    apiBaseUrl?: string | null;
     url: string;
     secret: string;
   }): Promise<void> {
     const apiKey = this.resolveApiKey(input.accessToken);
-    const endpoint = `${this.baseUrl()}/api/sessions/${encodeURIComponent(input.sessionId)}/webhooks`;
+    const endpoint = `${this.baseUrl(input.apiBaseUrl)}/api/sessions/${encodeURIComponent(input.sessionId)}/webhooks`;
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: {

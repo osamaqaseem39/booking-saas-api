@@ -32,6 +32,7 @@ export type WhatsappChannelRow = {
   botEnabled: boolean;
   greetingMessage: string | null;
   defaultLocationId: string | null;
+  openwaApiBaseUrl: string | null;
   lastWebhookAt: string | null;
   hasAccessToken: boolean;
   createdAt: string;
@@ -73,6 +74,7 @@ export class WhatsappChannelsService {
       botEnabled: channel.botEnabled,
       greetingMessage: channel.greetingMessage ?? null,
       defaultLocationId: channel.defaultLocationId ?? null,
+      openwaApiBaseUrl: channel.openwaApiBaseUrl ?? null,
       lastWebhookAt: channel.lastWebhookAt?.toISOString() ?? null,
       hasAccessToken: Boolean(channel.accessToken?.trim()),
       createdAt: channel.createdAt.toISOString(),
@@ -130,6 +132,7 @@ export class WhatsappChannelsService {
       accessToken: string;
       greetingMessage?: string;
       defaultLocationId?: string;
+      openwaApiBaseUrl?: string;
       botEnabled?: boolean;
       registerWebhook?: boolean;
     },
@@ -177,6 +180,8 @@ export class WhatsappChannelsService {
       botEnabled: dto.botEnabled ?? true,
       greetingMessage: dto.greetingMessage?.trim() || null,
       defaultLocationId: dto.defaultLocationId ?? dto.locationId ?? null,
+      openwaApiBaseUrl:
+        provider === 'openwa' ? dto.openwaApiBaseUrl?.trim() || null : null,
     };
     const saved = existing
       ? await this.channels.save({ ...existing, ...payload })
@@ -220,6 +225,7 @@ export class WhatsappChannelsService {
     await this.openwa.registerWebhook({
       sessionId: channel.phoneNumberId,
       accessToken: channel.accessToken,
+      apiBaseUrl: channel.openwaApiBaseUrl,
       url,
       secret,
     });
@@ -251,6 +257,7 @@ export class WhatsappChannelsService {
       greetingMessage?: string | null;
       locationId?: string | null;
       defaultLocationId?: string | null;
+      openwaApiBaseUrl?: string | null;
       status?: WhatsappChannelStatus;
       accessToken?: string;
     },
@@ -284,6 +291,9 @@ export class WhatsappChannelsService {
     }
     if (dto.defaultLocationId !== undefined) {
       channel.defaultLocationId = dto.defaultLocationId;
+    }
+    if (dto.openwaApiBaseUrl !== undefined) {
+      channel.openwaApiBaseUrl = dto.openwaApiBaseUrl?.trim() || null;
     }
     if (dto.status !== undefined) channel.status = dto.status;
     if (dto.accessToken?.trim()) channel.accessToken = dto.accessToken.trim();

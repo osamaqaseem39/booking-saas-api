@@ -18,6 +18,7 @@ export class WhatsappSendService {
       await this.openwa.sendText({
         sessionId: channel.phoneNumberId,
         accessToken: channel.accessToken,
+        apiBaseUrl: channel.openwaApiBaseUrl,
         toWaId,
         body,
       });

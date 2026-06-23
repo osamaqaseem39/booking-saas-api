@@ -38,6 +38,10 @@ export class WhatsappChannel {
   @Column({ type: 'varchar', length: 64 })
   wabaId!: string;
 
+  /** Public URL of self-hosted OpenWA (tunnel/VPS). Used by production API to send messages. */
+  @Column({ type: 'varchar', length: 512, nullable: true })
+  openwaApiBaseUrl?: string | null;
+
   @Column({ type: 'text' })
   accessToken!: string;
 

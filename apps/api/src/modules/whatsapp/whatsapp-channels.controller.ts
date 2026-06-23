@@ -62,6 +62,7 @@ export class WhatsappChannelsController {
       accessToken: string;
       greetingMessage?: string;
       defaultLocationId?: string;
+      openwaApiBaseUrl?: string;
       botEnabled?: boolean;
       registerWebhook?: boolean;
     },
@@ -81,6 +82,7 @@ export class WhatsappChannelsController {
       greetingMessage?: string | null;
       locationId?: string | null;
       defaultLocationId?: string | null;
+      openwaApiBaseUrl?: string | null;
       status?: WhatsappChannelStatus;
       accessToken?: string;
     },
