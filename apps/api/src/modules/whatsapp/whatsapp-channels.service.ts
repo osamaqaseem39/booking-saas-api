@@ -144,6 +144,11 @@ export class WhatsappChannelsService {
     if (provider === 'meta' && !dto.wabaId?.trim()) {
       throw new BadRequestException('wabaId is required for Meta Cloud API channels');
     }
+    if (!dto.locationId?.trim() && !dto.defaultLocationId?.trim()) {
+      throw new BadRequestException(
+        'locationId is required so the bot can load courts and create bookings',
+      );
+    }
     if (dto.locationId) {
       await this.businessesService.assertLocationBelongsToTenant(
         dto.locationId,
@@ -244,6 +249,7 @@ export class WhatsappChannelsService {
     dto: {
       botEnabled?: boolean;
       greetingMessage?: string | null;
+      locationId?: string | null;
       defaultLocationId?: string | null;
       status?: WhatsappChannelStatus;
       accessToken?: string;
@@ -254,6 +260,12 @@ export class WhatsappChannelsService {
       where: { id: channelId, tenantId },
     });
     if (!channel) throw new NotFoundException('WhatsApp channel not found');
+    if (dto.locationId) {
+      await this.businessesService.assertLocationBelongsToTenant(
+        dto.locationId,
+        tenantId,
+      );
+    }
     if (dto.defaultLocationId) {
       await this.businessesService.assertLocationBelongsToTenant(
         dto.defaultLocationId,
@@ -263,6 +275,12 @@ export class WhatsappChannelsService {
     if (dto.botEnabled !== undefined) channel.botEnabled = dto.botEnabled;
     if (dto.greetingMessage !== undefined) {
       channel.greetingMessage = dto.greetingMessage?.trim() || null;
+    }
+    if (dto.locationId !== undefined) {
+      channel.locationId = dto.locationId;
+      if (dto.defaultLocationId === undefined && dto.locationId) {
+        channel.defaultLocationId = dto.locationId;
+      }
     }
     if (dto.defaultLocationId !== undefined) {
       channel.defaultLocationId = dto.defaultLocationId;

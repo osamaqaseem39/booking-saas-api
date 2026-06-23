@@ -79,6 +79,7 @@ export class WhatsappChannelsController {
     dto: {
       botEnabled?: boolean;
       greetingMessage?: string | null;
+      locationId?: string | null;
       defaultLocationId?: string | null;
       status?: WhatsappChannelStatus;
       accessToken?: string;
