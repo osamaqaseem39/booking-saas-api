@@ -2,7 +2,9 @@ import { Injectable, Logger } from '@nestjs/common';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { WhatsappBotService } from './whatsapp-bot.service';
 import { WhatsappChannelsService } from './whatsapp-channels.service';
+import { WhatsappConversationsService } from './whatsapp-conversations.service';
 import { WhatsappInboundDedupService } from './whatsapp-inbound-dedup.service';
+import { WhatsappMessagesService } from './whatsapp-messages.service';
 import { WhatsappSendService } from './whatsapp-send.service';
 
 export type WaInboundMessage = {
@@ -19,6 +21,8 @@ export class WhatsappWebhookService {
 
   constructor(
     private readonly channels: WhatsappChannelsService,
+    private readonly conversations: WhatsappConversationsService,
+    private readonly messages: WhatsappMessagesService,
     private readonly bot: WhatsappBotService,
     private readonly dedup: WhatsappInboundDedupService,
     private readonly send: WhatsappSendService,
@@ -108,6 +112,21 @@ export class WhatsappWebhookService {
       }
       await this.channels.touchWebhook(channel.id);
 
+      const conv = await this.conversations.getOrCreate({
+        channelId: channel.id,
+        tenantId: channel.tenantId,
+        customerWaId: msg.from,
+      });
+
+      if (msg.kind === 'text' && msg.text) {
+        await this.messages.appendInbound({
+          conversation: conv,
+          channel,
+          body: msg.text,
+          externalMessageId: msg.messageId || undefined,
+        });
+      }
+
       if (msg.messageId) {
         const acquired = await this.dedup.tryAcquire(msg.messageId);
         if (!acquired) continue;
@@ -117,23 +136,20 @@ export class WhatsappWebhookService {
         if (!channel.botEnabled || !channel.accessToken?.trim()) continue;
 
         if (msg.kind === 'unsupported') {
-          try {
-            await this.send.sendForChannel(
-              channel,
-              msg.from,
-              'Please send a text message to book a court. Reply *menu* to see options.',
-            );
-          } catch (e) {
-            const detail = e instanceof Error ? e.message : String(e);
-            this.logger.error(`WhatsApp unsupported-type reply failed: ${detail}`);
-          }
+          await this.bot.replyText(
+            channel,
+            conv,
+            msg.from,
+            'Please send a text message to book a court. Reply *menu* to see options.',
+          );
           continue;
         }
 
-        await this.bot.handleInbound(channel, msg.from, msg.text!);
+        await this.bot.handleInbound(channel, conv, msg.from, msg.text!);
       } catch (e) {
         if (msg.messageId) await this.dedup.release(msg.messageId);
-        throw e;
+        const detail = e instanceof Error ? e.message : String(e);
+        this.logger.error(`Meta webhook handler failed: ${detail}`);
       }
     }
   }

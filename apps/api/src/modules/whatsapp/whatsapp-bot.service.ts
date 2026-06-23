@@ -3,11 +3,13 @@ import { BookingsService } from '../bookings/bookings.service';
 import type { BookingSportType } from '../bookings/types/booking.types';
 import type { WhatsappChannel } from './entities/whatsapp-channel.entity';
 import type {
+  WhatsappConversation,
   WhatsappConversationState,
   WhatsappSlotOption,
 } from './entities/whatsapp-conversation.entity';
 import { WhatsappBookingService } from './whatsapp-booking.service';
 import { WhatsappConversationsService } from './whatsapp-conversations.service';
+import { WhatsappMessagesService } from './whatsapp-messages.service';
 import { WhatsappSendService } from './whatsapp-send.service';
 
 const SPORTS: Array<{ key: BookingSportType; label: string; n: number }> = [
@@ -117,6 +119,7 @@ export class WhatsappBotService {
 
   constructor(
     private readonly conversations: WhatsappConversationsService,
+    private readonly messages: WhatsappMessagesService,
     private readonly bookings: BookingsService,
     private readonly bookingFlow: WhatsappBookingService,
     private readonly send: WhatsappSendService,
@@ -126,20 +129,39 @@ export class WhatsappBotService {
     return channel.locationId ?? channel.defaultLocationId ?? null;
   }
 
-  private async reply(channel: WhatsappChannel, toWaId: string, body: string) {
+  async replyText(
+    channel: WhatsappChannel,
+    conv: WhatsappConversation,
+    toWaId: string,
+    body: string,
+  ): Promise<void> {
+    const outbound = await this.messages.appendOutbound({
+      conversation: conv,
+      channel,
+      body,
+      deliveryStatus: 'pending',
+    });
     try {
       await this.send.sendForChannel(channel, toWaId, body);
+      await this.messages.markSent(outbound.id);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      await this.messages.markFailed(outbound.id, msg);
       this.logger.error(`WhatsApp reply failed to=${toWaId}: ${msg}`);
     }
   }
 
-  async handleInbound(channel: WhatsappChannel, from: string, text: string): Promise<void> {
+  async handleInbound(
+    channel: WhatsappChannel,
+    conv: WhatsappConversation,
+    from: string,
+    text: string,
+  ): Promise<void> {
     const locationId = this.resolveLocationId(channel);
     if (!locationId) {
-      await this.reply(
+      await this.replyText(
         channel,
+        conv,
         from,
         'This WhatsApp number is not linked to a venue yet. Please contact the facility.',
       );
@@ -157,26 +179,15 @@ export class WhatsappBotService {
         referenceDateYmd: ref,
       });
       if (oneShot) {
-        const conv = await this.conversations.getOrCreate({
-          channelId: channel.id,
-          tenantId: channel.tenantId,
-          customerWaId: from,
-        });
         await this.conversations.reset(conv);
-        await this.reply(channel, from, oneShot.reply);
+        await this.replyText(channel, conv, from, oneShot.reply);
         return;
       }
     }
 
-    const conv = await this.conversations.getOrCreate({
-      channelId: channel.id,
-      tenantId: channel.tenantId,
-      customerWaId: from,
-    });
-
     if (isMenuCommand(trimmed)) {
       await this.conversations.reset(conv);
-      await this.reply(channel, from, menuText(channel.greetingMessage));
+      await this.replyText(channel, conv, from, menuText(channel.greetingMessage));
       return;
     }
 
@@ -288,7 +299,7 @@ export class WhatsappBotService {
     }
 
     await this.conversations.saveStep(conv, step, state);
-    if (replyText) await this.reply(channel, from, replyText);
+    if (replyText) await this.replyText(channel, conv, from, replyText);
   }
 
   private async finalizeBooking(

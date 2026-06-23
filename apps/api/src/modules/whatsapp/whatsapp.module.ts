@@ -9,6 +9,7 @@ import { User } from '../iam/entities/user.entity';
 import { UserRole } from '../iam/entities/user-role.entity';
 import { WhatsappChannel } from './entities/whatsapp-channel.entity';
 import { WhatsappConversation } from './entities/whatsapp-conversation.entity';
+import { WhatsappMessage } from './entities/whatsapp-message.entity';
 import { WhatsappProcessedMessage } from './entities/whatsapp-processed-message.entity';
 import { WhatsappBookingService } from './whatsapp-booking.service';
 import { WhatsappBotService } from './whatsapp-bot.service';
@@ -21,6 +22,8 @@ import { WhatsappWebhookController } from './whatsapp-webhook.controller';
 import { WhatsappWebhookService } from './whatsapp-webhook.service';
 import { WhatsappOpenwaWebhookController } from './whatsapp-openwa-webhook.controller';
 import { WhatsappOpenwaWebhookService } from './whatsapp-openwa-webhook.service';
+import { WhatsappConversationsController } from './whatsapp-conversations.controller';
+import { WhatsappMessagesService } from './whatsapp-messages.service';
 import { OpenwaProvider } from './providers/openwa.provider';
 
 @Module({
@@ -28,6 +31,7 @@ import { OpenwaProvider } from './providers/openwa.provider';
     TypeOrmModule.forFeature([
       WhatsappChannel,
       WhatsappConversation,
+      WhatsappMessage,
       WhatsappProcessedMessage,
       Business,
       BusinessMembership,
@@ -40,12 +44,14 @@ import { OpenwaProvider } from './providers/openwa.provider';
   ],
   controllers: [
     WhatsappChannelsController,
+    WhatsappConversationsController,
     WhatsappWebhookController,
     WhatsappOpenwaWebhookController,
   ],
   providers: [
     WhatsappChannelsService,
     WhatsappConversationsService,
+    WhatsappMessagesService,
     WhatsappBookingService,
     WhatsappBotService,
     WhatsappWebhookService,

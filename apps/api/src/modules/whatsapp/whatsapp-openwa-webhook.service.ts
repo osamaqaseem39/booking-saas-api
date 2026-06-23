@@ -4,9 +4,26 @@ import type { WhatsappChannel } from './entities/whatsapp-channel.entity';
 import { normalizeWaId } from './utils/whatsapp-wa-id.util';
 import { WhatsappBotService } from './whatsapp-bot.service';
 import { WhatsappChannelsService } from './whatsapp-channels.service';
+import { WhatsappConversationsService } from './whatsapp-conversations.service';
 import { WhatsappInboundDedupService } from './whatsapp-inbound-dedup.service';
+import { WhatsappMessagesService } from './whatsapp-messages.service';
 import { WhatsappSendService } from './whatsapp-send.service';
 import type { WaInboundMessage } from './whatsapp-webhook.service';
+
+function canonicalWebhookJson(payload: Record<string, unknown>): string {
+  const ordered: Record<string, unknown> = {};
+  for (const key of [
+    'event',
+    'timestamp',
+    'sessionId',
+    'idempotencyKey',
+    'deliveryId',
+    'data',
+  ]) {
+    if (key in payload) ordered[key] = payload[key];
+  }
+  return JSON.stringify(ordered);
+}
 
 @Injectable()
 export class WhatsappOpenwaWebhookService {
@@ -14,6 +31,8 @@ export class WhatsappOpenwaWebhookService {
 
   constructor(
     private readonly channels: WhatsappChannelsService,
+    private readonly conversations: WhatsappConversationsService,
+    private readonly messages: WhatsappMessagesService,
     private readonly bot: WhatsappBotService,
     private readonly dedup: WhatsappInboundDedupService,
     private readonly send: WhatsappSendService,
@@ -34,9 +53,12 @@ export class WhatsappOpenwaWebhookService {
         ? Buffer.isBuffer(rawBody)
           ? rawBody
           : Buffer.from(rawBody, 'utf8')
-        : payload == null
-          ? null
-          : Buffer.from(JSON.stringify(payload), 'utf8');
+        : payload != null && typeof payload === 'object'
+          ? Buffer.from(
+              canonicalWebhookJson(payload as Record<string, unknown>),
+              'utf8',
+            )
+          : null;
     if (body == null) {
       throw new Error('Missing OpenWA webhook body');
     }
@@ -111,6 +133,21 @@ export class WhatsappOpenwaWebhookService {
     }
     await this.channels.touchWebhook(channel.id);
 
+    const conv = await this.conversations.getOrCreate({
+      channelId: channel.id,
+      tenantId: channel.tenantId,
+      customerWaId: msg.from,
+    });
+
+    if (msg.kind === 'text' && msg.text) {
+      await this.messages.appendInbound({
+        conversation: conv,
+        channel,
+        body: msg.text,
+        externalMessageId: msg.messageId || undefined,
+      });
+    }
+
     if (msg.messageId) {
       const acquired = await this.dedup.tryAcquire(msg.messageId);
       if (!acquired) return;
@@ -120,23 +157,20 @@ export class WhatsappOpenwaWebhookService {
       if (!channel.botEnabled) return;
 
       if (msg.kind === 'unsupported') {
-        try {
-          await this.send.sendForChannel(
-            channel,
-            msg.from,
-            'Please send a text message to book a court. Reply *menu* to see options.',
-          );
-        } catch (e) {
-          const detail = e instanceof Error ? e.message : String(e);
-          this.logger.error(`OpenWA unsupported-type reply failed: ${detail}`);
-        }
+        await this.bot.replyText(
+          channel,
+          conv,
+          msg.from,
+          'Please send a text message to book a court. Reply *menu* to see options.',
+        );
         return;
       }
 
-      await this.bot.handleInbound(channel, msg.from, msg.text!);
+      await this.bot.handleInbound(channel, conv, msg.from, msg.text!);
     } catch (e) {
       if (msg.messageId) await this.dedup.release(msg.messageId);
-      throw e;
+      const detail = e instanceof Error ? e.message : String(e);
+      this.logger.error(`OpenWA inbound handler failed: ${detail}`);
     }
   }
 }

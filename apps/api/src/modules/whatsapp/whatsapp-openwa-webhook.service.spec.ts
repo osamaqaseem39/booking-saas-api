@@ -6,7 +6,13 @@ describe('WhatsappOpenwaWebhookService', () => {
     findByOpenWaSessionId: jest.fn(),
     touchWebhook: jest.fn(),
   };
-  const bot = { handleInbound: jest.fn() };
+  const conversations = {
+    getOrCreate: jest.fn(),
+  };
+  const messages = {
+    appendInbound: jest.fn(),
+  };
+  const bot = { handleInbound: jest.fn(), replyText: jest.fn() };
   const dedup = { tryAcquire: jest.fn(), release: jest.fn() };
   const send = { sendForChannel: jest.fn() };
 
@@ -15,8 +21,12 @@ describe('WhatsappOpenwaWebhookService', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     dedup.tryAcquire.mockResolvedValue(true);
+    conversations.getOrCreate.mockResolvedValue({ id: 'conv-1' });
+    messages.appendInbound.mockResolvedValue({ id: 'msg-row-1' });
     service = new WhatsappOpenwaWebhookService(
       channels as never,
+      conversations as never,
+      messages as never,
       bot as never,
       dedup as never,
       send as never,
@@ -58,9 +68,10 @@ describe('WhatsappOpenwaWebhookService', () => {
     });
   });
 
-  it('handlePayload routes to bot', async () => {
+  it('handlePayload saves inbound and routes to bot', async () => {
     channels.findByOpenWaSessionId.mockResolvedValue({
       id: 'ch-1',
+      tenantId: 't-1',
       provider: 'openwa',
       botEnabled: true,
     });
@@ -75,8 +86,10 @@ describe('WhatsappOpenwaWebhookService', () => {
         isGroup: false,
       },
     });
+    expect(messages.appendInbound).toHaveBeenCalled();
     expect(bot.handleInbound).toHaveBeenCalledWith(
       expect.objectContaining({ id: 'ch-1' }),
+      expect.objectContaining({ id: 'conv-1' }),
       '923001234567',
       'hi',
     );
