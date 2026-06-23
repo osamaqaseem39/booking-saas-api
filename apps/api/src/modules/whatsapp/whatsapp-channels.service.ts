@@ -349,11 +349,32 @@ export class WhatsappChannelsService {
     if (digits.length < 10) {
       throw new BadRequestException('toWaId must be a WhatsApp phone number');
     }
-    await this.send.sendForChannel(
-      channel,
-      digits,
-      'Velay WhatsApp test — your number is connected.',
-    );
+    if ((channel.provider ?? 'meta') === 'openwa') {
+      this.assertOpenWaReachable(channel);
+    }
+    try {
+      await this.send.sendForChannel(
+        channel,
+        digits,
+        'Velay WhatsApp test — your number is connected.',
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'WhatsApp send failed';
+      throw new BadRequestException(msg);
+    }
     return { ok: true };
+  }
+
+  private assertOpenWaReachable(channel: WhatsappChannel): void {
+    const base =
+      channel.openwaApiBaseUrl?.trim() ||
+      process.env.OPENWA_BASE_URL?.trim() ||
+      'http://localhost:2785';
+    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(base);
+    if (isLocal && resolveApiPublicBaseUrl()) {
+      throw new BadRequestException(
+        'Production API cannot reach local OpenWA. Set a public OpenWA URL on this channel (ngrok/cloudflared), or call test from a local API.',
+      );
+    }
   }
 }

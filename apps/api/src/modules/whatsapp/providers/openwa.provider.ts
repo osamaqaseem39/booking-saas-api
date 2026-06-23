@@ -30,18 +30,25 @@ export class OpenwaProvider {
     body: string;
   }): Promise<void> {
     const apiKey = this.resolveApiKey(input.accessToken);
-    const url = `${this.baseUrl(input.apiBaseUrl)}/api/sessions/${encodeURIComponent(input.sessionId)}/messages/send-text`;
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'X-API-Key': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        chatId: toOpenWaChatId(input.toWaId),
-        text: input.body,
-      }),
-    });
+    const base = this.baseUrl(input.apiBaseUrl);
+    const url = `${base}/api/sessions/${encodeURIComponent(input.sessionId)}/messages/send-text`;
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          chatId: toOpenWaChatId(input.toWaId),
+          text: input.body,
+        }),
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'network error';
+      throw new Error(`OpenWA unreachable at ${base}: ${detail}`);
+    }
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
       const summary = detail.slice(0, 400);
