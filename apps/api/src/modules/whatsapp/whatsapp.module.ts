@@ -13,6 +13,7 @@ import { WhatsappMessage } from './entities/whatsapp-message.entity';
 import { WhatsappProcessedMessage } from './entities/whatsapp-processed-message.entity';
 import { WhatsappBookingService } from './whatsapp-booking.service';
 import { WhatsappBotService } from './whatsapp-bot.service';
+import { WhatsappQaService } from './whatsapp-qa.service';
 import { WhatsappChannelsController } from './whatsapp-channels.controller';
 import { WhatsappChannelsService } from './whatsapp-channels.service';
 import { WhatsappConversationsService } from './whatsapp-conversations.service';
