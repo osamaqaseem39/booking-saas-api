@@ -38,6 +38,7 @@ import {
 } from '../state/tournament-state.machine';
 import { TournamentAuditService } from './tournament-audit.service';
 import { FixtureGenerationService } from './fixture-generation.service';
+import { KnockoutBracketService } from './knockout-bracket.service';
 
 export type TournamentRow = {
   id: string;
@@ -92,6 +93,7 @@ export class TournamentsService {
     private readonly locations: Repository<BusinessLocation>,
     private readonly audit: TournamentAuditService,
     private readonly fixtureGen: FixtureGenerationService,
+    private readonly knockoutBracket: KnockoutBracketService,
   ) {}
 
   private toRow(t: Tournament, blueprint?: unknown): TournamentRow {
@@ -485,6 +487,31 @@ export class TournamentsService {
   async resetStage(tenantId: string, id: string, stageOrder: number) {
     await this.findTournament(tenantId, id);
     return this.fixtureGen.resetStage(id, stageOrder);
+  }
+
+  async generateKnockoutRound(tenantId: string, id: string, stageOrder: number) {
+    await this.findTournament(tenantId, id);
+    return this.fixtureGen.generateKnockoutRound(id, stageOrder);
+  }
+
+  async getKnockoutRoundStatus(tenantId: string, id: string) {
+    await this.findTournament(tenantId, id);
+    const knockoutStages = await this.stages.find({
+      where: { tournamentId: id, stageType: 'knockout', deletedAt: IsNull() },
+      order: { order: 'ASC' },
+    });
+    if (knockoutStages.length === 0) {
+      return { stages: [] };
+    }
+    const stages = [];
+    for (const stage of knockoutStages) {
+      stages.push({
+        ...(await this.knockoutBracket.getRoundStatus(id, stage.id)),
+        stageOrder: stage.order,
+        stageName: stage.name,
+      });
+    }
+    return { stages };
   }
 
   async swapGroupTeams(

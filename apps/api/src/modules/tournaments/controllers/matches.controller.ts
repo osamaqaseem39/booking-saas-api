@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -38,6 +39,15 @@ export class MatchesController {
       throw new UnauthorizedException('Valid X-Tenant-Id required');
     }
     return id;
+  }
+
+  @Get(':id')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  get(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.matchesService.get(this.tenantId(tenant), id);
   }
 
   @Patch(':id/schedule')

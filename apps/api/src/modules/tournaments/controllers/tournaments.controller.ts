@@ -299,6 +299,29 @@ export class TournamentsController {
     return this.tournamentsService.getKnockoutResults(this.tenantId(tenant), id);
   }
 
+  @Get('tournaments/:id/knockout-round-status')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  knockoutRoundStatus(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tournamentsService.getKnockoutRoundStatus(this.tenantId(tenant), id);
+  }
+
+  @Post('tournaments/:id/knockout/generate-round/:stageOrder')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  generateKnockoutRound(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('stageOrder', ParseIntPipe) stageOrder: number,
+  ) {
+    return this.tournamentsService.generateKnockoutRound(
+      this.tenantId(tenant),
+      id,
+      stageOrder,
+    );
+  }
+
   @Get('tournaments/:id/bracket')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
   bracket(

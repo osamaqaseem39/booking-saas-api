@@ -11,6 +11,7 @@ import { TournamentMatch } from '../entities/tournament-match.entity';
 import { Tournament } from '../entities/tournament.entity';
 import { Standing } from '../entities/standing.entity';
 import { TournamentGroup } from '../entities/tournament-group.entity';
+import { Team } from '../entities/team.entity';
 import {
   ScheduleMatchDto,
   SubmitScoreDto,
@@ -26,6 +27,7 @@ import {
 import { DEFAULT_STANDINGS_RULES } from '../types/tournament.types';
 import { TournamentAuditService } from './tournament-audit.service';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
+import { TournamentFixture } from '../entities/tournament-fixture.entity';
 import { TournamentMatchBookingService } from './tournament-match-booking.service';
 import { KnockoutBracketService } from './knockout-bracket.service';
 import { normalizeCourtKind } from '../utils/court-kind.util';
@@ -49,10 +51,70 @@ export class MatchesService {
     private readonly configs: Repository<TournamentConfigVersion>,
     @InjectRepository(TournamentStage)
     private readonly stages: Repository<TournamentStage>,
+    @InjectRepository(TournamentFixture)
+    private readonly fixtures: Repository<TournamentFixture>,
+    @InjectRepository(Team)
+    private readonly teams: Repository<Team>,
     private readonly audit: TournamentAuditService,
     private readonly matchBooking: TournamentMatchBookingService,
     private readonly knockoutBracket: KnockoutBracketService,
   ) {}
+
+  async get(tenantId: string, matchId: string) {
+    const match = await this.findMatch(tenantId, matchId);
+    const tournament = await this.tournaments.findOne({
+      where: { id: match.tournamentId, tenantId },
+    });
+    if (!tournament) throw new NotFoundException('Match not found');
+
+    const stage = await this.stages.findOne({ where: { id: match.stageId } });
+    let groupName: string | null = null;
+    if (match.groupId) {
+      const group = await this.groups.findOne({ where: { id: match.groupId } });
+      groupName = group?.name ?? null;
+    }
+
+    const teamIds = [match.homeTeamId, match.awayTeamId].filter(
+      (id): id is string => Boolean(id),
+    );
+    const teams =
+      teamIds.length > 0
+        ? await this.teams.find({ where: { id: In(teamIds) } })
+        : [];
+    const teamNames = new Map(teams.map((t) => [t.id, t.name]));
+
+    const fixture = await this.fixtures.findOne({ where: { matchId: match.id } });
+
+    return {
+      id: match.id,
+      tournamentId: match.tournamentId,
+      tournamentName: tournament.name,
+      stageId: match.stageId,
+      stageName: stage?.name ?? null,
+      stageType: stage?.stageType ?? null,
+      groupId: match.groupId ?? null,
+      groupName,
+      round: fixture?.round ?? null,
+      status: match.status,
+      scheduledAt: match.scheduledAt?.toISOString() ?? null,
+      venueId: match.venueId ?? null,
+      courtKind: match.courtKind ?? null,
+      courtId: match.courtId ?? null,
+      homeTeamId: match.homeTeamId ?? null,
+      awayTeamId: match.awayTeamId ?? null,
+      homeTeamName: match.homeTeamId
+        ? (teamNames.get(match.homeTeamId) ?? null)
+        : null,
+      awayTeamName: match.awayTeamId
+        ? (teamNames.get(match.awayTeamId) ?? null)
+        : null,
+      homeScore: match.homeScore ?? null,
+      awayScore: match.awayScore ?? null,
+      version: match.version,
+      createdAt: match.createdAt.toISOString(),
+      updatedAt: match.updatedAt.toISOString(),
+    };
+  }
 
   async schedule(
     tenantId: string,
@@ -192,7 +254,6 @@ export class MatchesService {
     if (match.groupId) {
       await this.recomputeGroupStandings(match.groupId, tenantId);
     } else {
-      await this.knockoutBracket.advanceFromMatch(match);
       await this.knockoutBracket.tryCompleteKnockoutStage(
         match.stageId,
         match.tournamentId,
@@ -227,7 +288,6 @@ export class MatchesService {
     if (match.groupId) {
       await this.recomputeGroupStandings(match.groupId, tenantId);
     } else {
-      await this.knockoutBracket.advanceFromMatch(match);
       await this.knockoutBracket.tryCompleteKnockoutStage(
         match.stageId,
         match.tournamentId,

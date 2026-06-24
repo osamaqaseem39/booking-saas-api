@@ -1,11 +1,17 @@
-import { Injectable } from '@nestjs/common';
+import { ConflictException, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, In, IsNull, Not, Repository } from 'typeorm';
 import { BracketNode } from '../entities/bracket-node.entity';
+import { TournamentFixture } from '../entities/tournament-fixture.entity';
 import { TournamentMatch } from '../entities/tournament-match.entity';
 import { TournamentStage } from '../entities/tournament-stage.entity';
 import { Tournament } from '../entities/tournament.entity';
-import { resolveMatchWinner } from '../engines/knockout-result.engine';
+import {
+  findNextKnockoutRoundToGenerate,
+  isKnockoutRoundComplete,
+  resolveKnockoutFeederTeam,
+} from '../engines/knockout-round.engine';
+import { TOURNAMENT_ERROR_CODES } from '../types/tournament.types';
 
 @Injectable()
 export class KnockoutBracketService {
@@ -18,39 +24,147 @@ export class KnockoutBracketService {
     private readonly stages: Repository<TournamentStage>,
     @InjectRepository(Tournament)
     private readonly tournaments: Repository<Tournament>,
+    @InjectRepository(TournamentFixture)
+    private readonly fixtures: Repository<TournamentFixture>,
   ) {}
 
-  async advanceFromMatch(
-    match: TournamentMatch,
-    manager?: EntityManager,
-  ): Promise<void> {
-    const winnerId = resolveMatchWinner(match);
-    if (!winnerId) return;
-
-    const nodes = manager
-      ? await manager.find(BracketNode, { where: { matchId: match.id } })
-      : await this.bracketNodes.find({ where: { matchId: match.id } });
-    if (nodes.length === 0) return;
-
-    for (const node of nodes) {
-      await this.advanceWinner(
-        match.tournamentId,
-        match.stageId,
-        node,
-        winnerId,
-        manager,
-      );
+  async getRoundStatus(tournamentId: string, stageId: string) {
+    const nodes = await this.bracketNodes.find({
+      where: { stageId },
+      order: { round: 'ASC', slotIndex: 'ASC' },
+    });
+    const matchIds = nodes
+      .map((n) => n.matchId)
+      .filter((id): id is string => Boolean(id));
+    const linkedMatches =
+      matchIds.length > 0
+        ? await this.matches.find({ where: { id: In(matchIds) } })
+        : [];
+    const matchById = new Map(linkedMatches.map((m) => [m.id, m]));
+    const maxRound =
+      nodes.length > 0 ? Math.max(...nodes.map((n) => n.round)) : 0;
+    const rounds = [];
+    for (let round = 1; round <= maxRound; round++) {
+      const roundNodes = nodes.filter((n) => n.round === round);
+      const matchesGenerated = roundNodes.filter((n) => n.matchId).length;
+      const matchesResolved = roundNodes.filter((n) => {
+        if (!n.matchId) return n.isBye && Boolean(n.teamId);
+        const m = matchById.get(n.matchId);
+        return m != null && ['approved', 'walkover'].includes(m.status);
+      }).length;
+      rounds.push({
+        round,
+        pairings: roundNodes.length,
+        matchesGenerated,
+        matchesResolved,
+        isComplete: isKnockoutRoundComplete(round, nodes, matchById),
+      });
     }
+    return {
+      stageId,
+      maxRound,
+      rounds,
+      nextRoundToGenerate: findNextKnockoutRoundToGenerate(nodes, matchById),
+    };
   }
 
-  async advanceByeNode(
-    stageId: string,
+  async generateNextRound(
     tournamentId: string,
-    node: BracketNode,
-    teamId: string,
+    stageId: string,
     manager?: EntityManager,
-  ): Promise<void> {
-    await this.advanceWinner(tournamentId, stageId, node, teamId, manager);
+  ): Promise<{ round: number; matchesCreated: number }> {
+    const nodes = manager
+      ? await manager.find(BracketNode, {
+          where: { stageId },
+          order: { round: 'ASC', slotIndex: 'ASC' },
+        })
+      : await this.bracketNodes.find({
+          where: { stageId },
+          order: { round: 'ASC', slotIndex: 'ASC' },
+        });
+    if (nodes.length === 0) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INVALID_STAGE,
+        message: 'Knockout bracket not found',
+      });
+    }
+
+    const matchIds = nodes
+      .map((n) => n.matchId)
+      .filter((id): id is string => Boolean(id));
+    const linkedMatches =
+      matchIds.length > 0
+        ? manager
+          ? await manager.find(TournamentMatch, { where: { id: In(matchIds) } })
+          : await this.matches.find({ where: { id: In(matchIds) } })
+        : [];
+    const matchById = new Map(linkedMatches.map((m) => [m.id, m]));
+    const nextRound = findNextKnockoutRoundToGenerate(nodes, matchById);
+    if (nextRound == null) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.STAGE_NOT_READY,
+        message: 'No knockout round is ready to generate',
+      });
+    }
+
+    const nodeMap = new Map(
+      nodes.map((n) => [`${n.round}-${n.slotIndex}`, n] as const),
+    );
+    let matchesCreated = 0;
+
+    for (const node of nodes.filter((n) => n.round === nextRound && !n.matchId)) {
+      const homeFeeder = nodeMap.get(`${nextRound - 1}-${node.slotIndex * 2}`);
+      const awayFeeder = nodeMap.get(
+        `${nextRound - 1}-${node.slotIndex * 2 + 1}`,
+      );
+      const homeTeamId = homeFeeder
+        ? resolveKnockoutFeederTeam(homeFeeder, matchById)
+        : null;
+      const awayTeamId = awayFeeder
+        ? resolveKnockoutFeederTeam(awayFeeder, matchById)
+        : null;
+      if (!homeTeamId || !awayTeamId) {
+        throw new ConflictException({
+          code: TOURNAMENT_ERROR_CODES.STAGE_NOT_READY,
+          message: `Round ${nextRound - 1} must be fully resolved before generating round ${nextRound}`,
+        });
+      }
+
+      const match = manager
+        ? await manager.save(TournamentMatch, {
+            tournamentId,
+            stageId,
+            status: 'draft',
+            homeTeamId,
+            awayTeamId,
+          })
+        : await this.matches.save({
+            tournamentId,
+            stageId,
+            status: 'draft',
+            homeTeamId,
+            awayTeamId,
+          });
+      node.matchId = match.id;
+      if (manager) {
+        await manager.save(BracketNode, node);
+        await manager.save(TournamentFixture, {
+          stageId,
+          round: nextRound,
+          matchId: match.id,
+        });
+      } else {
+        await this.bracketNodes.save(node);
+        await this.fixtures.save({
+          stageId,
+          round: nextRound,
+          matchId: match.id,
+        });
+      }
+      matchesCreated++;
+    }
+
+    return { round: nextRound, matchesCreated };
   }
 
   async tryCompleteKnockoutStage(
@@ -80,72 +194,6 @@ export class KnockoutBracketService {
     stage.status = 'completed';
     await this.stages.save(stage);
     await this.tryAutoCompleteTournament(tournamentId);
-  }
-
-  private async advanceWinner(
-    tournamentId: string,
-    stageId: string,
-    sourceNode: BracketNode,
-    winnerTeamId: string,
-    manager?: EntityManager,
-  ): Promise<void> {
-    if (!sourceNode.winnerAdvancesToNodeId) return;
-
-    const parent = manager
-      ? await manager.findOne(BracketNode, {
-          where: { id: sourceNode.winnerAdvancesToNodeId },
-        })
-      : await this.bracketNodes.findOne({
-          where: { id: sourceNode.winnerAdvancesToNodeId },
-        });
-    if (!parent) return;
-
-    const isHomeFeeder = sourceNode.slotIndex % 2 === 0;
-
-    if (!parent.matchId) {
-      const match = manager
-        ? await manager.save(TournamentMatch, {
-            tournamentId,
-            stageId,
-            status: 'draft',
-            homeTeamId: isHomeFeeder ? winnerTeamId : null,
-            awayTeamId: isHomeFeeder ? null : winnerTeamId,
-          })
-        : await this.matches.save({
-            tournamentId,
-            stageId,
-            status: 'draft',
-            homeTeamId: isHomeFeeder ? winnerTeamId : null,
-            awayTeamId: isHomeFeeder ? null : winnerTeamId,
-          });
-      parent.matchId = match.id;
-      parent.teamId = match.homeTeamId ?? winnerTeamId;
-      if (manager) {
-        await manager.save(BracketNode, parent);
-      } else {
-        await this.bracketNodes.save(parent);
-      }
-      return;
-    }
-
-    const existing = manager
-      ? await manager.findOne(TournamentMatch, { where: { id: parent.matchId } })
-      : await this.matches.findOne({ where: { id: parent.matchId } });
-    if (!existing) return;
-
-    if (isHomeFeeder && !existing.homeTeamId) {
-      existing.homeTeamId = winnerTeamId;
-    } else if (!isHomeFeeder && !existing.awayTeamId) {
-      existing.awayTeamId = winnerTeamId;
-    } else {
-      return;
-    }
-
-    if (manager) {
-      await manager.save(TournamentMatch, existing);
-    } else {
-      await this.matches.save(existing);
-    }
   }
 
   private async tryAutoCompleteTournament(tournamentId: string): Promise<void> {

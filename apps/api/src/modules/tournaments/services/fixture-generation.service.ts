@@ -201,6 +201,37 @@ export class FixtureGenerationService {
     return { stageId: stage.id };
   }
 
+  async generateKnockoutRound(
+    tournamentId: string,
+    stageOrder: number,
+  ): Promise<{ stageId: string; round: number; matchesCreated: number }> {
+    const stage = await this.stages.findOne({
+      where: { tournamentId, order: stageOrder },
+    });
+    if (!stage || stage.stageType !== 'knockout') {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INVALID_STAGE,
+        message: 'Knockout stage not found',
+      });
+    }
+    if (stage.status === 'pending' || stage.status === 'generating') {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INVALID_STAGE,
+        message: 'Generate the knockout stage first',
+      });
+    }
+
+    const result = await this.knockoutBracket.generateNextRound(
+      tournamentId,
+      stage.id,
+    );
+    if (stage.status === 'ready') {
+      stage.status = 'in_progress';
+      await this.stages.save(stage);
+    }
+    return { stageId: stage.id, ...result };
+  }
+
   async swapGroupTeams(
     tournamentId: string,
     teamIdA: string,
@@ -464,6 +495,11 @@ export class FixtureGenerationService {
         });
         matchId = match.id;
         count++;
+        await manager.save(TournamentFixture, {
+          stageId: stage.id,
+          round: 1,
+          matchId: match.id,
+        });
       }
       const node = await manager.save(BracketNode, {
         stageId: stage.id,
@@ -484,19 +520,6 @@ export class FixtureGenerationService {
       node.winnerAdvancesToNodeId = parent.id;
       node.parentNodeId = parent.id;
       await manager.save(BracketNode, node);
-    }
-
-    for (const d of drafts) {
-      if (d.round !== 1 || !d.isBye || !d.teamId) continue;
-      const node = saved.get(`1-${d.slotIndex}`);
-      if (!node) continue;
-      await this.knockoutBracket.advanceByeNode(
-        stage.id,
-        tournament.id,
-        node,
-        d.teamId,
-        manager,
-      );
     }
 
     return count;
