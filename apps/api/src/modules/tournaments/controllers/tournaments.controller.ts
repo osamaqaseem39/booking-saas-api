@@ -195,6 +195,21 @@ export class TournamentsController {
     );
   }
 
+  @Patch('tournaments/:id/reopen')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  reopen(
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tournamentsService.transition(
+      this.tenantId(tenant),
+      id,
+      'reopen',
+      this.userId(req),
+    );
+  }
+
   @Patch('tournaments/:id/cancel')
   @Roles('platform-owner', 'business-admin', 'location-admin')
   cancel(

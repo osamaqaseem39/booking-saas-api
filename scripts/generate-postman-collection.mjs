@@ -386,6 +386,7 @@ const collection = {
         req('Close registration', 'PATCH', '/tournaments/{{tournament_id}}/close-registration'),
         req('Start tournament', 'PATCH', '/tournaments/{{tournament_id}}/start'),
         req('Complete tournament', 'PATCH', '/tournaments/{{tournament_id}}/complete'),
+        req('Reopen tournament', 'PATCH', '/tournaments/{{tournament_id}}/reopen'),
         req('Cancel tournament', 'PATCH', '/tournaments/{{tournament_id}}/cancel'),
         req('Generate stage', 'POST', '/tournaments/{{tournament_id}}/generate-stage/1'),
         req('List stages', 'GET', '/tournaments/{{tournament_id}}/stages'),

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, IsNull, Repository } from 'typeorm';
+import { In, IsNull, Not, Repository } from 'typeorm';
 import { Tournament } from '../entities/tournament.entity';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
 import { TournamentStage } from '../entities/tournament-stage.entity';
@@ -250,6 +250,38 @@ export class TournamentsService {
     return this.get(tenantId, id);
   }
 
+  private async assertTournamentReadyToComplete(tournamentId: string): Promise<void> {
+    const incompleteStages = await this.stages.count({
+      where: {
+        tournamentId,
+        deletedAt: IsNull(),
+        status: Not(In(['completed', 'cancelled'])),
+      },
+    });
+    if (incompleteStages > 0) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.STAGE_NOT_READY,
+        message:
+          'All tournament stages must be completed before finishing the tournament',
+      });
+    }
+
+    const openMatches = await this.matches.count({
+      where: {
+        tournamentId,
+        deletedAt: IsNull(),
+        status: Not(In(['approved', 'walkover', 'cancelled'])),
+      },
+    });
+    if (openMatches > 0) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.STAGE_NOT_READY,
+        message:
+          'All matches must be approved, walkovers, or cancelled before finishing',
+      });
+    }
+  }
+
   async transition(
     tenantId: string,
     id: string,
@@ -262,6 +294,10 @@ export class TournamentsService {
       throw new ConflictException('Unknown transition event');
     }
     assertTournamentTransition(t.status as TournamentStatus, next);
+
+    if (event === 'complete') {
+      await this.assertTournamentReadyToComplete(id);
+    }
 
     if (event === 'start') {
       const config = await this.configs.findOne({

@@ -12,7 +12,7 @@ const TOURNAMENT_TRANSITIONS: Record<
   registration_closed: ['ready', 'in_progress', 'cancelled'],
   ready: ['in_progress', 'cancelled'],
   in_progress: ['completed', 'cancelled'],
-  completed: [],
+  completed: ['in_progress'],
   cancelled: [],
 };
 
@@ -62,6 +62,7 @@ export function tournamentEventToStatus(
     mark_ready: 'ready',
     start: 'in_progress',
     complete: 'completed',
+    reopen: 'in_progress',
     cancel: 'cancelled',
   };
   return map[event] ?? null;
