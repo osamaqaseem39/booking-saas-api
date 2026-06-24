@@ -61,6 +61,52 @@ export class WhatsappChannelsService {
     private readonly openwa: OpenwaProvider,
   ) {}
 
+  private channelLocationId(channel: WhatsappChannel): string | null {
+    return channel.locationId ?? channel.defaultLocationId ?? null;
+  }
+
+  private async resolveLocationScope(
+    requesterUserId: string,
+  ): Promise<string | null> {
+    return this.iamService.getLocationAdminConstraint(requesterUserId);
+  }
+
+  private assertChannelInScope(
+    channel: WhatsappChannel,
+    scopeLocationId: string | null,
+  ): void {
+    if (!scopeLocationId) return;
+    if (this.channelLocationId(channel) !== scopeLocationId) {
+      throw new ForbiddenException('This WhatsApp number belongs to another branch');
+    }
+  }
+
+  private async assertBranchHasNoOtherChannel(
+    tenantId: string,
+    locationId: string,
+    excludeChannelId?: string,
+  ): Promise<void> {
+    const qb = this.channels
+      .createQueryBuilder('c')
+      .where('c.tenantId = :tenantId', { tenantId })
+      .andWhere('c.status IN (:...statuses)', {
+        statuses: ['connected', 'paused', 'pending'],
+      })
+      .andWhere(
+        '(c.locationId = :locationId OR c.defaultLocationId = :locationId)',
+        { locationId },
+      );
+    if (excludeChannelId) {
+      qb.andWhere('c.id != :excludeChannelId', { excludeChannelId });
+    }
+    const other = await qb.getOne();
+    if (other) {
+      throw new BadRequestException(
+        'This branch already has a WhatsApp number linked. Disconnect it first or update the existing connection.',
+      );
+    }
+  }
+
   private toRow(channel: WhatsappChannel): WhatsappChannelRow {
     return {
       id: channel.id,
@@ -113,11 +159,25 @@ export class WhatsappChannelsService {
     tenantId: string,
   ): Promise<WhatsappChannelRow[]> {
     await this.assertCanManageTenant(requesterUserId, tenantId);
+    const scopeLocationId = await this.resolveLocationScope(requesterUserId);
     const rows = await this.channels.find({
-      where: { tenantId },
+      where: scopeLocationId
+        ? [
+            { tenantId, locationId: scopeLocationId },
+            { tenantId, defaultLocationId: scopeLocationId },
+          ]
+        : { tenantId },
       order: { createdAt: 'DESC' },
     });
-    return rows.map((r) => this.toRow(r));
+    const seen = new Set<string>();
+    return rows
+      .filter((r) => {
+        if (seen.has(r.id)) return false;
+        seen.add(r.id);
+        if (!scopeLocationId) return true;
+        return this.channelLocationId(r) === scopeLocationId;
+      })
+      .map((r) => this.toRow(r));
   }
 
   async connect(
@@ -138,6 +198,7 @@ export class WhatsappChannelsService {
     },
   ): Promise<WhatsappChannelConnectResult> {
     await this.assertCanManageTenant(requesterUserId, tenantId);
+    const scopeLocationId = await this.resolveLocationScope(requesterUserId);
     const provider = dto.provider ?? 'meta';
     const phoneNumberId = dto.phoneNumberId.trim();
     const accessToken = dto.accessToken.trim();
@@ -152,6 +213,17 @@ export class WhatsappChannelsService {
         'locationId is required so the bot can load courts and create bookings',
       );
     }
+    if (scopeLocationId) {
+      const requested = dto.locationId?.trim() || dto.defaultLocationId?.trim();
+      if (requested && requested !== scopeLocationId) {
+        throw new ForbiddenException(
+          'Location admins can only connect WhatsApp for their own branch',
+        );
+      }
+      dto.locationId = scopeLocationId;
+      dto.defaultLocationId = scopeLocationId;
+    }
+    const branchLocationId = (dto.locationId ?? dto.defaultLocationId)!.trim();
     if (dto.locationId) {
       await this.businessesService.assertLocationBelongsToTenant(
         dto.locationId,
@@ -168,6 +240,11 @@ export class WhatsappChannelsService {
     if (existing && existing.tenantId !== tenantId) {
       throw new BadRequestException('This WhatsApp number is already linked to another business');
     }
+    await this.assertBranchHasNoOtherChannel(
+      tenantId,
+      branchLocationId,
+      existing?.id,
+    );
     const payload = {
       tenantId,
       locationId: dto.locationId ?? null,
@@ -237,10 +314,12 @@ export class WhatsappChannelsService {
     channelId: string,
   ): Promise<{ ok: true; webhookUrl: string }> {
     await this.assertCanManageTenant(requesterUserId, tenantId);
+    const scopeLocationId = await this.resolveLocationScope(requesterUserId);
     const channel = await this.channels.findOne({
       where: { id: channelId, tenantId },
     });
     if (!channel) throw new NotFoundException('WhatsApp channel not found');
+    this.assertChannelInScope(channel, scopeLocationId);
     if ((channel.provider ?? 'meta') !== 'openwa') {
       throw new BadRequestException('Channel is not an OpenWA session');
     }
@@ -263,10 +342,12 @@ export class WhatsappChannelsService {
     },
   ): Promise<WhatsappChannelRow> {
     await this.assertCanManageTenant(requesterUserId, tenantId);
+    const scopeLocationId = await this.resolveLocationScope(requesterUserId);
     const channel = await this.channels.findOne({
       where: { id: channelId, tenantId },
     });
     if (!channel) throw new NotFoundException('WhatsApp channel not found');
+    this.assertChannelInScope(channel, scopeLocationId);
     if (dto.locationId) {
       await this.businessesService.assertLocationBelongsToTenant(
         dto.locationId,
@@ -284,13 +365,31 @@ export class WhatsappChannelsService {
       channel.greetingMessage = dto.greetingMessage?.trim() || null;
     }
     if (dto.locationId !== undefined) {
+      if (scopeLocationId && dto.locationId && dto.locationId !== scopeLocationId) {
+        throw new ForbiddenException(
+          'Location admins cannot move a WhatsApp number to another branch',
+        );
+      }
       channel.locationId = dto.locationId;
       if (dto.defaultLocationId === undefined && dto.locationId) {
         channel.defaultLocationId = dto.locationId;
       }
     }
     if (dto.defaultLocationId !== undefined) {
+      if (
+        scopeLocationId &&
+        dto.defaultLocationId &&
+        dto.defaultLocationId !== scopeLocationId
+      ) {
+        throw new ForbiddenException(
+          'Location admins cannot move a WhatsApp number to another branch',
+        );
+      }
       channel.defaultLocationId = dto.defaultLocationId;
+    }
+    const nextLocationId = this.channelLocationId(channel);
+    if (nextLocationId) {
+      await this.assertBranchHasNoOtherChannel(tenantId, nextLocationId, channel.id);
     }
     if (dto.openwaApiBaseUrl !== undefined) {
       channel.openwaApiBaseUrl = dto.openwaApiBaseUrl?.trim() || null;
@@ -306,10 +405,12 @@ export class WhatsappChannelsService {
     channelId: string,
   ): Promise<WhatsappChannelRow> {
     await this.assertCanManageTenant(requesterUserId, tenantId);
+    const scopeLocationId = await this.resolveLocationScope(requesterUserId);
     const channel = await this.channels.findOne({
       where: { id: channelId, tenantId },
     });
     if (!channel) throw new NotFoundException('WhatsApp channel not found');
+    this.assertChannelInScope(channel, scopeLocationId);
     channel.status = 'disconnected';
     channel.botEnabled = false;
     channel.accessToken = '';
@@ -339,12 +440,14 @@ export class WhatsappChannelsService {
     toWaId: string,
   ): Promise<{ ok: true }> {
     await this.assertCanManageTenant(requesterUserId, tenantId);
+    const scopeLocationId = await this.resolveLocationScope(requesterUserId);
     const channel = await this.channels.findOne({
       where: { id: channelId, tenantId, status: 'connected' },
     });
     if (!channel?.accessToken?.trim()) {
       throw new BadRequestException('Channel is not connected');
     }
+    this.assertChannelInScope(channel, scopeLocationId);
     const digits = toWaId.replace(/\D/g, '');
     if (digits.length < 10) {
       throw new BadRequestException('toWaId must be a WhatsApp phone number');

@@ -346,6 +346,11 @@ export class TournamentsService {
     return this.fixtureGen.generateStage(id, stageOrder);
   }
 
+  async resetStage(tenantId: string, id: string, stageOrder: number) {
+    await this.findTournament(tenantId, id);
+    return this.fixtureGen.resetStage(id, stageOrder);
+  }
+
   async getStages(tenantId: string, tournamentId: string) {
     await this.findTournament(tenantId, tournamentId);
     return this.stages.find({
@@ -366,6 +371,33 @@ export class TournamentsService {
       .getMany();
   }
 
+  private async resolveTeamNames(
+    tournamentId: string,
+    teamIds: string[],
+  ): Promise<Map<string, string>> {
+    const names = new Map<string, string>();
+    if (teamIds.length === 0) return names;
+
+    const teams = await this.teams.find({ where: { id: In(teamIds) } });
+    for (const team of teams) names.set(team.id, team.name);
+
+    const missing = teamIds.filter((id) => !names.has(id));
+    if (missing.length === 0) return names;
+
+    const registrations = await this.registrations.find({
+      where: { tournamentId, teamId: In(missing), deletedAt: IsNull() },
+    });
+    const regTeamIds = registrations.map((r) => r.teamId);
+    if (regTeamIds.length > 0) {
+      const regTeams = await this.teams.find({ where: { id: In(regTeamIds) } });
+      for (const team of regTeams) {
+        if (!names.has(team.id)) names.set(team.id, team.name);
+      }
+    }
+
+    return names;
+  }
+
   async getMatches(tenantId: string, tournamentId: string) {
     await this.findTournament(tenantId, tournamentId);
     const rows = await this.matches.find({
@@ -377,11 +409,7 @@ export class TournamentsService {
       if (m.homeTeamId) teamIds.add(m.homeTeamId);
       if (m.awayTeamId) teamIds.add(m.awayTeamId);
     }
-    const teams =
-      teamIds.size > 0
-        ? await this.teams.find({ where: { id: In([...teamIds]) } })
-        : [];
-    const teamNames = new Map(teams.map((t) => [t.id, t.name]));
+    const teamNames = await this.resolveTeamNames(tournamentId, [...teamIds]);
 
     return rows.map((m) => ({
       id: m.id,
@@ -446,13 +474,31 @@ export class TournamentsService {
         nodes.map((n) => n.teamId).filter((id): id is string => Boolean(id)),
       ),
     ];
-    const teams =
-      teamIds.length > 0
-        ? await this.teams.find({ where: { id: In(teamIds) } })
+    const matchIds = [
+      ...new Set(
+        nodes.map((n) => n.matchId).filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const teamNames = await this.resolveTeamNames(tournamentId, teamIds);
+    const linkedMatches =
+      matchIds.length > 0
+        ? await this.matches.find({ where: { id: In(matchIds) } })
         : [];
-    const teamNames = new Map(teams.map((t) => [t.id, t.name]));
+    const matchById = new Map(linkedMatches.map((m) => [m.id, m]));
+    const matchTeamIds = new Set<string>();
+    for (const m of linkedMatches) {
+      if (m.homeTeamId) matchTeamIds.add(m.homeTeamId);
+      if (m.awayTeamId) matchTeamIds.add(m.awayTeamId);
+    }
+    const matchTeamNames = await this.resolveTeamNames(tournamentId, [
+      ...matchTeamIds,
+    ]);
 
-    return nodes.map((n) => ({
+    return nodes.map((n) => {
+      const match = n.matchId ? matchById.get(n.matchId) : null;
+      const homeTeamId = match?.homeTeamId ?? n.teamId ?? null;
+      const awayTeamId = match?.awayTeamId ?? null;
+      return {
       id: n.id,
       stageId: n.stageId,
       round: n.round,
@@ -460,11 +506,17 @@ export class TournamentsService {
       parentNodeId: n.parentNodeId ?? null,
       teamId: n.teamId ?? null,
       teamName: n.teamId ? (teamNames.get(n.teamId) ?? null) : null,
+      homeTeamId,
+      awayTeamId,
+      homeTeamName: homeTeamId ? (matchTeamNames.get(homeTeamId) ?? null) : null,
+      awayTeamName: awayTeamId ? (matchTeamNames.get(awayTeamId) ?? null) : null,
+      matchStatus: match?.status ?? null,
       isBye: n.isBye,
       winnerAdvancesToNodeId: n.winnerAdvancesToNodeId ?? null,
       matchId: n.matchId ?? null,
       bracketVersion: n.bracketVersion,
-    }));
+    };
+    });
   }
 
   async listPublic(

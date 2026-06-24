@@ -239,6 +239,20 @@ export class TournamentsController {
     );
   }
 
+  @Post('tournaments/:id/reset-stage/:stageOrder')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  resetStage(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('stageOrder', ParseIntPipe) stageOrder: number,
+  ) {
+    return this.tournamentsService.resetStage(
+      this.tenantId(tenant),
+      id,
+      stageOrder,
+    );
+  }
+
   @Get('tournaments/:id/stages')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
   stages(

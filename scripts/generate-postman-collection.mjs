@@ -389,6 +389,7 @@ const collection = {
         req('Reopen tournament', 'PATCH', '/tournaments/{{tournament_id}}/reopen'),
         req('Cancel tournament', 'PATCH', '/tournaments/{{tournament_id}}/cancel'),
         req('Generate stage', 'POST', '/tournaments/{{tournament_id}}/generate-stage/1'),
+        req('Reset stage', 'POST', '/tournaments/{{tournament_id}}/reset-stage/1'),
         req('List stages', 'GET', '/tournaments/{{tournament_id}}/stages'),
         req('List fixtures', 'GET', '/tournaments/{{tournament_id}}/fixtures'),
         req('List matches', 'GET', '/tournaments/{{tournament_id}}/matches'),

@@ -5,6 +5,7 @@ export type BracketNodeDraft = {
   slotIndex: number;
   parentNodeId?: string;
   teamId?: string;
+  awayTeamId?: string;
   isBye: boolean;
   winnerAdvancesToNodeId?: string;
 };
@@ -37,11 +38,17 @@ export function generateKnockoutBracket(
     const away = seeded[size - 1 - i];
     const node = nodes.find((n) => n.round === 1 && n.slotIndex === i);
     if (!node) continue;
-    if (home === '__BYE__' || away === '__BYE__') {
+    if (home === '__BYE__' && away === '__BYE__') {
       node.isBye = true;
-      node.teamId = home !== '__BYE__' ? home : away !== '__BYE__' ? away : undefined;
+    } else if (home === '__BYE__') {
+      node.isBye = true;
+      node.teamId = away;
+    } else if (away === '__BYE__') {
+      node.isBye = true;
+      node.teamId = home;
     } else {
       node.teamId = home;
+      node.awayTeamId = away;
     }
   }
 

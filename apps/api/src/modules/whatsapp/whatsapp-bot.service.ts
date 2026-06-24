@@ -10,6 +10,7 @@ import type {
 import { WhatsappBookingService } from './whatsapp-booking.service';
 import { WhatsappConversationsService } from './whatsapp-conversations.service';
 import { WhatsappMessagesService } from './whatsapp-messages.service';
+import { WhatsappQaService } from './whatsapp-qa.service';
 import { WhatsappSendService } from './whatsapp-send.service';
 
 const SPORTS: Array<{ key: BookingSportType; label: string; n: number }> = [
@@ -122,6 +123,7 @@ export class WhatsappBotService {
     private readonly messages: WhatsappMessagesService,
     private readonly bookings: BookingsService,
     private readonly bookingFlow: WhatsappBookingService,
+    private readonly qa: WhatsappQaService,
     private readonly send: WhatsappSendService,
   ) {}
 
@@ -188,6 +190,16 @@ export class WhatsappBotService {
     if (isMenuCommand(trimmed)) {
       await this.conversations.reset(conv);
       await this.replyText(channel, conv, from, menuText(channel.greetingMessage));
+      return;
+    }
+
+    if (this.qa.shouldAnswerAsFaq(trimmed, conv.step)) {
+      const answer = await this.qa.answerQuery({
+        locationId,
+        question: trimmed,
+        greeting: channel.greetingMessage,
+      });
+      await this.replyText(channel, conv, from, answer);
       return;
     }
 

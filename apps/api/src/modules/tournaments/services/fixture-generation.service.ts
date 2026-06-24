@@ -137,6 +137,68 @@ export class FixtureGenerationService {
     return { stageId: stage.id, matchesCreated };
   }
 
+  async resetStage(
+    tournamentId: string,
+    stageOrder: number,
+  ): Promise<{ stageId: string }> {
+    const stage = await this.stages.findOne({
+      where: { tournamentId, order: stageOrder },
+    });
+    if (!stage) throw new ConflictException('Stage not found');
+    if (stage.status === 'pending' || stage.status === 'generating') {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INVALID_STAGE,
+        message: 'Stage has not been generated yet',
+      });
+    }
+
+    const stageMatches = await this.matches.find({
+      where: { tournamentId, stageId: stage.id, deletedAt: IsNull() },
+    });
+    const hasLockedMatch = stageMatches.some((m) =>
+      ['approved', 'walkover', 'in_progress', 'completed', 'disputed'].includes(
+        m.status,
+      ),
+    );
+    if (hasLockedMatch) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.BRACKET_LOCKED,
+        message: 'Cannot reset a stage after matches have started or finished',
+      });
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      if (stageMatches.length > 0) {
+        const matchIds = stageMatches.map((m) => m.id);
+        await manager
+          .createQueryBuilder()
+          .delete()
+          .from(TournamentFixture)
+          .where('matchId IN (:...matchIds)', { matchIds })
+          .execute();
+        await manager.delete(TournamentMatch, {
+          tournamentId,
+          stageId: stage.id,
+        });
+      }
+      await manager.delete(BracketNode, { stageId: stage.id });
+      if (stage.stageType === 'group') {
+        const groups = await manager.find(TournamentGroup, {
+          where: { stageId: stage.id },
+        });
+        for (const group of groups) {
+          await manager.delete(Standing, { groupId: group.id });
+          await manager.delete(GroupMember, { groupId: group.id });
+        }
+        await manager.delete(TournamentGroup, { stageId: stage.id });
+      }
+      stage.status = 'pending';
+      await manager.save(TournamentStage, stage);
+    });
+
+    return { stageId: stage.id };
+  }
+
   private async generateGroupStage(
     manager: DataSource['manager'],
     tournament: Tournament,
@@ -197,12 +259,13 @@ export class FixtureGenerationService {
 
     for (const d of drafts) {
       let matchId: string | null = null;
-      if (!d.isBye && d.teamId) {
+      if (d.round === 1 && !d.isBye && d.teamId && d.awayTeamId) {
         const match = await manager.save(TournamentMatch, {
           tournamentId: tournament.id,
           stageId: stage.id,
           status: 'draft',
           homeTeamId: d.teamId,
+          awayTeamId: d.awayTeamId,
         });
         matchId = match.id;
         count++;

@@ -54,6 +54,7 @@ import { OpenwaProvider } from './providers/openwa.provider';
     WhatsappMessagesService,
     WhatsappBookingService,
     WhatsappBotService,
+    WhatsappQaService,
     WhatsappWebhookService,
     WhatsappOpenwaWebhookService,
     WhatsappInboundDedupService,

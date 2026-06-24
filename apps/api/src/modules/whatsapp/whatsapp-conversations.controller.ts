@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import type { TenantContext } from '../../tenancy/tenant-context.interface';
 import { Roles } from '../iam/authz/roles.decorator';
@@ -21,6 +21,7 @@ import { RolesGuard } from '../iam/authz/roles.guard';
 import { WhatsappChannel } from './entities/whatsapp-channel.entity';
 import { WhatsappConversation } from './entities/whatsapp-conversation.entity';
 import { WhatsappMessagesService } from './whatsapp-messages.service';
+import { IamService } from '../iam/iam.service';
 
 function assertWorkerKey(key?: string): void {
   const expected = process.env.OPENWA_WORKER_KEY?.trim();
@@ -33,6 +34,7 @@ function assertWorkerKey(key?: string): void {
 export class WhatsappConversationsController {
   constructor(
     private readonly messages: WhatsappMessagesService,
+    private readonly iam: IamService,
     @InjectRepository(WhatsappConversation)
     private readonly convRepo: Repository<WhatsappConversation>,
     @InjectRepository(WhatsappChannel)
@@ -45,6 +47,18 @@ export class WhatsappConversationsController {
     return id;
   }
 
+  private async scopedChannelIds(tenantId: string, userId: string): Promise<string[] | null> {
+    const scopeLocationId = await this.iam.getLocationAdminConstraint(userId);
+    if (!scopeLocationId) return null;
+    const channels = await this.channelRepo.find({ where: { tenantId } });
+    return channels
+      .filter(
+        (c) =>
+          (c.locationId ?? c.defaultLocationId ?? null) === scopeLocationId,
+      )
+      .map((c) => c.id);
+  }
+
   @Get('conversations')
   @UseGuards(RolesGuard)
   @Roles('platform-owner', 'business-admin', 'location-admin')
@@ -54,9 +68,14 @@ export class WhatsappConversationsController {
   ) {
     const tenantId = tenant.tenantId?.trim();
     if (!tenantId) throw new ForbiddenException('Missing tenant');
-    this.uid(req);
+    const userId = this.uid(req);
+    const channelIds = await this.scopedChannelIds(tenantId, userId);
+    if (channelIds !== null && channelIds.length === 0) return [];
     const rows = await this.convRepo.find({
-      where: { tenantId },
+      where:
+        channelIds !== null
+          ? { tenantId, channelId: In(channelIds) }
+          : { tenantId },
       order: { lastMessageAt: 'DESC' },
       take: 50,
     });
@@ -80,9 +99,13 @@ export class WhatsappConversationsController {
   ) {
     const tenantId = tenant.tenantId?.trim();
     if (!tenantId) throw new ForbiddenException('Missing tenant');
-    this.uid(req);
+    const userId = this.uid(req);
     const conv = await this.convRepo.findOne({ where: { id, tenantId } });
     if (!conv) throw new NotFoundException('Conversation not found');
+    const channelIds = await this.scopedChannelIds(tenantId, userId);
+    if (channelIds && !channelIds.includes(conv.channelId)) {
+      throw new NotFoundException('Conversation not found');
+    }
     const rows = await this.messages.listForConversation(id);
     return rows.map((m) => this.messages.toRow(m));
   }
