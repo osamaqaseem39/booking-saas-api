@@ -290,6 +290,15 @@ export class TournamentsController {
     return this.tournamentsService.getStandings(this.tenantId(tenant), id);
   }
 
+  @Get('tournaments/:id/knockout-results')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  knockoutResults(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tournamentsService.getKnockoutResults(this.tenantId(tenant), id);
+  }
+
   @Get('tournaments/:id/bracket')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
   bracket(

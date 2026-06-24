@@ -29,6 +29,7 @@ import { TournamentsService } from './services/tournaments.service';
 import { RegistrationsService } from './services/registrations.service';
 import { MatchesService } from './services/matches.service';
 import { FixtureGenerationService } from './services/fixture-generation.service';
+import { KnockoutBracketService } from './services/knockout-bracket.service';
 import { TournamentAuditService } from './services/tournament-audit.service';
 import { TournamentMatchBookingService } from './services/tournament-match-booking.service';
 
@@ -67,6 +68,7 @@ import { TournamentMatchBookingService } from './services/tournament-match-booki
     RegistrationsService,
     MatchesService,
     FixtureGenerationService,
+    KnockoutBracketService,
     TournamentAuditService,
     TournamentMatchBookingService,
   ],

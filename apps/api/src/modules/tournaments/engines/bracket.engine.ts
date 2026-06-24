@@ -4,6 +4,8 @@ export type BracketNodeDraft = {
   round: number;
   slotIndex: number;
   parentNodeId?: string;
+  parentRound?: number;
+  parentSlotIndex?: number;
   teamId?: string;
   awayTeamId?: string;
   isBye: boolean;
@@ -25,7 +27,12 @@ export function generateKnockoutBracket(
   for (let round = 1; round <= rounds; round++) {
     const matchCount = size / Math.pow(2, round);
     for (let slot = 0; slot < matchCount; slot++) {
-      nodes.push({ round, slotIndex: slot, isBye: false });
+      const draft: BracketNodeDraft = { round, slotIndex: slot, isBye: false };
+      if (round < rounds) {
+        draft.parentRound = round + 1;
+        draft.parentSlotIndex = Math.floor(slot / 2);
+      }
+      nodes.push(draft);
     }
   }
 

@@ -27,6 +27,7 @@ import { DEFAULT_STANDINGS_RULES } from '../types/tournament.types';
 import { TournamentAuditService } from './tournament-audit.service';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
 import { TournamentMatchBookingService } from './tournament-match-booking.service';
+import { KnockoutBracketService } from './knockout-bracket.service';
 import { normalizeCourtKind } from '../utils/court-kind.util';
 
 const DEFAULT_MATCH_DURATION_MINUTES = 60;
@@ -50,6 +51,7 @@ export class MatchesService {
     private readonly stages: Repository<TournamentStage>,
     private readonly audit: TournamentAuditService,
     private readonly matchBooking: TournamentMatchBookingService,
+    private readonly knockoutBracket: KnockoutBracketService,
   ) {}
 
   async schedule(
@@ -189,6 +191,12 @@ export class MatchesService {
     await this.matches.save(match);
     if (match.groupId) {
       await this.recomputeGroupStandings(match.groupId, tenantId);
+    } else {
+      await this.knockoutBracket.advanceFromMatch(match);
+      await this.knockoutBracket.tryCompleteKnockoutStage(
+        match.stageId,
+        match.tournamentId,
+      );
     }
     await this.tryCompleteGroupStage(match.stageId, match.tournamentId);
     return match;
@@ -218,6 +226,12 @@ export class MatchesService {
     await this.matches.save(match);
     if (match.groupId) {
       await this.recomputeGroupStandings(match.groupId, tenantId);
+    } else {
+      await this.knockoutBracket.advanceFromMatch(match);
+      await this.knockoutBracket.tryCompleteKnockoutStage(
+        match.stageId,
+        match.tournamentId,
+      );
     }
     await this.tryCompleteGroupStage(match.stageId, match.tournamentId);
     return match;

@@ -23,6 +23,7 @@ import {
   pickAdvancingTeams,
   type GroupStandingInput,
 } from '../engines/advancement.engine';
+import { KnockoutBracketService } from './knockout-bracket.service';
 
 @Injectable()
 export class FixtureGenerationService {
@@ -48,6 +49,7 @@ export class FixtureGenerationService {
     private readonly bracketNodes: Repository<BracketNode>,
     @InjectRepository(Standing)
     private readonly standings: Repository<Standing>,
+    private readonly knockoutBracket: KnockoutBracketService,
   ) {}
 
   async generateStage(
@@ -447,6 +449,7 @@ export class FixtureGenerationService {
   ): Promise<number> {
     const bracketSize = blueprint.knockout?.bracketSize ?? teamIds.length;
     const drafts = generateKnockoutBracket(teamIds, bracketSize);
+    const saved = new Map<string, BracketNode>();
     let count = 0;
 
     for (const d of drafts) {
@@ -462,7 +465,7 @@ export class FixtureGenerationService {
         matchId = match.id;
         count++;
       }
-      await manager.save(BracketNode, {
+      const node = await manager.save(BracketNode, {
         stageId: stage.id,
         round: d.round,
         slotIndex: d.slotIndex,
@@ -470,7 +473,32 @@ export class FixtureGenerationService {
         isBye: d.isBye,
         matchId,
       });
+      saved.set(`${d.round}-${d.slotIndex}`, node);
     }
+
+    for (const d of drafts) {
+      if (d.parentRound == null || d.parentSlotIndex == null) continue;
+      const node = saved.get(`${d.round}-${d.slotIndex}`);
+      const parent = saved.get(`${d.parentRound}-${d.parentSlotIndex}`);
+      if (!node || !parent) continue;
+      node.winnerAdvancesToNodeId = parent.id;
+      node.parentNodeId = parent.id;
+      await manager.save(BracketNode, node);
+    }
+
+    for (const d of drafts) {
+      if (d.round !== 1 || !d.isBye || !d.teamId) continue;
+      const node = saved.get(`1-${d.slotIndex}`);
+      if (!node) continue;
+      await this.knockoutBracket.advanceByeNode(
+        stage.id,
+        tournament.id,
+        node,
+        d.teamId,
+        manager,
+      );
+    }
+
     return count;
   }
 

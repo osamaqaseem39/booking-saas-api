@@ -31,6 +31,7 @@ import {
   type StructureBlueprint,
 } from '../types/tournament.types';
 import { previewStructure, TOURNAMENT_TEMPLATES } from '../engines/structure.engine';
+import { resolveMatchWinner } from '../engines/knockout-result.engine';
 import {
   assertTournamentTransition,
   tournamentEventToStatus,
@@ -643,6 +644,7 @@ export class TournamentsService {
       const match = n.matchId ? matchById.get(n.matchId) : null;
       const homeTeamId = match?.homeTeamId ?? n.teamId ?? null;
       const awayTeamId = match?.awayTeamId ?? null;
+      const winnerTeamId = match ? resolveMatchWinner(match) : null;
       return {
       id: n.id,
       stageId: n.stageId,
@@ -655,6 +657,12 @@ export class TournamentsService {
       awayTeamId,
       homeTeamName: homeTeamId ? (matchTeamNames.get(homeTeamId) ?? null) : null,
       awayTeamName: awayTeamId ? (matchTeamNames.get(awayTeamId) ?? null) : null,
+      homeScore: match?.homeScore ?? null,
+      awayScore: match?.awayScore ?? null,
+      winnerTeamId,
+      winnerTeamName: winnerTeamId
+        ? (matchTeamNames.get(winnerTeamId) ?? null)
+        : null,
       matchStatus: match?.status ?? null,
       isBye: n.isBye,
       winnerAdvancesToNodeId: n.winnerAdvancesToNodeId ?? null,
@@ -662,6 +670,45 @@ export class TournamentsService {
       bracketVersion: n.bracketVersion,
     };
     });
+  }
+
+  async getKnockoutResults(tenantId: string, tournamentId: string) {
+    const nodes = await this.getBracket(tenantId, tournamentId);
+    if (nodes.length === 0) {
+      return { champion: null, results: [] };
+    }
+    const maxRound = Math.max(...nodes.map((n) => n.round));
+    const results = nodes
+      .filter(
+        (n) =>
+          n.matchId &&
+          n.matchStatus &&
+          ['approved', 'walkover', 'completed'].includes(n.matchStatus),
+      )
+      .map((n) => ({
+        round: n.round,
+        matchId: n.matchId,
+        homeTeamId: n.homeTeamId,
+        homeTeamName: n.homeTeamName,
+        awayTeamId: n.awayTeamId,
+        awayTeamName: n.awayTeamName,
+        homeScore: n.homeScore,
+        awayScore: n.awayScore,
+        winnerTeamId: n.winnerTeamId,
+        winnerTeamName: n.winnerTeamName,
+        matchStatus: n.matchStatus,
+      }))
+      .sort((a, b) => a.round - b.round);
+    const final = results.find((r) => r.round === maxRound && r.winnerTeamId);
+    return {
+      champion: final?.winnerTeamId
+        ? {
+            teamId: final.winnerTeamId,
+            teamName: final.winnerTeamName,
+          }
+        : null,
+      results,
+    };
   }
 
   async listPublic(
