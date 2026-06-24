@@ -21,16 +21,35 @@ export function suggestGroupCount(n: number): number {
 export function generateBalancedGroups(
   n: number,
   requestedGroups?: number,
+  opts?: { minPerGroup?: number; maxPerGroup?: number },
 ): number[] {
   if (n <= 0) throw new Error('INVALID_TEAM_COUNT');
   if (n === 1) return [1];
+
   const g = requestedGroups ?? suggestGroupCount(n);
-  const base = Math.floor(n / g);
-  const remainder = n % g;
-  const sizes: number[] = [];
-  for (let i = 0; i < g; i++) {
-    sizes.push(i < remainder ? base + 1 : base);
+  if (g < 1) throw new Error('INVALID_GROUP_COUNT');
+
+  const min = opts?.minPerGroup ?? 1;
+  const max = opts?.maxPerGroup ?? Math.ceil(n / g);
+  if (min > max) throw new Error('INVALID_GROUP_BOUNDS');
+  if (g * min > n) throw new Error('TOO_FEW_TEAMS');
+  if (g * max < n) throw new Error('TOO_MANY_TEAMS');
+
+  const sizes = new Array<number>(g).fill(min);
+  let remaining = n - g * min;
+  let i = 0;
+  let guard = 0;
+  while (remaining > 0 && guard < g * n) {
+    const room = max - sizes[i];
+    if (room > 0) {
+      const add = Math.min(room, remaining);
+      sizes[i] += add;
+      remaining -= add;
+    }
+    i = (i + 1) % g;
+    guard++;
   }
+  if (remaining > 0) throw new Error('TOO_MANY_TEAMS');
   return sizes;
 }
 
@@ -58,8 +77,19 @@ export function previewStructure(input: {
   structureType: TournamentStructureType;
   advancement?: Record<string, unknown>;
   groupCount?: number;
+  minTeamsPerGroup?: number;
+  maxTeamsPerGroup?: number;
+  matchesPerTeam?: number;
 }): StructureBlueprint {
-  const { teamCount, structureType, advancement, groupCount } = input;
+  const {
+    teamCount,
+    structureType,
+    advancement,
+    groupCount,
+    minTeamsPerGroup,
+    maxTeamsPerGroup,
+    matchesPerTeam,
+  } = input;
 
   if (structureType === 'direct_knockout') {
     const { bracketSize, byeCount } = allocateByes(teamCount);
@@ -79,17 +109,31 @@ export function previewStructure(input: {
     structureType === 'group_plus_knockout' ||
     structureType === 'qualifier_group_knockout'
   ) {
-    const sizes = generateBalancedGroups(teamCount, groupCount);
+    const sizes = generateBalancedGroups(teamCount, groupCount, {
+      minPerGroup: minTeamsPerGroup,
+      maxPerGroup: maxTeamsPerGroup,
+    });
     const groups = sizes.map((size, i) => ({
       name: String.fromCharCode(65 + i),
       size,
     }));
     const maxSize = Math.max(...sizes);
+    const fullRoundRobin = maxSize - 1;
+    const perTeam = Math.min(
+      matchesPerTeam ?? fullRoundRobin,
+      fullRoundRobin,
+    );
     const blueprint: StructureBlueprint = {
       teamCount,
       structureType,
       groups,
-      groupStage: { rounds: maxSize - 1 },
+      groupStage: {
+        rounds: perTeam,
+        matchesPerTeam: perTeam,
+        groupCount: sizes.length,
+        minTeamsPerGroup: minTeamsPerGroup,
+        maxTeamsPerGroup: maxTeamsPerGroup,
+      },
       advancement,
     };
     if (

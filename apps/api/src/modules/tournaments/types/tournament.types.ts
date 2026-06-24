@@ -30,6 +30,12 @@ export const REGISTRATION_STATUSES = [
 ] as const;
 export type RegistrationStatus = (typeof REGISTRATION_STATUSES)[number];
 
+export const ACTIVE_REGISTRATION_STATUSES: RegistrationStatus[] = [
+  'pending',
+  'approved',
+  'waitlisted',
+];
+
 export const MATCH_STATUSES = [
   'draft',
   'scheduled',
@@ -66,7 +72,13 @@ export type StructureBlueprint = {
   teamCount: number;
   structureType: TournamentStructureType;
   groups?: { name: string; size: number }[];
-  groupStage?: { rounds: number };
+  groupStage?: {
+    rounds: number;
+    matchesPerTeam?: number;
+    groupCount?: number;
+    minTeamsPerGroup?: number;
+    maxTeamsPerGroup?: number;
+  };
   knockout?: {
     bracketSize: number;
     byes: number;
@@ -96,6 +108,7 @@ export const DEFAULT_STANDINGS_RULES: StandingsRules = {
 export const TOURNAMENT_ERROR_CODES = {
   TOURNAMENT_INVALID_STATE: 'TOURNAMENT_INVALID_STATE',
   REGISTRATION_CLOSED: 'REGISTRATION_CLOSED',
+  REGISTRATION_FULL: 'REGISTRATION_FULL',
   TEAM_ALREADY_REGISTERED: 'TEAM_ALREADY_REGISTERED',
   REGISTRATION_ALREADY_EXISTS: 'REGISTRATION_ALREADY_EXISTS',
   PAYMENT_NOT_CONFIRMED: 'PAYMENT_NOT_CONFIRMED',

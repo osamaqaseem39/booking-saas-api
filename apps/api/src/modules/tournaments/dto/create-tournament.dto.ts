@@ -75,6 +75,21 @@ export class CreateTournamentDto {
   @IsInt()
   @Min(1)
   groupCount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  minTeamsPerGroup?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxTeamsPerGroup?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  matchesPerTeam?: number;
 }
 
 export class PreviewStructureDto {
@@ -93,6 +108,21 @@ export class PreviewStructureDto {
   @IsInt()
   @Min(1)
   groupCount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  minTeamsPerGroup?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxTeamsPerGroup?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  matchesPerTeam?: number;
 }
 
 export class UpdateTournamentDto {
@@ -148,4 +178,32 @@ export class UpdateTournamentDto {
   @IsInt()
   @Min(1)
   version?: number;
+
+  @IsOptional()
+  @IsIn([...TOURNAMENT_STRUCTURE_TYPES])
+  structureType?: (typeof TOURNAMENT_STRUCTURE_TYPES)[number];
+
+  @IsOptional()
+  @IsObject()
+  advancement?: Record<string, unknown>;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  groupCount?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  minTeamsPerGroup?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  maxTeamsPerGroup?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  matchesPerTeam?: number;
 }

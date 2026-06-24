@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -23,9 +24,11 @@ import {
   UpdateTournamentDto,
 } from '../dto/create-tournament.dto';
 import {
+  ACTIVE_REGISTRATION_STATUSES,
   DEFAULT_STANDINGS_RULES,
   TOURNAMENT_ERROR_CODES,
   type TournamentStatus,
+  type StructureBlueprint,
 } from '../types/tournament.types';
 import { previewStructure, TOURNAMENT_TEMPLATES } from '../engines/structure.engine';
 import {
@@ -141,12 +144,22 @@ export class TournamentsService {
     dto: CreateTournamentDto,
     actorId?: string,
   ): Promise<TournamentRow> {
-    const blueprint = previewStructure({
-      teamCount: dto.maxTeams,
-      structureType: dto.structureType,
-      advancement: dto.advancement,
-      groupCount: dto.groupCount,
-    });
+    let blueprint;
+    try {
+      blueprint = previewStructure({
+        teamCount: dto.maxTeams,
+        structureType: dto.structureType,
+        advancement: dto.advancement,
+        groupCount: dto.groupCount,
+        minTeamsPerGroup: dto.minTeamsPerGroup,
+        maxTeamsPerGroup: dto.maxTeamsPerGroup,
+        matchesPerTeam: dto.matchesPerTeam,
+      });
+    } catch (e) {
+      throw new BadRequestException(
+        e instanceof Error ? e.message : 'Invalid tournament structure',
+      );
+    }
 
     const tournament = await this.tournaments.save({
       tenantId,
@@ -207,10 +220,18 @@ export class TournamentsService {
     actorId?: string,
   ): Promise<TournamentRow> {
     const t = await this.findTournament(tenantId, id);
-    if (t.status !== 'draft') {
+    const limited = t.status === 'in_progress';
+    const editable =
+      t.status === 'draft' ||
+      t.status === 'published' ||
+      t.status === 'registration_open' ||
+      t.status === 'registration_closed' ||
+      t.status === 'ready' ||
+      limited;
+    if (!editable) {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.TOURNAMENT_INVALID_STATE,
-        message: 'Only draft tournaments can be edited',
+        message: 'Tournament settings cannot be edited in this state',
       });
     }
     if (dto.version != null && dto.version !== t.version) {
@@ -220,21 +241,126 @@ export class TournamentsService {
       });
     }
 
+    if (limited) {
+      const restricted = [
+        dto.sport,
+        dto.venueIds,
+        dto.registrationOpensAt,
+        dto.registrationClosesAt,
+        dto.startsAt,
+        dto.maxTeams,
+        dto.entryFeeAmount,
+        dto.structureType,
+        dto.advancement,
+        dto.groupCount,
+        dto.minTeamsPerGroup,
+        dto.maxTeamsPerGroup,
+        dto.matchesPerTeam,
+      ].some((v) => v !== undefined);
+      if (restricted) {
+        throw new ConflictException({
+          code: TOURNAMENT_ERROR_CODES.TOURNAMENT_INVALID_STATE,
+          message:
+            'Only name, rules, and end date can be changed while in progress',
+        });
+      }
+    }
+
+    if (dto.maxTeams != null && !limited) {
+      const activeCount = await this.registrations.count({
+        where: {
+          tournamentId: id,
+          status: In([...ACTIVE_REGISTRATION_STATUSES]),
+          deletedAt: IsNull(),
+        },
+      });
+      if (dto.maxTeams < activeCount) {
+        throw new ConflictException({
+          code: TOURNAMENT_ERROR_CODES.REGISTRATION_FULL,
+          message: `Max teams cannot be below current registrations (${activeCount})`,
+        });
+      }
+    }
+
+    const hasStructureChange =
+      dto.structureType != null ||
+      dto.advancement != null ||
+      dto.groupCount != null ||
+      dto.minTeamsPerGroup != null ||
+      dto.maxTeamsPerGroup != null ||
+      dto.matchesPerTeam != null;
+
+    const stageList = await this.stages.find({
+      where: { tournamentId: id, deletedAt: IsNull() },
+    });
+    const structureLocked = stageList.some((s) => s.status !== 'pending');
+
+    if (hasStructureChange && !limited && structureLocked) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.BRACKET_LOCKED,
+        message: 'Structure cannot be changed after stages are generated',
+      });
+    }
+
     const before = { ...t };
+
     if (dto.name != null) t.name = dto.name;
-    if (dto.sport != null) t.sport = dto.sport;
-    if (dto.venueIds != null) t.venueIds = dto.venueIds;
-    if (dto.registrationOpensAt != null)
-      t.registrationOpensAt = new Date(dto.registrationOpensAt);
-    if (dto.registrationClosesAt != null)
-      t.registrationClosesAt = new Date(dto.registrationClosesAt);
-    if (dto.startsAt != null) t.startsAt = new Date(dto.startsAt);
+    if (!limited) {
+      if (dto.sport != null) t.sport = dto.sport;
+      if (dto.venueIds != null) t.venueIds = dto.venueIds;
+      if (dto.registrationOpensAt != null)
+        t.registrationOpensAt = new Date(dto.registrationOpensAt);
+      if (dto.registrationClosesAt != null)
+        t.registrationClosesAt = new Date(dto.registrationClosesAt);
+      if (dto.startsAt != null) t.startsAt = new Date(dto.startsAt);
+      if (dto.maxTeams != null) t.maxTeams = dto.maxTeams;
+      if (dto.entryFeeAmount != null)
+        t.entryFeeAmount = String(dto.entryFeeAmount);
+    }
     if (dto.endsAt != null) t.endsAt = new Date(dto.endsAt);
-    if (dto.maxTeams != null) t.maxTeams = dto.maxTeams;
-    if (dto.entryFeeAmount != null)
-      t.entryFeeAmount = String(dto.entryFeeAmount);
     if (dto.rules != null) t.rules = dto.rules;
     if (dto.prizePool != null) t.prizePool = dto.prizePool;
+
+    if (
+      (hasStructureChange || dto.maxTeams != null) &&
+      !limited &&
+      !structureLocked &&
+      t.currentConfigVersionId
+    ) {
+      const config = await this.configs.findOne({
+        where: { id: t.currentConfigVersionId },
+      });
+      if (config) {
+        const existing = config.structureBlueprint as StructureBlueprint;
+        const advancement =
+          dto.advancement ??
+          (config.advancementRules?.[0] as Record<string, unknown> | undefined);
+        let blueprint;
+        try {
+          blueprint = previewStructure({
+            teamCount: dto.maxTeams ?? t.maxTeams,
+            structureType: dto.structureType ?? t.structureType,
+            advancement,
+            groupCount: dto.groupCount ?? existing.groupStage?.groupCount,
+            minTeamsPerGroup:
+              dto.minTeamsPerGroup ?? existing.groupStage?.minTeamsPerGroup,
+            maxTeamsPerGroup:
+              dto.maxTeamsPerGroup ?? existing.groupStage?.maxTeamsPerGroup,
+            matchesPerTeam:
+              dto.matchesPerTeam ?? existing.groupStage?.matchesPerTeam,
+          });
+        } catch (e) {
+          throw new BadRequestException(
+            e instanceof Error ? e.message : 'Invalid tournament structure',
+          );
+        }
+        config.structureBlueprint = blueprint;
+        if (dto.advancement) config.advancementRules = [dto.advancement];
+        await this.configs.save(config);
+        if (dto.structureType != null) t.structureType = dto.structureType;
+      }
+    }
+
     t.version += 1;
     await this.tournaments.save(t);
 
@@ -329,12 +455,21 @@ export class TournamentsService {
   }
 
   previewStructure(dto: PreviewStructureDto) {
-    return previewStructure({
-      teamCount: dto.teamCount,
-      structureType: dto.structureType,
-      advancement: dto.advancement,
-      groupCount: dto.groupCount,
-    });
+    try {
+      return previewStructure({
+        teamCount: dto.teamCount,
+        structureType: dto.structureType,
+        advancement: dto.advancement,
+        groupCount: dto.groupCount,
+        minTeamsPerGroup: dto.minTeamsPerGroup,
+        maxTeamsPerGroup: dto.maxTeamsPerGroup,
+        matchesPerTeam: dto.matchesPerTeam,
+      });
+    } catch (e) {
+      throw new BadRequestException(
+        e instanceof Error ? e.message : 'Invalid tournament structure',
+      );
+    }
   }
 
   getTemplates() {
@@ -349,6 +484,16 @@ export class TournamentsService {
   async resetStage(tenantId: string, id: string, stageOrder: number) {
     await this.findTournament(tenantId, id);
     return this.fixtureGen.resetStage(id, stageOrder);
+  }
+
+  async swapGroupTeams(
+    tenantId: string,
+    tournamentId: string,
+    teamIdA: string,
+    teamIdB: string,
+  ) {
+    await this.findTournament(tenantId, tournamentId);
+    return this.fixtureGen.swapGroupTeams(tournamentId, teamIdA, teamIdB);
   }
 
   async getStages(tenantId: string, tournamentId: string) {
@@ -576,6 +721,13 @@ export class TournamentsService {
     const approvedTeamsCount = await this.registrations.count({
       where: { tournamentId: t.id, status: 'approved' as const, deletedAt: IsNull() },
     });
+    const activeTeamsCount = await this.registrations.count({
+      where: {
+        tournamentId: t.id,
+        status: In(['pending', 'approved', 'waitlisted']),
+        deletedAt: IsNull(),
+      },
+    });
     const venueNames: string[] = [];
     if (t.venueIds?.length) {
       const locs = await this.locations.find({
@@ -597,7 +749,8 @@ export class TournamentsService {
       endsAt: t.endsAt?.toISOString() ?? null,
       maxTeams: t.maxTeams,
       approvedTeamsCount,
-      spotsRemaining: Math.max(0, t.maxTeams - approvedTeamsCount),
+      activeTeamsCount,
+      spotsRemaining: Math.max(0, t.maxTeams - activeTeamsCount),
       entryFeeAmount:
         t.entryFeeAmount != null ? Number(t.entryFeeAmount) : null,
       entryFeeCurrency: t.entryFeeCurrency,

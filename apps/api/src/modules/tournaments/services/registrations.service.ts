@@ -11,7 +11,10 @@ import { TournamentRegistration } from '../entities/tournament-registration.enti
 import { Team } from '../entities/team.entity';
 import { TeamMember } from '../entities/team-member.entity';
 import { RegisterTeamDto } from '../dto/register-team.dto';
-import { TOURNAMENT_ERROR_CODES } from '../types/tournament.types';
+import {
+  ACTIVE_REGISTRATION_STATUSES,
+  TOURNAMENT_ERROR_CODES,
+} from '../types/tournament.types';
 import { TournamentAuditService } from './tournament-audit.service';
 
 @Injectable()
@@ -87,9 +90,13 @@ export class RegistrationsService {
       }
     }
 
-    const approvedCount = await this.registrations.count({
-      where: { tournamentId, status: 'approved' as const, deletedAt: IsNull() },
-    });
+    const activeCount = await this.countActiveRegistrations(tournamentId);
+    if (activeCount >= tournament.maxTeams) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.REGISTRATION_FULL,
+        message: 'Tournament is full',
+      });
+    }
 
     let team: Team;
     if (dto.teamId) {
@@ -126,12 +133,11 @@ export class RegistrationsService {
       });
     }
 
-    const atCapacity = approvedCount >= tournament.maxTeams;
     const reg = await this.registrations.save({
       tournamentId,
       teamId: team.id,
-      status: atCapacity ? 'waitlisted' : 'pending',
-      waitlistPosition: atCapacity ? approvedCount + 1 : null,
+      status: 'pending',
+      waitlistPosition: null,
       idempotencyKey: idempotencyKey ?? null,
       paymentStatus:
         tournament.entryFeeAmount && Number(tournament.entryFeeAmount) > 0
@@ -167,6 +173,22 @@ export class RegistrationsService {
         code: TOURNAMENT_ERROR_CODES.PAYMENT_NOT_CONFIRMED,
         message: 'Entry fee must be paid before approval',
       });
+    }
+
+    if (reg.status !== 'approved') {
+      const approvedCount = await this.registrations.count({
+        where: {
+          tournamentId: reg.tournamentId,
+          status: 'approved' as const,
+          deletedAt: IsNull(),
+        },
+      });
+      if (approvedCount >= tournament.maxTeams) {
+        throw new ConflictException({
+          code: TOURNAMENT_ERROR_CODES.REGISTRATION_FULL,
+          message: 'Tournament is full',
+        });
+      }
     }
 
     reg.status = 'approved';
@@ -290,6 +312,16 @@ export class RegistrationsService {
       },
       team: { id: team.id, name: team.name },
     };
+  }
+
+  private countActiveRegistrations(tournamentId: string) {
+    return this.registrations.count({
+      where: {
+        tournamentId,
+        status: In([...ACTIVE_REGISTRATION_STATUSES]),
+        deletedAt: IsNull(),
+      },
+    });
   }
 
   private async findRegistration(tenantId: string, id: string) {

@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, IsNull, LessThan, Not, Repository } from 'typeorm';
 import { BracketNode } from '../entities/bracket-node.entity';
@@ -199,6 +199,193 @@ export class FixtureGenerationService {
     return { stageId: stage.id };
   }
 
+  async swapGroupTeams(
+    tournamentId: string,
+    teamIdA: string,
+    teamIdB: string,
+  ): Promise<{ groupIdA: string; groupIdB: string }> {
+    if (teamIdA === teamIdB) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INVALID_STAGE,
+        message: 'Cannot swap a team with itself',
+      });
+    }
+
+    const memberA = await this.groupMembers.findOne({
+      where: { teamId: teamIdA },
+    });
+    const memberB = await this.groupMembers.findOne({
+      where: { teamId: teamIdB },
+    });
+    if (!memberA || !memberB) {
+      throw new NotFoundException('One or both teams are not in a group');
+    }
+    if (memberA.groupId === memberB.groupId) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INVALID_STAGE,
+        message: 'Pick a team from a different group',
+      });
+    }
+
+    const groupA = await this.groups.findOne({ where: { id: memberA.groupId } });
+    const groupB = await this.groups.findOne({ where: { id: memberB.groupId } });
+    if (!groupA || !groupB || groupA.stageId !== groupB.stageId) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INVALID_STAGE,
+        message: 'Teams must belong to the same group stage',
+      });
+    }
+
+    const stage = await this.stages.findOne({ where: { id: groupA.stageId } });
+    if (!stage || stage.tournamentId !== tournamentId) {
+      throw new NotFoundException('Group stage not found');
+    }
+    if (stage.stageType !== 'group') {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INVALID_STAGE,
+        message: 'Not a group stage',
+      });
+    }
+
+    await this.assertStageUnlocked(tournamentId, stage.id);
+
+    const tournament = await this.tournaments.findOne({
+      where: { id: tournamentId, deletedAt: IsNull() },
+    });
+    if (!tournament?.currentConfigVersionId) {
+      throw new NotFoundException('Tournament config missing');
+    }
+    const config = await this.configs.findOne({
+      where: { id: tournament.currentConfigVersionId },
+    });
+    const blueprint = config?.structureBlueprint as StructureBlueprint;
+
+    const groupIdA = memberA.groupId;
+    const groupIdB = memberB.groupId;
+
+    await this.dataSource.transaction(async (manager) => {
+      memberA.groupId = groupIdB;
+      memberB.groupId = groupIdA;
+      await manager.save(GroupMember, [memberA, memberB]);
+
+      for (const [teamId, fromGroupId, toGroupId] of [
+        [teamIdA, groupIdA, groupIdB],
+        [teamIdB, groupIdB, groupIdA],
+      ] as const) {
+        await manager.update(
+          Standing,
+          { teamId, groupId: fromGroupId },
+          {
+            groupId: toGroupId,
+            played: 0,
+            won: 0,
+            drawn: 0,
+            lost: 0,
+            goalsFor: 0,
+            goalsAgainst: 0,
+            points: 0,
+            rank: null,
+            tieBreakData: null,
+            manualRankOverride: null,
+          },
+        );
+      }
+
+      await this.regenerateGroupFixtures(
+        manager,
+        tournament,
+        stage,
+        groupIdA,
+        blueprint,
+      );
+      await this.regenerateGroupFixtures(
+        manager,
+        tournament,
+        stage,
+        groupIdB,
+        blueprint,
+      );
+    });
+
+    return { groupIdA, groupIdB };
+  }
+
+  private async assertStageUnlocked(
+    tournamentId: string,
+    stageId: string,
+  ): Promise<void> {
+    const stageMatches = await this.matches.find({
+      where: { tournamentId, stageId, deletedAt: IsNull() },
+    });
+    const hasLockedMatch = stageMatches.some((m) =>
+      ['approved', 'walkover', 'in_progress', 'completed', 'disputed'].includes(
+        m.status,
+      ),
+    );
+    if (hasLockedMatch) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.BRACKET_LOCKED,
+        message: 'Cannot change groups after matches have started or finished',
+      });
+    }
+  }
+
+  private async regenerateGroupFixtures(
+    manager: DataSource['manager'],
+    tournament: Tournament,
+    stage: TournamentStage,
+    groupId: string,
+    blueprint: StructureBlueprint,
+  ): Promise<void> {
+    const groupMatches = await manager.find(TournamentMatch, {
+      where: { tournamentId: tournament.id, stageId: stage.id, groupId },
+    });
+    if (groupMatches.length > 0) {
+      const matchIds = groupMatches.map((m) => m.id);
+      await manager
+        .createQueryBuilder()
+        .delete()
+        .from(TournamentFixture)
+        .where('matchId IN (:...matchIds)', { matchIds })
+        .execute();
+      await manager.delete(TournamentMatch, {
+        tournamentId: tournament.id,
+        stageId: stage.id,
+        groupId,
+      });
+    }
+
+    const members = await manager.find(GroupMember, {
+      where: { groupId },
+      order: { teamId: 'ASC' },
+    });
+    const slice = members.map((m) => m.teamId);
+    if (slice.length < 2) return;
+
+    const matchesPerTeam = blueprint.groupStage?.matchesPerTeam;
+    const maxRounds =
+      matchesPerTeam != null
+        ? Math.min(matchesPerTeam, Math.max(1, slice.length - 1))
+        : undefined;
+    const fixtures = generateRoundRobinFixtures(slice, maxRounds);
+    for (const f of fixtures) {
+      const match = await manager.save(TournamentMatch, {
+        tournamentId: tournament.id,
+        stageId: stage.id,
+        groupId,
+        status: 'draft',
+        homeTeamId: f.homeTeamId,
+        awayTeamId: f.awayTeamId,
+      });
+      await manager.save(TournamentFixture, {
+        stageId: stage.id,
+        groupId,
+        round: f.round,
+        matchId: match.id,
+      });
+    }
+  }
+
   private async generateGroupStage(
     manager: DataSource['manager'],
     tournament: Tournament,
@@ -224,7 +411,12 @@ export class FixtureGenerationService {
         await manager.save(Standing, { groupId: group.id, teamId });
       }
 
-      const fixtures = generateRoundRobinFixtures(slice);
+      const matchesPerTeam = blueprint.groupStage?.matchesPerTeam;
+      const maxRounds =
+        matchesPerTeam != null
+          ? Math.min(matchesPerTeam, Math.max(1, slice.length - 1))
+          : undefined;
+      const fixtures = generateRoundRobinFixtures(slice, maxRounds);
       for (const f of fixtures) {
         const match = await manager.save(TournamentMatch, {
           tournamentId: tournament.id,

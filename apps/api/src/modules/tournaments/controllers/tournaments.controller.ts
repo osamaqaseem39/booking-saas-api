@@ -25,6 +25,7 @@ import {
 import { TournamentsService } from '../services/tournaments.service';
 import { RegistrationsService } from '../services/registrations.service';
 import { RegisterTeamDto } from '../dto/register-team.dto';
+import { SwapGroupTeamsDto } from '../dto/swap-group-teams.dto';
 
 @Controller()
 @UseGuards(RolesGuard)
@@ -313,6 +314,21 @@ export class TournamentsController {
       dto,
       this.userId(req),
       key,
+    );
+  }
+
+  @Post('tournaments/:id/groups/swap-teams')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  swapGroupTeams(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SwapGroupTeamsDto,
+  ) {
+    return this.tournamentsService.swapGroupTeams(
+      this.tenantId(tenant),
+      id,
+      dto.teamIdA,
+      dto.teamIdB,
     );
   }
 
