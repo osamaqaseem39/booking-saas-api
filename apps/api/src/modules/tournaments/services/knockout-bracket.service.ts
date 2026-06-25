@@ -43,7 +43,13 @@ export class KnockoutBracketService {
     const matchById = new Map(linkedMatches.map((m) => [m.id, m]));
     const maxRound =
       nodes.length > 0 ? Math.max(...nodes.map((n) => n.round)) : 0;
-    const rounds = [];
+    const rounds: {
+      round: number;
+      pairings: number;
+      matchesGenerated: number;
+      matchesResolved: number;
+      isComplete: boolean;
+    }[] = [];
     for (let round = 1; round <= maxRound; round++) {
       const roundNodes = nodes.filter((n) => n.round === round);
       const matchesGenerated = roundNodes.filter((n) => n.matchId).length;

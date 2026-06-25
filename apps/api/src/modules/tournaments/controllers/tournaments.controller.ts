@@ -26,6 +26,7 @@ import { TournamentsService } from '../services/tournaments.service';
 import { RegistrationsService } from '../services/registrations.service';
 import { RegisterTeamDto } from '../dto/register-team.dto';
 import { SwapGroupTeamsDto } from '../dto/swap-group-teams.dto';
+import { GenerateStageOptionsDto } from '../dto/generate-stage-options.dto';
 
 @Controller()
 @UseGuards(RolesGuard)
@@ -232,7 +233,15 @@ export class TournamentsController {
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
     @Param('stageOrder', ParseIntPipe) stageOrder: number,
+    @Body() body?: GenerateStageOptionsDto,
   ) {
+    if (body?.knockoutNextRound) {
+      return this.tournamentsService.generateKnockoutRound(
+        this.tenantId(tenant),
+        id,
+        stageOrder,
+      );
+    }
     return this.tournamentsService.generateStage(
       this.tenantId(tenant),
       id,
@@ -306,6 +315,20 @@ export class TournamentsController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.tournamentsService.getKnockoutRoundStatus(this.tenantId(tenant), id);
+  }
+
+  @Post('tournaments/:id/generate-knockout-round/:stageOrder')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  generateKnockoutRoundFlat(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('stageOrder', ParseIntPipe) stageOrder: number,
+  ) {
+    return this.tournamentsService.generateKnockoutRound(
+      this.tenantId(tenant),
+      id,
+      stageOrder,
+    );
   }
 
   @Post('tournaments/:id/knockout/generate-round/:stageOrder')

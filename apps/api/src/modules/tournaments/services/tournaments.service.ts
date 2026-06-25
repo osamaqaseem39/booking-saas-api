@@ -503,7 +503,20 @@ export class TournamentsService {
     if (knockoutStages.length === 0) {
       return { stages: [] };
     }
-    const stages = [];
+    const stages: {
+      stageId: string;
+      maxRound: number;
+      rounds: {
+        round: number;
+        pairings: number;
+        matchesGenerated: number;
+        matchesResolved: number;
+        isComplete: boolean;
+      }[];
+      nextRoundToGenerate: number | null;
+      stageOrder: number;
+      stageName: string;
+    }[] = [];
     for (const stage of knockoutStages) {
       stages.push({
         ...(await this.knockoutBracket.getRoundStatus(id, stage.id)),
