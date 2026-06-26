@@ -7,6 +7,7 @@ import { Business } from '../businesses/entities/business.entity';
 import { Team } from './entities/team.entity';
 import { TeamMember } from './entities/team-member.entity';
 import { Tournament } from './entities/tournament.entity';
+import { TournamentDivision } from './entities/tournament-division.entity';
 import { TournamentConfigVersion } from './entities/tournament-config-version.entity';
 import { TournamentStage } from './entities/tournament-stage.entity';
 import { TournamentRegistration } from './entities/tournament-registration.entity';
@@ -43,6 +44,7 @@ import { TournamentMatchBookingService } from './services/tournament-match-booki
       Team,
       TeamMember,
       Tournament,
+      TournamentDivision,
       TournamentConfigVersion,
       TournamentStage,
       TournamentRegistration,

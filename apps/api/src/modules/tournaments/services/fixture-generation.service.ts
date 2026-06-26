@@ -9,7 +9,7 @@ import { TournamentGroup } from '../entities/tournament-group.entity';
 import { TournamentMatch } from '../entities/tournament-match.entity';
 import { TournamentRegistration } from '../entities/tournament-registration.entity';
 import { TournamentStage } from '../entities/tournament-stage.entity';
-import { Tournament } from '../entities/tournament.entity';
+import { TournamentDivision } from '../entities/tournament-division.entity';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
 import { generateKnockoutBracket } from '../engines/bracket.engine';
 import { generateRoundRobinFixtures } from '../engines/fixture.engine';
@@ -29,8 +29,8 @@ import { KnockoutBracketService } from './knockout-bracket.service';
 export class FixtureGenerationService {
   constructor(
     private readonly dataSource: DataSource,
-    @InjectRepository(Tournament)
-    private readonly tournaments: Repository<Tournament>,
+    @InjectRepository(TournamentDivision)
+    private readonly divisions: Repository<TournamentDivision>,
     @InjectRepository(TournamentStage)
     private readonly stages: Repository<TournamentStage>,
     @InjectRepository(TournamentConfigVersion)
@@ -53,18 +53,18 @@ export class FixtureGenerationService {
   ) {}
 
   async generateStage(
-    tournamentId: string,
+    divisionId: string,
     stageOrder: number,
   ): Promise<{ stageId: string; matchesCreated: number }> {
     const tournament = await this.tournaments.findOne({
-      where: { id: tournamentId, deletedAt: IsNull() },
+      where: { id: divisionId, deletedAt: IsNull() },
     });
     if (!tournament?.currentConfigVersionId) {
       throw new Error('Tournament config missing');
     }
 
     const stage = await this.stages.findOne({
-      where: { tournamentId, order: stageOrder },
+      where: { divisionId, order: stageOrder },
     });
     if (!stage) throw new Error('Stage not found');
 
@@ -76,7 +76,7 @@ export class FixtureGenerationService {
     const blueprint = config.structureBlueprint as StructureBlueprint;
     const approved = await this.registrations.find({
       where: {
-        tournamentId,
+        divisionId,
         status: 'approved' as const,
       },
     });
@@ -85,16 +85,16 @@ export class FixtureGenerationService {
     if (stage.stageType === 'knockout' && blueprint.knockout) {
       const prevGroup = await this.stages.findOne({
         where: {
-          tournamentId,
+          divisionId,
           stageType: 'group',
           order: LessThan(stageOrder),
         },
         order: { order: 'DESC' },
       });
       if (prevGroup) {
-        await this.assertGroupStageComplete(tournamentId, prevGroup.id);
+        await this.assertGroupStageComplete(divisionId, prevGroup.id);
         teamIds = await this.resolveAdvancingTeamIds(
-          tournamentId,
+          divisionId,
           prevGroup.id,
           blueprint,
           (config.standingsRules as StandingsRules) ?? DEFAULT_STANDINGS_RULES,
@@ -140,11 +140,11 @@ export class FixtureGenerationService {
   }
 
   async resetStage(
-    tournamentId: string,
+    divisionId: string,
     stageOrder: number,
   ): Promise<{ stageId: string }> {
     const stage = await this.stages.findOne({
-      where: { tournamentId, order: stageOrder },
+      where: { divisionId, order: stageOrder },
     });
     if (!stage) throw new ConflictException('Stage not found');
     if (stage.status === 'pending' || stage.status === 'generating') {
@@ -155,7 +155,7 @@ export class FixtureGenerationService {
     }
 
     const stageMatches = await this.matches.find({
-      where: { tournamentId, stageId: stage.id, deletedAt: IsNull() },
+      where: { divisionId, stageId: stage.id, deletedAt: IsNull() },
     });
     const hasLockedMatch = stageMatches.some((m) =>
       ['approved', 'walkover', 'in_progress', 'completed', 'disputed'].includes(
@@ -179,7 +179,7 @@ export class FixtureGenerationService {
           .where('matchId IN (:...matchIds)', { matchIds })
           .execute();
         await manager.delete(TournamentMatch, {
-          tournamentId,
+          divisionId,
           stageId: stage.id,
         });
       }
@@ -202,11 +202,11 @@ export class FixtureGenerationService {
   }
 
   async generateKnockoutRound(
-    tournamentId: string,
+    divisionId: string,
     stageOrder: number,
   ): Promise<{ stageId: string; round: number; matchesCreated: number }> {
     const stage = await this.stages.findOne({
-      where: { tournamentId, order: stageOrder },
+      where: { divisionId, order: stageOrder },
     });
     if (!stage || stage.stageType !== 'knockout') {
       throw new ConflictException({
@@ -222,7 +222,7 @@ export class FixtureGenerationService {
     }
 
     const result = await this.knockoutBracket.generateNextRound(
-      tournamentId,
+      divisionId,
       stage.id,
     );
     if (stage.status === 'ready') {
@@ -233,7 +233,7 @@ export class FixtureGenerationService {
   }
 
   async swapGroupTeams(
-    tournamentId: string,
+    divisionId: string,
     teamIdA: string,
     teamIdB: string,
   ): Promise<{ groupIdA: string; groupIdB: string }> {
@@ -270,7 +270,7 @@ export class FixtureGenerationService {
     }
 
     const stage = await this.stages.findOne({ where: { id: groupA.stageId } });
-    if (!stage || stage.tournamentId !== tournamentId) {
+    if (!stage || stage.divisionId !== divisionId) {
       throw new NotFoundException('Group stage not found');
     }
     if (stage.stageType !== 'group') {
@@ -280,10 +280,10 @@ export class FixtureGenerationService {
       });
     }
 
-    await this.assertStageUnlocked(tournamentId, stage.id);
+    await this.assertStageUnlocked(divisionId, stage.id);
 
     const tournament = await this.tournaments.findOne({
-      where: { id: tournamentId, deletedAt: IsNull() },
+      where: { id: divisionId, deletedAt: IsNull() },
     });
     if (!tournament?.currentConfigVersionId) {
       throw new NotFoundException('Tournament config missing');
@@ -344,11 +344,11 @@ export class FixtureGenerationService {
   }
 
   private async assertStageUnlocked(
-    tournamentId: string,
+    divisionId: string,
     stageId: string,
   ): Promise<void> {
     const stageMatches = await this.matches.find({
-      where: { tournamentId, stageId, deletedAt: IsNull() },
+      where: { divisionId, stageId, deletedAt: IsNull() },
     });
     const hasLockedMatch = stageMatches.some((m) =>
       ['approved', 'walkover', 'in_progress', 'completed', 'disputed'].includes(
@@ -371,7 +371,7 @@ export class FixtureGenerationService {
     blueprint: StructureBlueprint,
   ): Promise<void> {
     const groupMatches = await manager.find(TournamentMatch, {
-      where: { tournamentId: tournament.id, stageId: stage.id, groupId },
+      where: { divisionId: tournament.id, stageId: stage.id, groupId },
     });
     if (groupMatches.length > 0) {
       const matchIds = groupMatches.map((m) => m.id);
@@ -382,7 +382,7 @@ export class FixtureGenerationService {
         .where('matchId IN (:...matchIds)', { matchIds })
         .execute();
       await manager.delete(TournamentMatch, {
-        tournamentId: tournament.id,
+        divisionId: tournament.id,
         stageId: stage.id,
         groupId,
       });
@@ -403,7 +403,7 @@ export class FixtureGenerationService {
     const fixtures = generateRoundRobinFixtures(slice, maxRounds);
     for (const f of fixtures) {
       const match = await manager.save(TournamentMatch, {
-        tournamentId: tournament.id,
+        divisionId: tournament.id,
         stageId: stage.id,
         groupId,
         status: 'draft',
@@ -452,7 +452,7 @@ export class FixtureGenerationService {
       const fixtures = generateRoundRobinFixtures(slice, maxRounds);
       for (const f of fixtures) {
         const match = await manager.save(TournamentMatch, {
-          tournamentId: tournament.id,
+          divisionId: tournament.id,
           stageId: stage.id,
           groupId: group.id,
           status: 'draft',
@@ -487,7 +487,7 @@ export class FixtureGenerationService {
       let matchId: string | null = null;
       if (d.round === 1 && !d.isBye && d.teamId && d.awayTeamId) {
         const match = await manager.save(TournamentMatch, {
-          tournamentId: tournament.id,
+          divisionId: tournament.id,
           stageId: stage.id,
           status: 'draft',
           homeTeamId: d.teamId,
@@ -526,12 +526,12 @@ export class FixtureGenerationService {
   }
 
   private async assertGroupStageComplete(
-    tournamentId: string,
+    divisionId: string,
     stageId: string,
   ): Promise<void> {
     const open = await this.matches.count({
       where: {
-        tournamentId,
+        divisionId,
         stageId,
         deletedAt: IsNull(),
         status: Not(In(['approved', 'walkover', 'cancelled'])),
@@ -546,7 +546,7 @@ export class FixtureGenerationService {
   }
 
   private async resolveAdvancingTeamIds(
-    tournamentId: string,
+    divisionId: string,
     groupStageId: string,
     blueprint: StructureBlueprint,
     rules: StandingsRules,
@@ -561,7 +561,7 @@ export class FixtureGenerationService {
       const memberTeamIds = members.map((m) => m.teamId);
       const completed = await this.matches.find({
         where: {
-          tournamentId,
+          divisionId,
           groupId: g.id,
           status: In(['approved', 'walkover']),
           deletedAt: IsNull(),
@@ -588,7 +588,7 @@ export class FixtureGenerationService {
   }
 
   async buildStagesFromBlueprint(
-    tournamentId: string,
+    divisionId: string,
     configVersionId: string,
     structureType: string,
   ): Promise<void> {
@@ -611,7 +611,7 @@ export class FixtureGenerationService {
 
     for (const s of stages) {
       await this.stages.save({
-        tournamentId,
+        divisionId,
         configVersionId,
         order: s.order,
         name: s.name,

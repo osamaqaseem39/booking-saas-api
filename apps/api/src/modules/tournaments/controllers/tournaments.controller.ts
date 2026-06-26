@@ -82,6 +82,15 @@ export class TournamentsController {
     return this.tournamentsService.getTemplates();
   }
 
+  @Get('tournaments/events/:eventId')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  getEvent(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('eventId', ParseUUIDPipe) eventId: string,
+  ) {
+    return this.tournamentsService.getEvent(this.tenantId(tenant), eventId);
+  }
+
   @Get('tournaments/:id')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
   get(

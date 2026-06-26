@@ -13,7 +13,7 @@ export class TournamentRegistration {
   id!: string;
 
   @Column({ type: 'uuid' })
-  tournamentId!: string;
+  divisionId!: string;
 
   @Column({ type: 'uuid' })
   teamId!: string;

@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Not, Repository } from 'typeorm';
 import { Tournament } from '../entities/tournament.entity';
+import { TournamentDivision } from '../entities/tournament-division.entity';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
 import { TournamentStage } from '../entities/tournament-stage.entity';
 import { TournamentMatch } from '../entities/tournament-match.entity';
@@ -21,6 +22,7 @@ import { BusinessLocation } from '../../businesses/entities/business-location.en
 import { Business } from '../../businesses/entities/business.entity';
 import {
   CreateTournamentDto,
+  CreateTournamentDivisionDto,
   PreviewStructureDto,
   UpdateTournamentDto,
 } from '../dto/create-tournament.dto';
@@ -41,11 +43,35 @@ import { TournamentAuditService } from './tournament-audit.service';
 import { FixtureGenerationService } from './fixture-generation.service';
 import { KnockoutBracketService } from './knockout-bracket.service';
 
+export type TournamentDivisionRow = {
+  id: string;
+  tournamentId: string;
+  sport: string;
+  label: string | null;
+  displayOrder: number;
+  registrationOpensAt: string | null;
+  registrationClosesAt: string | null;
+  maxTeams: number;
+  entryFeeAmount: number | null;
+  entryFeeCurrency: string;
+  prizePool: Record<string, unknown> | null;
+  rules: string | null;
+  structureType: string;
+  status: string;
+  currentConfigVersionId: string | null;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+  structureBlueprint?: unknown;
+};
+
 export type TournamentRow = {
   id: string;
+  eventId: string;
   tenantId: string;
   name: string;
   sport: string;
+  sports: string[];
   venueIds: string[];
   registrationOpensAt: string | null;
   registrationClosesAt: string | null;
@@ -63,6 +89,7 @@ export type TournamentRow = {
   createdAt: string;
   updatedAt: string;
   structureBlueprint?: unknown;
+  divisions?: TournamentDivisionRow[];
 };
 
 export type TournamentApprovalRow = TournamentRow & {
@@ -74,6 +101,8 @@ export class TournamentsService {
   constructor(
     @InjectRepository(Tournament)
     private readonly tournaments: Repository<Tournament>,
+    @InjectRepository(TournamentDivision)
+    private readonly divisions: Repository<TournamentDivision>,
     @InjectRepository(TournamentConfigVersion)
     private readonly configs: Repository<TournamentConfigVersion>,
     @InjectRepository(TournamentStage)
@@ -103,50 +132,186 @@ export class TournamentsService {
     private readonly knockoutBracket: KnockoutBracketService,
   ) {}
 
-  private toRow(t: Tournament, blueprint?: unknown): TournamentRow {
+  private toDivisionRow(
+    d: TournamentDivision,
+    blueprint?: unknown,
+  ): TournamentDivisionRow {
     return {
-      id: t.id,
-      tenantId: t.tenantId,
-      name: t.name,
-      sport: t.sport,
-      venueIds: t.venueIds ?? [],
-      registrationOpensAt: t.registrationOpensAt?.toISOString() ?? null,
-      registrationClosesAt: t.registrationClosesAt?.toISOString() ?? null,
-      startsAt: t.startsAt.toISOString(),
-      endsAt: t.endsAt?.toISOString() ?? null,
-      maxTeams: t.maxTeams,
-      entryFeeAmount: t.entryFeeAmount != null ? Number(t.entryFeeAmount) : null,
-      entryFeeCurrency: t.entryFeeCurrency,
-      prizePool: (t.prizePool as Record<string, unknown>) ?? null,
-      rules: t.rules ?? null,
-      structureType: t.structureType,
-      status: t.status,
-      currentConfigVersionId: t.currentConfigVersionId ?? null,
-      version: t.version,
-      createdAt: t.createdAt.toISOString(),
-      updatedAt: t.updatedAt.toISOString(),
+      id: d.id,
+      tournamentId: d.tournamentId,
+      sport: d.sport,
+      label: d.label ?? null,
+      displayOrder: d.displayOrder,
+      registrationOpensAt: d.registrationOpensAt?.toISOString() ?? null,
+      registrationClosesAt: d.registrationClosesAt?.toISOString() ?? null,
+      maxTeams: d.maxTeams,
+      entryFeeAmount:
+        d.entryFeeAmount != null ? Number(d.entryFeeAmount) : null,
+      entryFeeCurrency: d.entryFeeCurrency,
+      prizePool: (d.prizePool as Record<string, unknown>) ?? null,
+      rules: d.rules ?? null,
+      structureType: d.structureType,
+      status: d.status,
+      currentConfigVersionId: d.currentConfigVersionId ?? null,
+      version: d.version,
+      createdAt: d.createdAt.toISOString(),
+      updatedAt: d.updatedAt.toISOString(),
       structureBlueprint: blueprint,
     };
   }
 
+  private toRow(
+    event: Tournament,
+    division: TournamentDivision,
+    allDivisions: TournamentDivision[],
+    blueprint?: unknown,
+  ): TournamentRow {
+    const sports = allDivisions.map((d) => d.sport);
+    return {
+      id: division.id,
+      eventId: event.id,
+      tenantId: event.tenantId,
+      name: event.name,
+      sport: division.sport,
+      sports,
+      venueIds: event.venueIds ?? [],
+      registrationOpensAt: division.registrationOpensAt?.toISOString() ?? null,
+      registrationClosesAt: division.registrationClosesAt?.toISOString() ?? null,
+      startsAt: event.startsAt.toISOString(),
+      endsAt: event.endsAt?.toISOString() ?? null,
+      maxTeams: division.maxTeams,
+      entryFeeAmount:
+        division.entryFeeAmount != null ? Number(division.entryFeeAmount) : null,
+      entryFeeCurrency: division.entryFeeCurrency,
+      prizePool: (division.prizePool as Record<string, unknown>) ?? null,
+      rules: division.rules ?? null,
+      structureType: division.structureType,
+      status: division.status,
+      currentConfigVersionId: division.currentConfigVersionId ?? null,
+      version: division.version,
+      createdAt: division.createdAt.toISOString(),
+      updatedAt: division.updatedAt.toISOString(),
+      structureBlueprint: blueprint,
+      divisions: allDivisions.map((d) =>
+        this.toDivisionRow(
+          d,
+          d.id === division.id ? blueprint : undefined,
+        ),
+      ),
+    };
+  }
+
+  private normalizeDivisionInputs(
+    dto: CreateTournamentDto,
+  ): CreateTournamentDivisionDto[] {
+    if (dto.divisions?.length) return dto.divisions;
+    if (!dto.sport || !dto.structureType || dto.maxTeams == null) {
+      throw new BadRequestException(
+        'Provide divisions[] or legacy single-sport fields',
+      );
+    }
+    return [
+      {
+        sport: dto.sport,
+        registrationOpensAt: dto.registrationOpensAt,
+        registrationClosesAt: dto.registrationClosesAt,
+        maxTeams: dto.maxTeams,
+        entryFeeAmount: dto.entryFeeAmount,
+        entryFeeCurrency: dto.entryFeeCurrency,
+        prizePool: dto.prizePool,
+        rules: dto.rules,
+        structureType: dto.structureType,
+        advancement: dto.advancement,
+        groupCount: dto.groupCount,
+        minTeamsPerGroup: dto.minTeamsPerGroup,
+        maxTeamsPerGroup: dto.maxTeamsPerGroup,
+        matchesPerTeam: dto.matchesPerTeam,
+      },
+    ];
+  }
+
   async list(tenantId: string): Promise<TournamentRow[]> {
-    const rows = await this.tournaments.find({
+    const events = await this.tournaments.find({
       where: { tenantId, deletedAt: IsNull() },
       order: { startsAt: 'DESC' },
     });
-    return rows.map((t) => this.toRow(t));
+    if (events.length === 0) return [];
+
+    const eventIds = events.map((e) => e.id);
+    const allDivisions = await this.divisions.find({
+      where: { tournamentId: In(eventIds), deletedAt: IsNull() },
+      order: { displayOrder: 'ASC' },
+    });
+    const divisionsByEvent = new Map<string, TournamentDivision[]>();
+    for (const d of allDivisions) {
+      const list = divisionsByEvent.get(d.tournamentId) ?? [];
+      list.push(d);
+      divisionsByEvent.set(d.tournamentId, list);
+    }
+
+    const rows: TournamentRow[] = [];
+    for (const event of events) {
+      const divs = divisionsByEvent.get(event.id) ?? [];
+      for (const division of divs) {
+        rows.push(this.toRow(event, division, divs));
+      }
+    }
+    return rows;
   }
 
   async get(tenantId: string, id: string): Promise<TournamentRow> {
-    const t = await this.findTournament(tenantId, id);
+    const { event, division, divisions } = await this.findDivisionContext(
+      tenantId,
+      id,
+    );
     let blueprint: unknown;
-    if (t.currentConfigVersionId) {
+    if (division.currentConfigVersionId) {
       const cfg = await this.configs.findOne({
-        where: { id: t.currentConfigVersionId },
+        where: { id: division.currentConfigVersionId },
       });
       blueprint = cfg?.structureBlueprint;
     }
-    return this.toRow(t, blueprint);
+    return this.toRow(event, division, divisions, blueprint);
+  }
+
+  async getEvent(tenantId: string, eventId: string) {
+    const event = await this.tournaments.findOne({
+      where: { id: eventId, tenantId, deletedAt: IsNull() },
+    });
+    if (!event) throw new NotFoundException('Tournament event not found');
+
+    const divisions = await this.divisions.find({
+      where: { tournamentId: eventId, deletedAt: IsNull() },
+      order: { displayOrder: 'ASC' },
+    });
+    if (divisions.length === 0) {
+      throw new NotFoundException('Tournament has no divisions');
+    }
+
+    const divisionRows: TournamentDivisionRow[] = [];
+    for (const d of divisions) {
+      let blueprint: unknown;
+      if (d.currentConfigVersionId) {
+        const cfg = await this.configs.findOne({
+          where: { id: d.currentConfigVersionId },
+        });
+        blueprint = cfg?.structureBlueprint;
+      }
+      divisionRows.push(this.toDivisionRow(d, blueprint));
+    }
+
+    return {
+      id: event.id,
+      tenantId: event.tenantId,
+      name: event.name,
+      venueIds: event.venueIds ?? [],
+      startsAt: event.startsAt.toISOString(),
+      endsAt: event.endsAt?.toISOString() ?? null,
+      sports: divisions.map((d) => d.sport),
+      divisions: divisionRows,
+      createdAt: event.createdAt.toISOString(),
+      updatedAt: event.updatedAt.toISOString(),
+    };
   }
 
   async create(
@@ -154,73 +319,96 @@ export class TournamentsService {
     dto: CreateTournamentDto,
     actorId?: string,
   ): Promise<TournamentRow> {
-    let blueprint;
-    try {
-      blueprint = previewStructure({
-        teamCount: dto.maxTeams,
-        structureType: dto.structureType,
-        advancement: dto.advancement,
-        groupCount: dto.groupCount,
-        minTeamsPerGroup: dto.minTeamsPerGroup,
-        maxTeamsPerGroup: dto.maxTeamsPerGroup,
-        matchesPerTeam: dto.matchesPerTeam,
-      });
-    } catch (e) {
-      throw new BadRequestException(
-        e instanceof Error ? e.message : 'Invalid tournament structure',
-      );
+    const divisionInputs = this.normalizeDivisionInputs(dto);
+    const sports = divisionInputs.map((d) => d.sport.trim().toLowerCase());
+    if (new Set(sports).size !== sports.length) {
+      throw new BadRequestException('Each sport may only appear once per event');
     }
 
-    const tournament = await this.tournaments.save({
+    const event = await this.tournaments.save({
       tenantId,
       name: dto.name,
-      sport: dto.sport,
       venueIds: dto.venueIds,
-      registrationOpensAt: dto.registrationOpensAt
-        ? new Date(dto.registrationOpensAt)
-        : null,
-      registrationClosesAt: dto.registrationClosesAt
-        ? new Date(dto.registrationClosesAt)
-        : null,
       startsAt: new Date(dto.startsAt),
       endsAt: dto.endsAt ? new Date(dto.endsAt) : null,
-      maxTeams: dto.maxTeams,
-      entryFeeAmount:
-        dto.entryFeeAmount != null ? String(dto.entryFeeAmount) : null,
-      entryFeeCurrency: dto.entryFeeCurrency ?? 'PKR',
-      prizePool: dto.prizePool ?? null,
-      rules: dto.rules ?? null,
-      structureType: dto.structureType,
-      status: 'pending_approval',
     });
 
-    const config = await this.configs.save({
-      tournamentId: tournament.id,
-      version: 1,
-      structureBlueprint: blueprint,
-      standingsRules: DEFAULT_STANDINGS_RULES,
-      seedingMode: 'ranking',
-      advancementRules: dto.advancement ? [dto.advancement] : [],
-    });
+    let firstDivision: TournamentDivision | null = null;
 
-    tournament.currentConfigVersionId = config.id;
-    await this.tournaments.save(tournament);
+    for (let i = 0; i < divisionInputs.length; i++) {
+      const divDto = divisionInputs[i]!;
+      let blueprint;
+      try {
+        blueprint = previewStructure({
+          teamCount: divDto.maxTeams,
+          structureType: divDto.structureType,
+          advancement: divDto.advancement,
+          groupCount: divDto.groupCount,
+          minTeamsPerGroup: divDto.minTeamsPerGroup,
+          maxTeamsPerGroup: divDto.maxTeamsPerGroup,
+          matchesPerTeam: divDto.matchesPerTeam,
+        });
+      } catch (e) {
+        throw new BadRequestException(
+          e instanceof Error ? e.message : 'Invalid tournament structure',
+        );
+      }
 
-    await this.fixtureGen.buildStagesFromBlueprint(
-      tournament.id,
-      config.id,
-      dto.structureType,
-    );
+      const division = await this.divisions.save({
+        tournamentId: event.id,
+        sport: divDto.sport,
+        label: divDto.label ?? null,
+        displayOrder: i,
+        registrationOpensAt: divDto.registrationOpensAt
+          ? new Date(divDto.registrationOpensAt)
+          : null,
+        registrationClosesAt: divDto.registrationClosesAt
+          ? new Date(divDto.registrationClosesAt)
+          : null,
+        maxTeams: divDto.maxTeams,
+        entryFeeAmount:
+          divDto.entryFeeAmount != null ? String(divDto.entryFeeAmount) : null,
+        entryFeeCurrency: divDto.entryFeeCurrency ?? 'PKR',
+        prizePool: divDto.prizePool ?? null,
+        rules: divDto.rules ?? null,
+        structureType: divDto.structureType,
+        status: 'pending_approval',
+      });
+
+      const config = await this.configs.save({
+        divisionId: division.id,
+        version: 1,
+        structureBlueprint: blueprint,
+        standingsRules: DEFAULT_STANDINGS_RULES,
+        seedingMode: 'ranking',
+        advancementRules: divDto.advancement ? [divDto.advancement] : [],
+      });
+
+      division.currentConfigVersionId = config.id;
+      await this.divisions.save(division);
+
+      await this.fixtureGen.buildStagesFromBlueprint(
+        division.id,
+        config.id,
+        divDto.structureType,
+      );
+
+      if (!firstDivision) firstDivision = division;
+    }
 
     await this.audit.log({
       tenantId,
       entityType: 'tournament',
-      entityId: tournament.id,
+      entityId: event.id,
       actorId,
-      afterState: { status: 'pending_approval', name: tournament.name },
+      afterState: {
+        status: 'pending_approval',
+        name: event.name,
+        sports: divisionInputs.map((d) => d.sport),
+      },
     });
 
-    return this.get(tenantId, tournament.id);
+    return this.get(tenantId, firstDivision!.id);
   }
 
   async update(
@@ -229,16 +417,16 @@ export class TournamentsService {
     dto: UpdateTournamentDto,
     actorId?: string,
   ): Promise<TournamentRow> {
-    const t = await this.findTournament(tenantId, id);
-    const limited = t.status === 'in_progress';
+    const { event, division } = await this.findDivisionContext(tenantId, id);
+    const limited = division.status === 'in_progress';
     const editable =
-      t.status === 'pending_approval' ||
-      t.status === 'rejected' ||
-      t.status === 'draft' ||
-      t.status === 'published' ||
-      t.status === 'registration_open' ||
-      t.status === 'registration_closed' ||
-      t.status === 'ready' ||
+      division.status === 'pending_approval' ||
+      division.status === 'rejected' ||
+      division.status === 'draft' ||
+      division.status === 'published' ||
+      division.status === 'registration_open' ||
+      division.status === 'registration_closed' ||
+      division.status === 'ready' ||
       limited;
     if (!editable) {
       throw new ConflictException({
@@ -246,7 +434,7 @@ export class TournamentsService {
         message: 'Tournament settings cannot be edited in this state',
       });
     }
-    if (dto.version != null && dto.version !== t.version) {
+    if (dto.version != null && dto.version !== division.version) {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.CONFLICT_RETRY,
         message: 'Version conflict',
@@ -281,7 +469,7 @@ export class TournamentsService {
     if (dto.maxTeams != null && !limited) {
       const activeCount = await this.registrations.count({
         where: {
-          tournamentId: id,
+          divisionId: id,
           status: In([...ACTIVE_REGISTRATION_STATUSES]),
           deletedAt: IsNull(),
         },
@@ -303,7 +491,7 @@ export class TournamentsService {
       dto.matchesPerTeam != null;
 
     const stageList = await this.stages.find({
-      where: { tournamentId: id, deletedAt: IsNull() },
+      where: { divisionId: id, deletedAt: IsNull() },
     });
     const structureLocked = stageList.some((s) => s.status !== 'pending');
 
@@ -314,33 +502,33 @@ export class TournamentsService {
       });
     }
 
-    const before = { ...t };
+    const before = { event: { ...event }, division: { ...division } };
 
-    if (dto.name != null) t.name = dto.name;
+    if (dto.name != null) event.name = dto.name;
     if (!limited) {
-      if (dto.sport != null) t.sport = dto.sport;
-      if (dto.venueIds != null) t.venueIds = dto.venueIds;
+      if (dto.sport != null) division.sport = dto.sport;
+      if (dto.venueIds != null) event.venueIds = dto.venueIds;
       if (dto.registrationOpensAt != null)
-        t.registrationOpensAt = new Date(dto.registrationOpensAt);
+        division.registrationOpensAt = new Date(dto.registrationOpensAt);
       if (dto.registrationClosesAt != null)
-        t.registrationClosesAt = new Date(dto.registrationClosesAt);
-      if (dto.startsAt != null) t.startsAt = new Date(dto.startsAt);
-      if (dto.maxTeams != null) t.maxTeams = dto.maxTeams;
+        division.registrationClosesAt = new Date(dto.registrationClosesAt);
+      if (dto.startsAt != null) event.startsAt = new Date(dto.startsAt);
+      if (dto.maxTeams != null) division.maxTeams = dto.maxTeams;
       if (dto.entryFeeAmount != null)
-        t.entryFeeAmount = String(dto.entryFeeAmount);
+        division.entryFeeAmount = String(dto.entryFeeAmount);
     }
-    if (dto.endsAt != null) t.endsAt = new Date(dto.endsAt);
-    if (dto.rules != null) t.rules = dto.rules;
-    if (dto.prizePool != null) t.prizePool = dto.prizePool;
+    if (dto.endsAt != null) event.endsAt = new Date(dto.endsAt);
+    if (dto.rules != null) division.rules = dto.rules;
+    if (dto.prizePool != null) division.prizePool = dto.prizePool;
 
     if (
       (hasStructureChange || dto.maxTeams != null) &&
       !limited &&
       !structureLocked &&
-      t.currentConfigVersionId
+      division.currentConfigVersionId
     ) {
       const config = await this.configs.findOne({
-        where: { id: t.currentConfigVersionId },
+        where: { id: division.currentConfigVersionId },
       });
       if (config) {
         const existing = config.structureBlueprint as StructureBlueprint;
@@ -350,8 +538,8 @@ export class TournamentsService {
         let blueprint;
         try {
           blueprint = previewStructure({
-            teamCount: dto.maxTeams ?? t.maxTeams,
-            structureType: dto.structureType ?? t.structureType,
+            teamCount: dto.maxTeams ?? division.maxTeams,
+            structureType: dto.structureType ?? division.structureType,
             advancement,
             groupCount: dto.groupCount ?? existing.groupStage?.groupCount,
             minTeamsPerGroup:
@@ -369,29 +557,31 @@ export class TournamentsService {
         config.structureBlueprint = blueprint;
         if (dto.advancement) config.advancementRules = [dto.advancement];
         await this.configs.save(config);
-        if (dto.structureType != null) t.structureType = dto.structureType;
+        if (dto.structureType != null)
+          division.structureType = dto.structureType;
       }
     }
 
-    t.version += 1;
-    await this.tournaments.save(t);
+    division.version += 1;
+    await this.tournaments.save(event);
+    await this.divisions.save(division);
 
     await this.audit.log({
       tenantId,
-      entityType: 'tournament',
+      entityType: 'tournament_division',
       entityId: id,
       actorId,
       beforeState: before as unknown as Record<string, unknown>,
-      afterState: t as unknown as Record<string, unknown>,
+      afterState: { event, division } as unknown as Record<string, unknown>,
     });
 
     return this.get(tenantId, id);
   }
 
-  private async assertTournamentReadyToComplete(tournamentId: string): Promise<void> {
+  private async assertDivisionReadyToComplete(divisionId: string): Promise<void> {
     const incompleteStages = await this.stages.count({
       where: {
-        tournamentId,
+        divisionId,
         deletedAt: IsNull(),
         status: Not(In(['completed', 'cancelled'])),
       },
@@ -406,7 +596,7 @@ export class TournamentsService {
 
     const openMatches = await this.matches.count({
       where: {
-        tournamentId,
+        divisionId,
         deletedAt: IsNull(),
         status: Not(In(['approved', 'walkover', 'cancelled'])),
       },
@@ -423,23 +613,23 @@ export class TournamentsService {
   async transition(
     tenantId: string,
     id: string,
-    event: string,
+    eventName: string,
     actorId?: string,
   ): Promise<TournamentRow> {
-    const t = await this.findTournament(tenantId, id);
-    const next = tournamentEventToStatus(event);
+    const { division } = await this.findDivisionContext(tenantId, id);
+    const next = tournamentEventToStatus(eventName);
     if (!next) {
       throw new ConflictException('Unknown transition event');
     }
-    assertTournamentTransition(t.status as TournamentStatus, next);
+    assertTournamentTransition(division.status as TournamentStatus, next);
 
-    if (event === 'complete') {
-      await this.assertTournamentReadyToComplete(id);
+    if (eventName === 'complete') {
+      await this.assertDivisionReadyToComplete(id);
     }
 
-    if (event === 'start') {
+    if (eventName === 'start') {
       const config = await this.configs.findOne({
-        where: { id: t.currentConfigVersionId! },
+        where: { id: division.currentConfigVersionId! },
       });
       if (config && !config.lockedAt) {
         config.lockedAt = new Date();
@@ -448,17 +638,17 @@ export class TournamentsService {
       }
     }
 
-    const before = t.status;
-    t.status = next;
-    t.version += 1;
-    await this.tournaments.save(t);
+    const before = division.status;
+    division.status = next;
+    division.version += 1;
+    await this.divisions.save(division);
 
     await this.audit.log({
       tenantId,
-      entityType: 'tournament',
+      entityType: 'tournament_division',
       entityId: id,
       actorId,
-      reason: event,
+      reason: eventName,
       beforeState: { status: before },
       afterState: { status: next },
     });
@@ -467,13 +657,19 @@ export class TournamentsService {
   }
 
   async listPendingApproval(): Promise<TournamentApprovalRow[]> {
-    const rows = await this.tournaments.find({
+    const divisions = await this.divisions.find({
       where: { status: 'pending_approval', deletedAt: IsNull() },
       order: { createdAt: 'ASC' },
     });
-    if (rows.length === 0) return [];
+    if (divisions.length === 0) return [];
 
-    const tenantIds = [...new Set(rows.map((t) => t.tenantId))];
+    const eventIds = [...new Set(divisions.map((d) => d.tournamentId))];
+    const events = await this.tournaments.find({
+      where: { id: In(eventIds), deletedAt: IsNull() },
+    });
+    const eventById = new Map(events.map((e) => [e.id, e]));
+
+    const tenantIds = [...new Set(events.map((e) => e.tenantId))];
     const businesses = await this.businesses.find({
       where: { tenantId: In(tenantIds) },
     });
@@ -481,84 +677,119 @@ export class TournamentsService {
       businesses.map((b) => [b.tenantId, b.businessName]),
     );
 
-    return rows.map((t) => ({
-      ...this.toRow(t),
-      businessName: businessByTenant.get(t.tenantId) ?? null,
-    }));
+    const rows: TournamentApprovalRow[] = [];
+    for (const division of divisions) {
+      const event = eventById.get(division.tournamentId);
+      if (!event) continue;
+      const allDivisions = await this.divisions.find({
+        where: { tournamentId: event.id, deletedAt: IsNull() },
+        order: { displayOrder: 'ASC' },
+      });
+      rows.push({
+        ...(await this.toApprovalRow(event, division, allDivisions)),
+        businessName: businessByTenant.get(event.tenantId) ?? null,
+      });
+    }
+    return rows;
   }
 
   async approveByPlatform(
-    tournamentId: string,
+    divisionId: string,
     actorId?: string,
   ): Promise<TournamentApprovalRow> {
-    const t = await this.findTournamentById(tournamentId);
-    assertTournamentTransition(t.status as TournamentStatus, 'draft');
-    const before = t.status;
-    t.status = 'draft';
-    t.version += 1;
-    await this.tournaments.save(t);
+    const { event, division, divisions } =
+      await this.findDivisionById(divisionId);
+    assertTournamentTransition(division.status as TournamentStatus, 'draft');
+    const before = division.status;
+    division.status = 'draft';
+    division.version += 1;
+    await this.divisions.save(division);
 
     await this.audit.log({
-      tenantId: t.tenantId,
-      entityType: 'tournament',
-      entityId: tournamentId,
+      tenantId: event.tenantId,
+      entityType: 'tournament_division',
+      entityId: divisionId,
       actorId,
       reason: 'approve',
       beforeState: { status: before },
       afterState: { status: 'draft' },
     });
 
-    return this.toApprovalRow(t);
+    return this.toApprovalRow(event, division, divisions);
   }
 
   async rejectByPlatform(
-    tournamentId: string,
+    divisionId: string,
     reason: string | undefined,
     actorId?: string,
   ): Promise<TournamentApprovalRow> {
-    const t = await this.findTournamentById(tournamentId);
-    assertTournamentTransition(t.status as TournamentStatus, 'rejected');
-    const before = t.status;
-    t.status = 'rejected';
-    t.version += 1;
-    await this.tournaments.save(t);
+    const { event, division, divisions } =
+      await this.findDivisionById(divisionId);
+    assertTournamentTransition(division.status as TournamentStatus, 'rejected');
+    const before = division.status;
+    division.status = 'rejected';
+    division.version += 1;
+    await this.divisions.save(division);
 
     await this.audit.log({
-      tenantId: t.tenantId,
-      entityType: 'tournament',
-      entityId: tournamentId,
+      tenantId: event.tenantId,
+      entityType: 'tournament_division',
+      entityId: divisionId,
       actorId,
       reason: reason?.trim() || 'reject',
       beforeState: { status: before },
       afterState: { status: 'rejected' },
     });
 
-    return this.toApprovalRow(t);
+    return this.toApprovalRow(event, division, divisions);
   }
 
-  private async toApprovalRow(t: Tournament): Promise<TournamentApprovalRow> {
+  private async toApprovalRow(
+    event: Tournament,
+    division: TournamentDivision,
+    divisions: TournamentDivision[],
+  ): Promise<TournamentApprovalRow> {
     const business = await this.businesses.findOne({
-      where: { tenantId: t.tenantId },
+      where: { tenantId: event.tenantId },
     });
     let blueprint: unknown;
-    if (t.currentConfigVersionId) {
+    if (division.currentConfigVersionId) {
       const cfg = await this.configs.findOne({
-        where: { id: t.currentConfigVersionId },
+        where: { id: division.currentConfigVersionId },
       });
       blueprint = cfg?.structureBlueprint;
     }
     return {
-      ...this.toRow(t, blueprint),
+      ...this.toRow(event, division, divisions, blueprint),
       businessName: business?.businessName ?? null,
     };
   }
 
-  private async findTournamentById(id: string): Promise<Tournament> {
-    const t = await this.tournaments.findOne({
-      where: { id, deletedAt: IsNull() },
+  private async findDivisionById(divisionId: string) {
+    const division = await this.divisions.findOne({
+      where: { id: divisionId, deletedAt: IsNull() },
     });
-    if (!t) throw new NotFoundException('Tournament not found');
-    return t;
+    if (!division) throw new NotFoundException('Tournament division not found');
+
+    const event = await this.tournaments.findOne({
+      where: { id: division.tournamentId, deletedAt: IsNull() },
+    });
+    if (!event) throw new NotFoundException('Tournament event not found');
+
+    const divisions = await this.divisions.find({
+      where: { tournamentId: event.id, deletedAt: IsNull() },
+      order: { displayOrder: 'ASC' },
+    });
+
+    return { event, division, divisions };
+  }
+
+  private async findDivisionContext(tenantId: string, divisionId: string) {
+    const ctx = await this.findDivisionById(divisionId);
+    if (ctx.event.tenantId !== tenantId) {
+      throw new NotFoundException('Tournament not found');
+    }
+    return ctx;
   }
 
   previewStructure(dto: PreviewStructureDto) {
@@ -584,24 +815,24 @@ export class TournamentsService {
   }
 
   async generateStage(tenantId: string, id: string, stageOrder: number) {
-    await this.findTournament(tenantId, id);
+    await this.findDivisionContext(tenantId, id);
     return this.fixtureGen.generateStage(id, stageOrder);
   }
 
   async resetStage(tenantId: string, id: string, stageOrder: number) {
-    await this.findTournament(tenantId, id);
+    await this.findDivisionContext(tenantId, id);
     return this.fixtureGen.resetStage(id, stageOrder);
   }
 
   async generateKnockoutRound(tenantId: string, id: string, stageOrder: number) {
-    await this.findTournament(tenantId, id);
+    await this.findDivisionContext(tenantId, id);
     return this.fixtureGen.generateKnockoutRound(id, stageOrder);
   }
 
   async getKnockoutRoundStatus(tenantId: string, id: string) {
-    await this.findTournament(tenantId, id);
+    await this.findDivisionContext(tenantId, id);
     const knockoutStages = await this.stages.find({
-      where: { tournamentId: id, stageType: 'knockout', deletedAt: IsNull() },
+      where: { divisionId: id, stageType: 'knockout', deletedAt: IsNull() },
       order: { order: 'ASC' },
     });
     if (knockoutStages.length === 0) {
@@ -633,25 +864,25 @@ export class TournamentsService {
 
   async swapGroupTeams(
     tenantId: string,
-    tournamentId: string,
+    divisionId: string,
     teamIdA: string,
     teamIdB: string,
   ) {
-    await this.findTournament(tenantId, tournamentId);
-    return this.fixtureGen.swapGroupTeams(tournamentId, teamIdA, teamIdB);
+    await this.findDivisionContext(tenantId, divisionId);
+    return this.fixtureGen.swapGroupTeams(divisionId, teamIdA, teamIdB);
   }
 
-  async getStages(tenantId: string, tournamentId: string) {
-    await this.findTournament(tenantId, tournamentId);
+  async getStages(tenantId: string, divisionId: string) {
+    await this.findDivisionContext(tenantId, divisionId);
     return this.stages.find({
-      where: { tournamentId, deletedAt: IsNull() },
+      where: { divisionId, deletedAt: IsNull() },
       order: { order: 'ASC' },
     });
   }
 
-  async getFixtures(tenantId: string, tournamentId: string) {
-    await this.findTournament(tenantId, tournamentId);
-    const stageList = await this.stages.find({ where: { tournamentId } });
+  async getFixtures(tenantId: string, divisionId: string) {
+    await this.findDivisionContext(tenantId, divisionId);
+    const stageList = await this.stages.find({ where: { divisionId } });
     const stageIds = stageList.map((s) => s.id);
     if (stageIds.length === 0) return [];
     return this.fixtures
@@ -662,7 +893,7 @@ export class TournamentsService {
   }
 
   private async resolveTeamNames(
-    tournamentId: string,
+    divisionId: string,
     teamIds: string[],
   ): Promise<Map<string, string>> {
     const names = new Map<string, string>();
@@ -675,7 +906,7 @@ export class TournamentsService {
     if (missing.length === 0) return names;
 
     const registrations = await this.registrations.find({
-      where: { tournamentId, teamId: In(missing), deletedAt: IsNull() },
+      where: { divisionId, teamId: In(missing), deletedAt: IsNull() },
     });
     const regTeamIds = registrations.map((r) => r.teamId);
     if (regTeamIds.length > 0) {
@@ -688,10 +919,10 @@ export class TournamentsService {
     return names;
   }
 
-  async getMatches(tenantId: string, tournamentId: string) {
-    await this.findTournament(tenantId, tournamentId);
+  async getMatches(tenantId: string, divisionId: string) {
+    await this.findDivisionContext(tenantId, divisionId);
     const rows = await this.matches.find({
-      where: { tournamentId, deletedAt: IsNull() },
+      where: { divisionId, deletedAt: IsNull() },
       order: { scheduledAt: 'ASC' },
     });
     const teamIds = new Set<string>();
@@ -699,11 +930,11 @@ export class TournamentsService {
       if (m.homeTeamId) teamIds.add(m.homeTeamId);
       if (m.awayTeamId) teamIds.add(m.awayTeamId);
     }
-    const teamNames = await this.resolveTeamNames(tournamentId, [...teamIds]);
+    const teamNames = await this.resolveTeamNames(divisionId, [...teamIds]);
 
     return rows.map((m) => ({
       id: m.id,
-      tournamentId: m.tournamentId,
+      tournamentId: m.divisionId,
       stageId: m.stageId,
       groupId: m.groupId ?? null,
       status: m.status,
@@ -725,10 +956,10 @@ export class TournamentsService {
     }));
   }
 
-  async getStandings(tenantId: string, tournamentId: string) {
-    await this.findTournament(tenantId, tournamentId);
+  async getStandings(tenantId: string, divisionId: string) {
+    await this.findDivisionContext(tenantId, divisionId);
     const stageList = await this.stages.find({
-      where: { tournamentId, stageType: 'group' },
+      where: { divisionId, stageType: 'group' },
     });
     const out: { groupId: string; groupName: string; standings: Standing[] }[] =
       [];
@@ -745,10 +976,10 @@ export class TournamentsService {
     return out;
   }
 
-  async getBracket(tenantId: string, tournamentId: string) {
-    await this.findTournament(tenantId, tournamentId);
+  async getBracket(tenantId: string, divisionId: string) {
+    await this.findDivisionContext(tenantId, divisionId);
     const knockoutStages = await this.stages.find({
-      where: { tournamentId, stageType: 'knockout' },
+      where: { divisionId, stageType: 'knockout' },
     });
     const nodes: BracketNode[] = [];
     for (const s of knockoutStages) {
@@ -769,7 +1000,7 @@ export class TournamentsService {
         nodes.map((n) => n.matchId).filter((id): id is string => Boolean(id)),
       ),
     ];
-    const teamNames = await this.resolveTeamNames(tournamentId, teamIds);
+    const teamNames = await this.resolveTeamNames(divisionId, teamIds);
     const linkedMatches =
       matchIds.length > 0
         ? await this.matches.find({ where: { id: In(matchIds) } })
@@ -780,7 +1011,7 @@ export class TournamentsService {
       if (m.homeTeamId) matchTeamIds.add(m.homeTeamId);
       if (m.awayTeamId) matchTeamIds.add(m.awayTeamId);
     }
-    const matchTeamNames = await this.resolveTeamNames(tournamentId, [
+    const matchTeamNames = await this.resolveTeamNames(divisionId, [
       ...matchTeamIds,
     ]);
 
@@ -866,38 +1097,42 @@ export class TournamentsService {
       ? opts.status.split(',').map((s) => s.trim()).filter(Boolean)
       : defaultStatuses;
 
-    const qb = this.tournaments
-      .createQueryBuilder('t')
+    const qb = this.divisions
+      .createQueryBuilder('d')
+      .innerJoin(Tournament, 't', 't.id = d.tournamentId')
       .where('t.tenantId = :tenantId', { tenantId })
       .andWhere('t.deletedAt IS NULL')
-      .andWhere('t.status IN (:...statuses)', { statuses });
+      .andWhere('d.deletedAt IS NULL')
+      .andWhere('d.status IN (:...statuses)', { statuses });
 
     if (opts?.sport?.trim()) {
-      qb.andWhere('t.sport = :sport', { sport: opts.sport.trim() });
+      qb.andWhere('d.sport = :sport', { sport: opts.sport.trim() });
     }
 
     const total = await qb.getCount();
     const rows = await qb
       .orderBy('t.startsAt', 'ASC')
+      .addOrderBy('d.displayOrder', 'ASC')
       .skip((page - 1) * limit)
       .take(limit)
       .getMany();
 
     const items = await Promise.all(
-      rows.map((t) => this.toPublicSummary(t)),
+      rows.map((d) => this.toPublicSummaryForDivision(d)),
     );
     return { items, page, limit, total };
   }
 
   async getPublic(tenantId: string, id: string) {
-    const t = await this.findTournament(tenantId, id);
-    const summary = await this.toPublicSummary(t);
+    const { event, division } = await this.findDivisionContext(tenantId, id);
+    const summary = await this.toPublicSummary(event, division);
     const stageRows = await this.stages.find({
-      where: { tournamentId: id, deletedAt: IsNull() },
+      where: { divisionId: id, deletedAt: IsNull() },
       order: { order: 'ASC' },
     });
     return {
       ...summary,
+      eventId: event.id,
       stages: stageRows.map((s) => ({
         id: s.id,
         order: s.order,
@@ -908,52 +1143,68 @@ export class TournamentsService {
     };
   }
 
-  private async toPublicSummary(t: Tournament) {
+  private async toPublicSummaryForDivision(division: TournamentDivision) {
+    const event = await this.tournaments.findOne({
+      where: { id: division.tournamentId, deletedAt: IsNull() },
+    });
+    if (!event) throw new NotFoundException('Tournament event not found');
+    return this.toPublicSummary(event, division);
+  }
+
+  private async toPublicSummary(
+    event: Tournament,
+    division: TournamentDivision,
+  ) {
     const approvedTeamsCount = await this.registrations.count({
-      where: { tournamentId: t.id, status: 'approved' as const, deletedAt: IsNull() },
+      where: {
+        divisionId: division.id,
+        status: 'approved' as const,
+        deletedAt: IsNull(),
+      },
     });
     const activeTeamsCount = await this.registrations.count({
       where: {
-        tournamentId: t.id,
+        divisionId: division.id,
         status: In(['pending', 'approved', 'waitlisted']),
         deletedAt: IsNull(),
       },
     });
     const venueNames: string[] = [];
-    if (t.venueIds?.length) {
+    if (event.venueIds?.length) {
       const locs = await this.locations.find({
-        where: { id: In(t.venueIds) },
+        where: { id: In(event.venueIds) },
         select: ['id', 'name'],
       });
       venueNames.push(...locs.map((l) => l.name));
     }
     return {
-      id: t.id,
-      name: t.name,
-      sport: t.sport,
-      status: t.status,
-      venueIds: t.venueIds ?? [],
+      id: division.id,
+      eventId: event.id,
+      name: event.name,
+      sport: division.sport,
+      status: division.status,
+      venueIds: event.venueIds ?? [],
       venueNames,
-      registrationOpensAt: t.registrationOpensAt?.toISOString() ?? null,
-      registrationClosesAt: t.registrationClosesAt?.toISOString() ?? null,
-      startsAt: t.startsAt.toISOString(),
-      endsAt: t.endsAt?.toISOString() ?? null,
-      maxTeams: t.maxTeams,
+      registrationOpensAt: division.registrationOpensAt?.toISOString() ?? null,
+      registrationClosesAt: division.registrationClosesAt?.toISOString() ?? null,
+      startsAt: event.startsAt.toISOString(),
+      endsAt: event.endsAt?.toISOString() ?? null,
+      maxTeams: division.maxTeams,
       approvedTeamsCount,
       activeTeamsCount,
-      spotsRemaining: Math.max(0, t.maxTeams - activeTeamsCount),
+      spotsRemaining: Math.max(0, division.maxTeams - activeTeamsCount),
       entryFeeAmount:
-        t.entryFeeAmount != null ? Number(t.entryFeeAmount) : null,
-      entryFeeCurrency: t.entryFeeCurrency,
-      structureType: t.structureType,
-      rules: t.rules ?? null,
-      prizePool: (t.prizePool as Record<string, unknown>) ?? null,
+        division.entryFeeAmount != null ? Number(division.entryFeeAmount) : null,
+      entryFeeCurrency: division.entryFeeCurrency,
+      structureType: division.structureType,
+      rules: division.rules ?? null,
+      prizePool: (division.prizePool as Record<string, unknown>) ?? null,
     };
   }
 
-  async getPublicStandings(tenantId: string, tournamentId: string) {
-    await this.findTournament(tenantId, tournamentId);
-    const raw = await this.getStandings(tenantId, tournamentId);
+  async getPublicStandings(tenantId: string, divisionId: string) {
+    await this.findDivisionContext(tenantId, divisionId);
+    const raw = await this.getStandings(tenantId, divisionId);
     const teamIds = new Set<string>();
     for (const g of raw) {
       for (const s of g.standings) teamIds.add(s.teamId);
@@ -983,10 +1234,10 @@ export class TournamentsService {
     }));
   }
 
-  async getPublicBracket(tenantId: string, tournamentId: string) {
-    await this.findTournament(tenantId, tournamentId);
+  async getPublicBracket(tenantId: string, divisionId: string) {
+    await this.findDivisionContext(tenantId, divisionId);
     const knockoutStages = await this.stages.find({
-      where: { tournamentId, stageType: 'knockout', deletedAt: IsNull() },
+      where: { divisionId, stageType: 'knockout', deletedAt: IsNull() },
       order: { order: 'ASC' },
     });
 
@@ -1054,18 +1305,5 @@ export class TournamentsService {
     }
 
     return { stages: stagesOut };
-  }
-
-  private async findTournament(
-    tenantId: string,
-    id: string,
-  ): Promise<Tournament> {
-    const t = await this.tournaments.findOne({
-      where: { id, tenantId, deletedAt: IsNull() },
-    });
-    if (!t) {
-      throw new NotFoundException('Tournament not found');
-    }
-    return t;
   }
 }

@@ -16,7 +16,7 @@ export class TournamentConfigVersion {
   id!: string;
 
   @Column({ type: 'uuid' })
-  tournamentId!: string;
+  divisionId!: string;
 
   @Column({ type: 'int' })
   version!: number;
