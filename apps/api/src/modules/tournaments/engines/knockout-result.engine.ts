@@ -11,7 +11,7 @@ export function resolveMatchWinner(match: {
     const away = match.awayScore ?? 0;
     if (home > away) return match.homeTeamId ?? null;
     if (away > home) return match.awayTeamId ?? null;
-    return match.homeTeamId ?? match.awayTeamId ?? null;
+    return null;
   }
   if (match.status === 'completed') {
     const home = match.homeScore ?? 0;

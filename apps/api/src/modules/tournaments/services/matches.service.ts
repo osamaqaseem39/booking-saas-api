@@ -187,6 +187,7 @@ export class MatchesService {
 
   async start(tenantId: string, matchId: string, actorId?: string) {
     const match = await this.findMatch(tenantId, matchId);
+    await this.assertTournamentStarted(tenantId, match.tournamentId);
     const next: MatchStatus =
       match.status === 'scheduled' ? 'in_progress' : 'in_progress';
     assertMatchTransition(match.status as MatchStatus, next);
@@ -203,6 +204,7 @@ export class MatchesService {
     actorId?: string,
   ) {
     const match = await this.findMatch(tenantId, matchId);
+    await this.assertTournamentStarted(tenantId, match.tournamentId);
     if (match.status === 'completed' || match.status === 'approved') {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.MATCH_ALREADY_COMPLETED,
@@ -221,15 +223,21 @@ export class MatchesService {
         code: TOURNAMENT_ERROR_CODES.CONFLICT_RETRY,
       });
     }
+
+    if (!match.groupId && dto.homeScore === dto.awayScore) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INVALID_SCORE,
+        message: 'Knockout matches cannot end in a draw',
+      });
+    }
+
     match.homeScore = dto.homeScore;
     match.awayScore = dto.awayScore;
-    match.status = 'completed';
+    match.status = 'approved';
     match.version += 1;
     await this.matches.save(match);
 
-    if (match.groupId) {
-      await this.recomputeGroupStandings(match.groupId, tenantId);
-    }
+    await this.applyMatchResult(match, tenantId);
 
     await this.audit.log({
       tenantId,
@@ -239,7 +247,7 @@ export class MatchesService {
       afterState: {
         homeScore: dto.homeScore,
         awayScore: dto.awayScore,
-        status: 'completed',
+        status: 'approved',
       },
     });
     return match;
@@ -251,15 +259,7 @@ export class MatchesService {
     match.status = 'approved';
     match.version += 1;
     await this.matches.save(match);
-    if (match.groupId) {
-      await this.recomputeGroupStandings(match.groupId, tenantId);
-    } else {
-      await this.knockoutBracket.tryCompleteKnockoutStage(
-        match.stageId,
-        match.tournamentId,
-      );
-    }
-    await this.tryCompleteGroupStage(match.stageId, match.tournamentId);
+    await this.applyMatchResult(match, tenantId);
     return match;
   }
 
@@ -270,6 +270,7 @@ export class MatchesService {
     actorId?: string,
   ) {
     const match = await this.findMatch(tenantId, matchId);
+    await this.assertTournamentStarted(tenantId, match.tournamentId);
     assertMatchTransition(match.status as MatchStatus, 'walkover');
     const isHome = match.homeTeamId === dto.winnerTeamId;
     const isAway = match.awayTeamId === dto.winnerTeamId;
@@ -285,6 +286,29 @@ export class MatchesService {
     match.metadata = { ...(match.metadata ?? {}), walkoverReason: dto.reason };
     match.version += 1;
     await this.matches.save(match);
+    await this.applyMatchResult(match, tenantId);
+    return match;
+  }
+
+  private async assertTournamentStarted(
+    tenantId: string,
+    tournamentId: string,
+  ): Promise<void> {
+    const tournament = await this.tournaments.findOne({
+      where: { id: tournamentId, tenantId },
+    });
+    if (!tournament || tournament.status !== 'in_progress') {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.TOURNAMENT_INVALID_STATE,
+        message: 'Tournament has not started yet',
+      });
+    }
+  }
+
+  private async applyMatchResult(
+    match: TournamentMatch,
+    tenantId: string,
+  ): Promise<void> {
     if (match.groupId) {
       await this.recomputeGroupStandings(match.groupId, tenantId);
     } else {
@@ -294,7 +318,6 @@ export class MatchesService {
       );
     }
     await this.tryCompleteGroupStage(match.stageId, match.tournamentId);
-    return match;
   }
 
   private async tryCompleteGroupStage(
@@ -329,7 +352,7 @@ export class MatchesService {
     const completed = await this.matches.find({
       where: {
         groupId,
-        status: 'approved' as const,
+        status: In(['approved', 'walkover']),
         deletedAt: IsNull(),
       },
     });

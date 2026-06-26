@@ -17,7 +17,7 @@ const TOURNAMENT_TRANSITIONS: Record<
 };
 
 const MATCH_TRANSITIONS: Record<MatchStatus, MatchStatus[]> = {
-  draft: ['scheduled', 'cancelled'],
+  draft: ['scheduled', 'walkover', 'cancelled'],
   scheduled: ['checked_in', 'in_progress', 'walkover', 'cancelled'],
   checked_in: ['in_progress', 'walkover', 'cancelled'],
   in_progress: ['completed', 'disputed', 'cancelled'],
