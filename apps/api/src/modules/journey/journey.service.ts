@@ -9,6 +9,7 @@ import { User } from '../iam/entities/user.entity';
 import { TournamentRegistration } from '../tournaments/entities/tournament-registration.entity';
 import { TeamMember } from '../tournaments/entities/team-member.entity';
 import { Tournament } from '../tournaments/entities/tournament.entity';
+import { TournamentDivision } from '../tournaments/entities/tournament-division.entity';
 import { CanteenOrder } from '../canteen/entities/canteen-order.entity';
 import { SupportTicket } from '../support/entities/support-ticket.entity';
 import { JourneyEvent } from './entities/journey-event.entity';
@@ -33,6 +34,8 @@ export class JourneyService {
     private readonly teamMembers: Repository<TeamMember>,
     @InjectRepository(Tournament)
     private readonly tournaments: Repository<Tournament>,
+    @InjectRepository(TournamentDivision)
+    private readonly divisions: Repository<TournamentDivision>,
     @InjectRepository(CanteenOrder)
     private readonly canteenOrders: Repository<CanteenOrder>,
     @InjectRepository(SupportTicket)
@@ -182,12 +185,17 @@ export class JourneyService {
           where: { teamId: In(teamIds) },
           order: { createdAt: 'DESC' },
         });
-        const tournaments = await this.tournaments.find({
-          where: { id: In(regs.map((r) => r.tournamentId)) },
+        const divisions = await this.divisions.find({
+          where: { id: In(regs.map((r) => r.divisionId)) },
         });
-        const tMap = new Map(tournaments.map((t) => [t.id, t]));
+        const dMap = new Map(divisions.map((d) => [d.id, d]));
+        const events = await this.tournaments.find({
+          where: { id: In(divisions.map((d) => d.tournamentId)) },
+        });
+        const eMap = new Map(events.map((e) => [e.id, e]));
         for (const r of regs) {
-          const t = tMap.get(r.tournamentId);
+          const d = dMap.get(r.divisionId);
+          const t = d ? eMap.get(d.tournamentId) : undefined;
           items.push({
             id: `tournament-${r.id}`,
             type: 'tournament',

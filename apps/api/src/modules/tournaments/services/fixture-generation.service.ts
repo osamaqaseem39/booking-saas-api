@@ -56,10 +56,10 @@ export class FixtureGenerationService {
     divisionId: string,
     stageOrder: number,
   ): Promise<{ stageId: string; matchesCreated: number }> {
-    const tournament = await this.tournaments.findOne({
+    const division = await this.divisions.findOne({
       where: { id: divisionId, deletedAt: IsNull() },
     });
-    if (!tournament?.currentConfigVersionId) {
+    if (!division?.currentConfigVersionId) {
       throw new Error('Tournament config missing');
     }
 
@@ -69,7 +69,7 @@ export class FixtureGenerationService {
     if (!stage) throw new Error('Stage not found');
 
     const config = await this.configs.findOne({
-      where: { id: tournament.currentConfigVersionId },
+      where: { id: division.currentConfigVersionId },
     });
     if (!config) throw new Error('Config not found');
 
@@ -117,7 +117,7 @@ export class FixtureGenerationService {
       if (stage.stageType === 'group' && blueprint.groups?.length) {
         matchesCreated = await this.generateGroupStage(
           manager,
-          tournament,
+          division,
           stage,
           blueprint,
           teamIds,
@@ -125,7 +125,7 @@ export class FixtureGenerationService {
       } else if (stage.stageType === 'knockout') {
         matchesCreated = await this.generateKnockoutStage(
           manager,
-          tournament,
+          division,
           stage,
           blueprint,
           teamIds,
@@ -282,14 +282,14 @@ export class FixtureGenerationService {
 
     await this.assertStageUnlocked(divisionId, stage.id);
 
-    const tournament = await this.tournaments.findOne({
+    const division = await this.divisions.findOne({
       where: { id: divisionId, deletedAt: IsNull() },
     });
-    if (!tournament?.currentConfigVersionId) {
+    if (!division?.currentConfigVersionId) {
       throw new NotFoundException('Tournament config missing');
     }
     const config = await this.configs.findOne({
-      where: { id: tournament.currentConfigVersionId },
+      where: { id: division.currentConfigVersionId },
     });
     const blueprint = config?.structureBlueprint as StructureBlueprint;
 
@@ -326,14 +326,14 @@ export class FixtureGenerationService {
 
       await this.regenerateGroupFixtures(
         manager,
-        tournament,
+        division,
         stage,
         groupIdA,
         blueprint,
       );
       await this.regenerateGroupFixtures(
         manager,
-        tournament,
+        division,
         stage,
         groupIdB,
         blueprint,
@@ -365,13 +365,13 @@ export class FixtureGenerationService {
 
   private async regenerateGroupFixtures(
     manager: DataSource['manager'],
-    tournament: Tournament,
+    division: TournamentDivision,
     stage: TournamentStage,
     groupId: string,
     blueprint: StructureBlueprint,
   ): Promise<void> {
     const groupMatches = await manager.find(TournamentMatch, {
-      where: { divisionId: tournament.id, stageId: stage.id, groupId },
+      where: { divisionId: division.id, stageId: stage.id, groupId },
     });
     if (groupMatches.length > 0) {
       const matchIds = groupMatches.map((m) => m.id);
@@ -382,7 +382,7 @@ export class FixtureGenerationService {
         .where('matchId IN (:...matchIds)', { matchIds })
         .execute();
       await manager.delete(TournamentMatch, {
-        divisionId: tournament.id,
+        divisionId: division.id,
         stageId: stage.id,
         groupId,
       });
@@ -403,7 +403,7 @@ export class FixtureGenerationService {
     const fixtures = generateRoundRobinFixtures(slice, maxRounds);
     for (const f of fixtures) {
       const match = await manager.save(TournamentMatch, {
-        divisionId: tournament.id,
+        divisionId: division.id,
         stageId: stage.id,
         groupId,
         status: 'draft',
@@ -421,7 +421,7 @@ export class FixtureGenerationService {
 
   private async generateGroupStage(
     manager: DataSource['manager'],
-    tournament: Tournament,
+    division: TournamentDivision,
     stage: TournamentStage,
     blueprint: StructureBlueprint,
     teamIds: string[],
@@ -452,7 +452,7 @@ export class FixtureGenerationService {
       const fixtures = generateRoundRobinFixtures(slice, maxRounds);
       for (const f of fixtures) {
         const match = await manager.save(TournamentMatch, {
-          divisionId: tournament.id,
+          divisionId: division.id,
           stageId: stage.id,
           groupId: group.id,
           status: 'draft',
@@ -473,7 +473,7 @@ export class FixtureGenerationService {
 
   private async generateKnockoutStage(
     manager: DataSource['manager'],
-    tournament: Tournament,
+    division: TournamentDivision,
     stage: TournamentStage,
     blueprint: StructureBlueprint,
     teamIds: string[],
@@ -487,7 +487,7 @@ export class FixtureGenerationService {
       let matchId: string | null = null;
       if (d.round === 1 && !d.isBye && d.teamId && d.awayTeamId) {
         const match = await manager.save(TournamentMatch, {
-          divisionId: tournament.id,
+          divisionId: division.id,
           stageId: stage.id,
           status: 'draft',
           homeTeamId: d.teamId,

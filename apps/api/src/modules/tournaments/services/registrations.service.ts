@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
 import { Tournament } from '../entities/tournament.entity';
+import { TournamentDivision } from '../entities/tournament-division.entity';
 import { TournamentRegistration } from '../entities/tournament-registration.entity';
 import { Team } from '../entities/team.entity';
 import { TeamMember } from '../entities/team-member.entity';
@@ -22,6 +23,8 @@ export class RegistrationsService {
   constructor(
     @InjectRepository(Tournament)
     private readonly tournaments: Repository<Tournament>,
+    @InjectRepository(TournamentDivision)
+    private readonly divisions: Repository<TournamentDivision>,
     @InjectRepository(TournamentRegistration)
     private readonly registrations: Repository<TournamentRegistration>,
     @InjectRepository(Team)
@@ -31,9 +34,9 @@ export class RegistrationsService {
     private readonly audit: TournamentAuditService,
   ) {}
 
-  async listForTournament(tournamentId: string) {
+  async listForTournament(divisionId: string) {
     const rows = await this.registrations.find({
-      where: { tournamentId, deletedAt: IsNull() },
+      where: { divisionId, deletedAt: IsNull() },
       order: { createdAt: 'ASC' },
     });
     if (rows.length === 0) return [];
@@ -45,7 +48,7 @@ export class RegistrationsService {
 
     return rows.map((r) => ({
       id: r.id,
-      tournamentId: r.tournamentId,
+      tournamentId: r.divisionId,
       teamId: r.teamId,
       teamName: teamNames.get(r.teamId) ?? null,
       status: r.status,
@@ -59,17 +62,17 @@ export class RegistrationsService {
 
   async register(
     tenantId: string,
-    tournamentId: string,
+    divisionId: string,
     dto: RegisterTeamDto,
     actorId?: string,
     idempotencyKey?: string,
   ) {
-    const tournament = await this.tournaments.findOne({
-      where: { id: tournamentId, tenantId, deletedAt: IsNull() },
-    });
-    if (!tournament) throw new NotFoundException('Tournament not found');
+    const { division, event } = await this.findDivisionContext(
+      tenantId,
+      divisionId,
+    );
 
-    if (tournament.status !== 'registration_open') {
+    if (division.status !== 'registration_open') {
       throw new ForbiddenException({
         code: TOURNAMENT_ERROR_CODES.REGISTRATION_CLOSED,
         message: 'Registration is not open',
@@ -85,13 +88,13 @@ export class RegistrationsService {
           where: { id: existing.teamId },
         });
         if (team) {
-          return this.formatPublicRegistration(existing, team, tournament);
+          return this.formatPublicRegistration(existing, team, division, event);
         }
       }
     }
 
-    const activeCount = await this.countActiveRegistrations(tournamentId);
-    if (activeCount >= tournament.maxTeams) {
+    const activeCount = await this.countActiveRegistrations(divisionId);
+    if (activeCount >= division.maxTeams) {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.REGISTRATION_FULL,
         message: 'Tournament is full',
@@ -124,7 +127,7 @@ export class RegistrationsService {
     }
 
     const dup = await this.registrations.findOne({
-      where: { tournamentId, teamId: team.id, deletedAt: IsNull() },
+      where: { divisionId, teamId: team.id, deletedAt: IsNull() },
     });
     if (dup && !['cancelled', 'rejected', 'withdrawn'].includes(dup.status)) {
       throw new ConflictException({
@@ -134,13 +137,13 @@ export class RegistrationsService {
     }
 
     const reg = await this.registrations.save({
-      tournamentId,
+      divisionId,
       teamId: team.id,
       status: 'pending',
       waitlistPosition: null,
       idempotencyKey: idempotencyKey ?? null,
       paymentStatus:
-        tournament.entryFeeAmount && Number(tournament.entryFeeAmount) > 0
+        division.entryFeeAmount && Number(division.entryFeeAmount) > 0
           ? 'pending'
           : 'paid',
     });
@@ -153,7 +156,7 @@ export class RegistrationsService {
       afterState: { status: reg.status, teamId: team.id },
     });
 
-    return this.formatPublicRegistration(reg, team, tournament);
+    return this.formatPublicRegistration(reg, team, division, event);
   }
 
   async approve(
@@ -162,12 +165,12 @@ export class RegistrationsService {
     actorId?: string,
   ) {
     const reg = await this.findRegistration(tenantId, registrationId);
-    const tournament = await this.tournaments.findOne({
-      where: { id: reg.tournamentId, tenantId, deletedAt: IsNull() },
+    const division = await this.divisions.findOne({
+      where: { id: reg.divisionId, deletedAt: IsNull() },
     });
-    if (!tournament) throw new NotFoundException('Tournament not found');
+    if (!division) throw new NotFoundException('Tournament not found');
 
-    const entryFee = Number(tournament.entryFeeAmount ?? 0);
+    const entryFee = Number(division.entryFeeAmount ?? 0);
     if (entryFee > 0 && reg.paymentStatus !== 'paid') {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.PAYMENT_NOT_CONFIRMED,
@@ -178,12 +181,12 @@ export class RegistrationsService {
     if (reg.status !== 'approved') {
       const approvedCount = await this.registrations.count({
         where: {
-          tournamentId: reg.tournamentId,
+          divisionId: reg.divisionId,
           status: 'approved' as const,
           deletedAt: IsNull(),
         },
       });
-      if (approvedCount >= tournament.maxTeams) {
+      if (approvedCount >= division.maxTeams) {
         throw new ConflictException({
           code: TOURNAMENT_ERROR_CODES.REGISTRATION_FULL,
           message: 'Tournament is full',
@@ -262,10 +265,14 @@ export class RegistrationsService {
     });
     if (rows.length === 0) return { items: [] };
 
-    const tournaments = await this.tournaments.find({
-      where: { id: In(rows.map((r) => r.tournamentId)) },
+    const divisions = await this.divisions.find({
+      where: { id: In(rows.map((r) => r.divisionId)) },
     });
-    const tMap = new Map(tournaments.map((t) => [t.id, t]));
+    const dMap = new Map(divisions.map((d) => [d.id, d]));
+    const events = await this.tournaments.find({
+      where: { id: In(divisions.map((d) => d.tournamentId)) },
+    });
+    const eMap = new Map(events.map((e) => [e.id, e]));
     const teams = await this.teams.find({
       where: { id: In(rows.map((r) => r.teamId)) },
     });
@@ -273,40 +280,46 @@ export class RegistrationsService {
 
     return {
       items: rows.map((r) => {
-        const t = tMap.get(r.tournamentId);
+        const d = dMap.get(r.divisionId);
+        const e = d ? eMap.get(d.tournamentId) : undefined;
         return {
           id: r.id,
-          tournamentId: r.tournamentId,
-          tournamentName: t?.name ?? null,
+          tournamentId: r.divisionId,
+          tournamentName: e?.name ?? null,
           teamId: r.teamId,
           teamName: teamNames.get(r.teamId) ?? null,
           status: r.status,
           paymentStatus: r.paymentStatus,
-          sport: t?.sport ?? null,
-          startsAt: t?.startsAt.toISOString() ?? null,
+          sport: d?.sport ?? null,
+          startsAt: e?.startsAt.toISOString() ?? null,
           entryFeeAmount:
-            t?.entryFeeAmount != null ? Number(t.entryFeeAmount) : null,
+            d?.entryFeeAmount != null ? Number(d.entryFeeAmount) : null,
           createdAt: r.createdAt.toISOString(),
         };
       }),
     };
   }
 
-  formatPublicRegistration(reg: TournamentRegistration, team: Team, tournament: Tournament) {
-    const entryFee = Number(tournament.entryFeeAmount ?? 0);
+  formatPublicRegistration(
+    reg: TournamentRegistration,
+    team: Team,
+    division: TournamentDivision,
+    _event: Tournament,
+  ) {
+    const entryFee = Number(division.entryFeeAmount ?? 0);
     const paymentExpiresAt = new Date(
       reg.createdAt.getTime() + 15 * 60_000,
     ).toISOString();
     return {
       registration: {
         id: reg.id,
-        tournamentId: reg.tournamentId,
+        tournamentId: reg.divisionId,
         teamId: reg.teamId,
         status: reg.status,
         paymentStatus: reg.paymentStatus,
         waitlistPosition: reg.waitlistPosition ?? null,
         entryFeeAmount: entryFee > 0 ? entryFee : null,
-        entryFeeCurrency: tournament.entryFeeCurrency,
+        entryFeeCurrency: division.entryFeeCurrency,
         paymentExpiresAt: entryFee > 0 ? paymentExpiresAt : null,
         createdAt: reg.createdAt.toISOString(),
       },
@@ -314,23 +327,32 @@ export class RegistrationsService {
     };
   }
 
-  private countActiveRegistrations(tournamentId: string) {
+  private countActiveRegistrations(divisionId: string) {
     return this.registrations.count({
       where: {
-        tournamentId,
+        divisionId,
         status: In([...ACTIVE_REGISTRATION_STATUSES]),
         deletedAt: IsNull(),
       },
     });
   }
 
+  private async findDivisionContext(tenantId: string, divisionId: string) {
+    const division = await this.divisions.findOne({
+      where: { id: divisionId, deletedAt: IsNull() },
+    });
+    if (!division) throw new NotFoundException('Tournament not found');
+    const event = await this.tournaments.findOne({
+      where: { id: division.tournamentId, tenantId, deletedAt: IsNull() },
+    });
+    if (!event) throw new NotFoundException('Tournament not found');
+    return { division, event };
+  }
+
   private async findRegistration(tenantId: string, id: string) {
     const reg = await this.registrations.findOne({ where: { id } });
     if (!reg) throw new NotFoundException('Registration not found');
-    const tournament = await this.tournaments.findOne({
-      where: { id: reg.tournamentId, tenantId },
-    });
-    if (!tournament) throw new NotFoundException('Registration not found');
+    await this.findDivisionContext(tenantId, reg.divisionId);
     return reg;
   }
 }

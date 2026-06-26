@@ -6,6 +6,7 @@ import { Booking } from '../bookings/entities/booking.entity';
 import { PaymentTransaction } from '../bookings/entities/payment-transaction.entity';
 import { TournamentRegistration } from '../tournaments/entities/tournament-registration.entity';
 import { Tournament } from '../tournaments/entities/tournament.entity';
+import { TournamentDivision } from '../tournaments/entities/tournament-division.entity';
 import { TeamMember } from '../tournaments/entities/team-member.entity';
 import { CanteenOrder } from '../canteen/entities/canteen-order.entity';
 import { PaymentAttempt } from './entities/payment-attempt.entity';
@@ -25,6 +26,7 @@ import { JazzCashProvider } from './providers/jazzcash.provider';
       PaymentTransaction,
       TournamentRegistration,
       Tournament,
+      TournamentDivision,
       TeamMember,
       CanteenOrder,
     ]),

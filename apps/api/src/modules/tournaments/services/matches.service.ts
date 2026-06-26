@@ -9,6 +9,7 @@ import { TournamentStage } from '../entities/tournament-stage.entity';
 import { BookingItem } from '../../bookings/entities/booking-item.entity';
 import { TournamentMatch } from '../entities/tournament-match.entity';
 import { Tournament } from '../entities/tournament.entity';
+import { TournamentDivision } from '../entities/tournament-division.entity';
 import { Standing } from '../entities/standing.entity';
 import { TournamentGroup } from '../entities/tournament-group.entity';
 import { Team } from '../entities/team.entity';
@@ -44,6 +45,8 @@ export class MatchesService {
     private readonly bookingItems: Repository<BookingItem>,
     @InjectRepository(Tournament)
     private readonly tournaments: Repository<Tournament>,
+    @InjectRepository(TournamentDivision)
+    private readonly divisions: Repository<TournamentDivision>,
     @InjectRepository(Standing)
     private readonly standings: Repository<Standing>,
     @InjectRepository(TournamentGroup)
@@ -63,10 +66,10 @@ export class MatchesService {
 
   async get(tenantId: string, matchId: string) {
     const match = await this.findMatch(tenantId, matchId);
-    const tournament = await this.tournaments.findOne({
-      where: { id: match.tournamentId, tenantId },
-    });
-    if (!tournament) throw new NotFoundException('Match not found');
+    const { event } = await this.findDivisionContext(
+      tenantId,
+      match.divisionId,
+    );
 
     const stage = await this.stages.findOne({ where: { id: match.stageId } });
     let groupName: string | null = null;
@@ -88,8 +91,8 @@ export class MatchesService {
 
     return {
       id: match.id,
-      tournamentId: match.tournamentId,
-      tournamentName: tournament.name,
+      tournamentId: match.divisionId,
+      tournamentName: event.name,
       stageId: match.stageId,
       stageName: stage?.name ?? null,
       stageType: stage?.stageType ?? null,
@@ -156,10 +159,8 @@ export class MatchesService {
     match.version += 1;
     await this.matches.save(match);
 
-    const tournament = await this.tournaments.findOne({
-      where: { id: match.tournamentId, tenantId },
-    });
-    if (tournament && dto.courtId && courtKind && dto.venueId && actorId) {
+    const { event } = await this.findDivisionContext(tenantId, match.divisionId);
+    if (dto.courtId && courtKind && dto.venueId && actorId) {
       const bookingId = await this.matchBooking.syncCourtHold({
         tenantId,
         match,
@@ -169,7 +170,7 @@ export class MatchesService {
         courtId: dto.courtId,
         venueId: dto.venueId,
         actorId,
-        tournamentName: tournament.name,
+        tournamentName: event.name,
       });
       if (bookingId) {
         match.metadata = { ...(match.metadata ?? {}), bookingId };
@@ -188,7 +189,7 @@ export class MatchesService {
 
   async start(tenantId: string, matchId: string, actorId?: string) {
     const match = await this.findMatch(tenantId, matchId);
-    await this.assertTournamentStarted(tenantId, match.tournamentId);
+    await this.assertDivisionStarted(tenantId, match.divisionId);
     const next: MatchStatus =
       match.status === 'scheduled' ? 'in_progress' : 'in_progress';
     assertMatchTransition(match.status as MatchStatus, next);
@@ -205,7 +206,7 @@ export class MatchesService {
     actorId?: string,
   ) {
     const match = await this.findMatch(tenantId, matchId);
-    await this.assertTournamentStarted(tenantId, match.tournamentId);
+    await this.assertDivisionStarted(tenantId, match.divisionId);
     if (match.status === 'completed' || match.status === 'approved') {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.MATCH_ALREADY_COMPLETED,
@@ -300,7 +301,7 @@ export class MatchesService {
     actorId?: string,
   ) {
     const match = await this.findMatch(tenantId, matchId);
-    await this.assertTournamentStarted(tenantId, match.tournamentId);
+    await this.assertDivisionStarted(tenantId, match.divisionId);
     assertMatchTransition(match.status as MatchStatus, 'walkover');
     const isHome = match.homeTeamId === dto.winnerTeamId;
     const isAway = match.awayTeamId === dto.winnerTeamId;
@@ -320,14 +321,12 @@ export class MatchesService {
     return match;
   }
 
-  private async assertTournamentStarted(
+  private async assertDivisionStarted(
     tenantId: string,
-    tournamentId: string,
+    divisionId: string,
   ): Promise<void> {
-    const tournament = await this.tournaments.findOne({
-      where: { id: tournamentId, tenantId },
-    });
-    if (!tournament || tournament.status !== 'in_progress') {
+    const { division } = await this.findDivisionContext(tenantId, divisionId);
+    if (division.status !== 'in_progress') {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.TOURNAMENT_INVALID_STATE,
         message: 'Tournament has not started yet',
@@ -344,15 +343,15 @@ export class MatchesService {
     } else {
       await this.knockoutBracket.tryCompleteKnockoutStage(
         match.stageId,
-        match.tournamentId,
+        match.divisionId,
       );
     }
-    await this.tryCompleteGroupStage(match.stageId, match.tournamentId);
+    await this.tryCompleteGroupStage(match.stageId, match.divisionId);
   }
 
   private async tryCompleteGroupStage(
     stageId: string,
-    tournamentId: string,
+    divisionId: string,
   ): Promise<void> {
     const stage = await this.stages.findOne({ where: { id: stageId } });
     if (!stage || stage.stageType !== 'group' || stage.status === 'completed') {
@@ -360,7 +359,7 @@ export class MatchesService {
     }
     const open = await this.matches.count({
       where: {
-        tournamentId,
+        divisionId,
         stageId,
         deletedAt: IsNull(),
         status: Not(In(['approved', 'walkover', 'cancelled'])),
@@ -387,13 +386,13 @@ export class MatchesService {
       },
     });
 
-    const tournament = await this.tournaments.findOne({
-      where: { id: completed[0]?.tournamentId },
+    const division = await this.divisions.findOne({
+      where: { id: completed[0]?.divisionId },
     });
     let rules = DEFAULT_STANDINGS_RULES;
-    if (tournament?.currentConfigVersionId) {
+    if (division?.currentConfigVersionId) {
       const cfg = await this.configs.findOne({
-        where: { id: tournament.currentConfigVersionId },
+        where: { id: division.currentConfigVersionId },
       });
       if (cfg?.standingsRules) rules = cfg.standingsRules;
     }
@@ -477,15 +476,24 @@ export class MatchesService {
     }
   }
 
+  private async findDivisionContext(tenantId: string, divisionId: string) {
+    const division = await this.divisions.findOne({
+      where: { id: divisionId, deletedAt: IsNull() },
+    });
+    if (!division) throw new NotFoundException('Match not found');
+    const event = await this.tournaments.findOne({
+      where: { id: division.tournamentId, tenantId, deletedAt: IsNull() },
+    });
+    if (!event) throw new NotFoundException('Match not found');
+    return { division, event };
+  }
+
   private async findMatch(tenantId: string, matchId: string) {
     const match = await this.matches.findOne({
       where: { id: matchId, deletedAt: IsNull() },
     });
     if (!match) throw new NotFoundException('Match not found');
-    const tournament = await this.tournaments.findOne({
-      where: { id: match.tournamentId, tenantId },
-    });
-    if (!tournament) throw new NotFoundException('Match not found');
+    await this.findDivisionContext(tenantId, match.divisionId);
     return match;
   }
 }

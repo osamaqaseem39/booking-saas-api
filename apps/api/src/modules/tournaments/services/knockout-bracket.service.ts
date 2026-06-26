@@ -5,7 +5,7 @@ import { BracketNode } from '../entities/bracket-node.entity';
 import { TournamentFixture } from '../entities/tournament-fixture.entity';
 import { TournamentMatch } from '../entities/tournament-match.entity';
 import { TournamentStage } from '../entities/tournament-stage.entity';
-import { Tournament } from '../entities/tournament.entity';
+import { TournamentDivision } from '../entities/tournament-division.entity';
 import {
   findNextKnockoutRoundToGenerate,
   isKnockoutRoundComplete,
@@ -22,13 +22,13 @@ export class KnockoutBracketService {
     private readonly matches: Repository<TournamentMatch>,
     @InjectRepository(TournamentStage)
     private readonly stages: Repository<TournamentStage>,
-    @InjectRepository(Tournament)
-    private readonly tournaments: Repository<Tournament>,
+    @InjectRepository(TournamentDivision)
+    private readonly divisions: Repository<TournamentDivision>,
     @InjectRepository(TournamentFixture)
     private readonly fixtures: Repository<TournamentFixture>,
   ) {}
 
-  async getRoundStatus(tournamentId: string, stageId: string) {
+  async getRoundStatus(divisionId: string, stageId: string) {
     const nodes = await this.bracketNodes.find({
       where: { stageId },
       order: { round: 'ASC', slotIndex: 'ASC' },
@@ -75,7 +75,7 @@ export class KnockoutBracketService {
   }
 
   async generateNextRound(
-    tournamentId: string,
+    divisionId: string,
     stageId: string,
     manager?: EntityManager,
   ): Promise<{ round: number; matchesCreated: number }> {
@@ -138,14 +138,14 @@ export class KnockoutBracketService {
 
       const match = manager
         ? await manager.save(TournamentMatch, {
-            tournamentId,
+            divisionId,
             stageId,
             status: 'draft',
             homeTeamId,
             awayTeamId,
           })
         : await this.matches.save({
-            tournamentId,
+            divisionId,
             stageId,
             status: 'draft',
             homeTeamId,
@@ -175,7 +175,7 @@ export class KnockoutBracketService {
 
   async tryCompleteKnockoutStage(
     stageId: string,
-    tournamentId: string,
+    divisionId: string,
   ): Promise<void> {
     const stage = await this.stages.findOne({ where: { id: stageId } });
     if (!stage || stage.stageType !== 'knockout' || stage.status === 'completed') {
@@ -184,7 +184,7 @@ export class KnockoutBracketService {
 
     const open = await this.matches.count({
       where: {
-        tournamentId,
+        divisionId,
         stageId,
         deletedAt: IsNull(),
         status: Not(In(['approved', 'walkover', 'cancelled'])),
@@ -193,24 +193,24 @@ export class KnockoutBracketService {
     if (open > 0) return;
 
     const playable = await this.matches.count({
-      where: { tournamentId, stageId, deletedAt: IsNull() },
+      where: { divisionId, stageId, deletedAt: IsNull() },
     });
     if (playable === 0) return;
 
     stage.status = 'completed';
     await this.stages.save(stage);
-    await this.tryAutoCompleteTournament(tournamentId);
+    await this.tryAutoCompleteDivision(divisionId);
   }
 
-  private async tryAutoCompleteTournament(tournamentId: string): Promise<void> {
-    const tournament = await this.tournaments.findOne({
-      where: { id: tournamentId, deletedAt: IsNull() },
+  private async tryAutoCompleteDivision(divisionId: string): Promise<void> {
+    const division = await this.divisions.findOne({
+      where: { id: divisionId, deletedAt: IsNull() },
     });
-    if (!tournament || tournament.status !== 'in_progress') return;
+    if (!division || division.status !== 'in_progress') return;
 
     const incompleteStages = await this.stages.count({
       where: {
-        tournamentId,
+        divisionId,
         deletedAt: IsNull(),
         status: Not(In(['completed', 'cancelled'])),
       },
@@ -219,14 +219,14 @@ export class KnockoutBracketService {
 
     const openMatches = await this.matches.count({
       where: {
-        tournamentId,
+        divisionId,
         deletedAt: IsNull(),
         status: Not(In(['approved', 'walkover', 'cancelled'])),
       },
     });
     if (openMatches > 0) return;
 
-    tournament.status = 'completed';
-    await this.tournaments.save(tournament);
+    division.status = 'completed';
+    await this.divisions.save(division);
   }
 }

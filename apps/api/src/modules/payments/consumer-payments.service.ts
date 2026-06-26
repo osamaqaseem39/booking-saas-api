@@ -6,11 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { LessThan, Repository } from 'typeorm';
+import { LessThan, IsNull, Repository } from 'typeorm';
 import { Booking } from '../bookings/entities/booking.entity';
 import { PaymentTransaction } from '../bookings/entities/payment-transaction.entity';
 import { TournamentRegistration } from '../tournaments/entities/tournament-registration.entity';
 import { Tournament } from '../tournaments/entities/tournament.entity';
+import { TournamentDivision } from '../tournaments/entities/tournament-division.entity';
 import { TeamMember } from '../tournaments/entities/team-member.entity';
 import { CanteenOrder } from '../canteen/entities/canteen-order.entity';
 import {
@@ -45,6 +46,8 @@ export class ConsumerPaymentsService {
     private readonly registrations: Repository<TournamentRegistration>,
     @InjectRepository(Tournament)
     private readonly tournaments: Repository<Tournament>,
+    @InjectRepository(TournamentDivision)
+    private readonly divisions: Repository<TournamentDivision>,
     @InjectRepository(TeamMember)
     private readonly teamMembers: Repository<TeamMember>,
     @InjectRepository(CanteenOrder)
@@ -103,16 +106,24 @@ export class ConsumerPaymentsService {
     registrationId: string,
     userId: string,
     tenantId?: string,
-  ): Promise<{ reg: TournamentRegistration; tournament: Tournament }> {
+  ): Promise<{
+    reg: TournamentRegistration;
+    division: TournamentDivision;
+    event: Tournament;
+  }> {
     const reg = await this.registrations.findOne({
       where: { id: registrationId },
     });
     if (!reg) throw new NotFoundException('Registration not found');
-    const tournament = await this.tournaments.findOne({
-      where: { id: reg.tournamentId },
+    const division = await this.divisions.findOne({
+      where: { id: reg.divisionId, deletedAt: IsNull() },
     });
-    if (!tournament) throw new NotFoundException('Tournament not found');
-    if (tenantId && tournament.tenantId !== tenantId) {
+    if (!division) throw new NotFoundException('Tournament not found');
+    const event = await this.tournaments.findOne({
+      where: { id: division.tournamentId, deletedAt: IsNull() },
+    });
+    if (!event) throw new NotFoundException('Tournament not found');
+    if (tenantId && event.tenantId !== tenantId) {
       throw new NotFoundException('Registration not found');
     }
     const member = await this.teamMembers.findOne({
@@ -121,14 +132,15 @@ export class ConsumerPaymentsService {
     if (!member) {
       throw new ForbiddenException('Not registration owner');
     }
-    return { reg, tournament };
+    return { reg, division, event };
   }
 
   private assertPayable(
     entityType: PaymentEntityType,
     booking?: Booking,
     reg?: TournamentRegistration,
-    tournament?: Tournament,
+    division?: TournamentDivision,
+    event?: Tournament,
   ): { amount: number; entityId: string; tenantId: string } {
     if (entityType === 'booking' && booking) {
       if (['cancelled', 'completed'].includes(booking.bookingStatus)) {
@@ -148,18 +160,18 @@ export class ConsumerPaymentsService {
         tenantId: booking.tenantId,
       };
     }
-    if (entityType === 'tournament_registration' && reg && tournament) {
+    if (entityType === 'tournament_registration' && reg && division && event) {
       if (reg.paymentStatus === 'paid') {
         throw new BadRequestException('Registration already paid');
       }
-      const fee = numFromDec(tournament.entryFeeAmount);
+      const fee = numFromDec(division.entryFeeAmount);
       if (fee <= 0) {
         throw new BadRequestException('No entry fee required');
       }
       return {
         amount: fee,
         entityId: reg.id,
-        tenantId: tournament.tenantId,
+        tenantId: event.tenantId,
       };
     }
     throw new BadRequestException('Entity not payable');
@@ -189,7 +201,8 @@ export class ConsumerPaymentsService {
 
     let booking: Booking | undefined;
     let reg: TournamentRegistration | undefined;
-    let tournament: Tournament | undefined;
+    let division: TournamentDivision | undefined;
+    let event: Tournament | undefined;
 
     if (entityType === 'booking') {
       booking = await this.assertBookingOwner(entityId, userId, tenantId);
@@ -200,14 +213,16 @@ export class ConsumerPaymentsService {
         tenantId,
       );
       reg = resolved.reg;
-      tournament = resolved.tournament;
+      division = resolved.division;
+      event = resolved.event;
     }
 
     const { amount, entityId: eid, tenantId: tid } = this.assertPayable(
       entityType,
       booking,
       reg,
-      tournament,
+      division,
+      event,
     );
 
     const inProgress = await this.attempts.findOne({
