@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { IamModule } from '../iam/iam.module';
 import { BookingsModule } from '../bookings/bookings.module';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
+import { Business } from '../businesses/entities/business.entity';
 import { Team } from './entities/team.entity';
 import { TeamMember } from './entities/team-member.entity';
 import { Tournament } from './entities/tournament.entity';
@@ -19,6 +20,7 @@ import { TournamentAuditLog } from './entities/tournament-audit-log.entity';
 import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { TournamentsController } from './controllers/tournaments.controller';
+import { PlatformTournamentsController } from './controllers/platform-tournaments.controller';
 import { RegistrationsController } from './controllers/registrations.controller';
 import { MatchesController } from './controllers/matches.controller';
 import {
@@ -54,10 +56,12 @@ import { TournamentMatchBookingService } from './services/tournament-match-booki
       Booking,
       BookingItem,
       BusinessLocation,
+      Business,
     ]),
   ],
   controllers: [
     TournamentsController,
+    PlatformTournamentsController,
     RegistrationsController,
     MatchesController,
     PublicTournamentsController,

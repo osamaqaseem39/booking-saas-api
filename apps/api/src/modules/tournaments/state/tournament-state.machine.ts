@@ -6,6 +6,8 @@ const TOURNAMENT_TRANSITIONS: Record<
   TournamentStatus,
   TournamentStatus[]
 > = {
+  pending_approval: ['draft', 'rejected', 'cancelled'],
+  rejected: ['pending_approval', 'cancelled'],
   draft: ['published', 'cancelled'],
   published: ['registration_open', 'cancelled'],
   registration_open: ['registration_closed', 'cancelled'],
@@ -52,6 +54,10 @@ export function assertMatchTransition(from: MatchStatus, to: MatchStatus): void 
   }
 }
 
+export function getMatchStatusTransitions(from: MatchStatus): MatchStatus[] {
+  return MATCH_TRANSITIONS[from] ?? [];
+}
+
 export function tournamentEventToStatus(
   event: string,
 ): TournamentStatus | null {
@@ -64,6 +70,9 @@ export function tournamentEventToStatus(
     complete: 'completed',
     reopen: 'in_progress',
     cancel: 'cancelled',
+    approve: 'draft',
+    reject: 'rejected',
+    resubmit: 'pending_approval',
   };
   return map[event] ?? null;
 }

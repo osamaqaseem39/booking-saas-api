@@ -122,6 +122,21 @@ export class TournamentsController {
     );
   }
 
+  @Patch('tournaments/:id/resubmit')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  resubmit(
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tournamentsService.transition(
+      this.tenantId(tenant),
+      id,
+      'resubmit',
+      this.userId(req),
+    );
+  }
+
   @Patch('tournaments/:id/open-registration')
   @Roles('platform-owner', 'business-admin', 'location-admin')
   openRegistration(

@@ -18,6 +18,7 @@ import { GroupMember } from '../entities/group-member.entity';
 import { Team } from '../entities/team.entity';
 import { TournamentRegistration } from '../entities/tournament-registration.entity';
 import { BusinessLocation } from '../../businesses/entities/business-location.entity';
+import { Business } from '../../businesses/entities/business.entity';
 import {
   CreateTournamentDto,
   PreviewStructureDto,
@@ -64,6 +65,10 @@ export type TournamentRow = {
   structureBlueprint?: unknown;
 };
 
+export type TournamentApprovalRow = TournamentRow & {
+  businessName: string | null;
+};
+
 @Injectable()
 export class TournamentsService {
   constructor(
@@ -91,6 +96,8 @@ export class TournamentsService {
     private readonly registrations: Repository<TournamentRegistration>,
     @InjectRepository(BusinessLocation)
     private readonly locations: Repository<BusinessLocation>,
+    @InjectRepository(Business)
+    private readonly businesses: Repository<Business>,
     private readonly audit: TournamentAuditService,
     private readonly fixtureGen: FixtureGenerationService,
     private readonly knockoutBracket: KnockoutBracketService,
@@ -184,7 +191,7 @@ export class TournamentsService {
       prizePool: dto.prizePool ?? null,
       rules: dto.rules ?? null,
       structureType: dto.structureType,
-      status: 'draft',
+      status: 'pending_approval',
     });
 
     const config = await this.configs.save({
@@ -210,7 +217,7 @@ export class TournamentsService {
       entityType: 'tournament',
       entityId: tournament.id,
       actorId,
-      afterState: { status: 'draft', name: tournament.name },
+      afterState: { status: 'pending_approval', name: tournament.name },
     });
 
     return this.get(tenantId, tournament.id);
@@ -225,6 +232,8 @@ export class TournamentsService {
     const t = await this.findTournament(tenantId, id);
     const limited = t.status === 'in_progress';
     const editable =
+      t.status === 'pending_approval' ||
+      t.status === 'rejected' ||
       t.status === 'draft' ||
       t.status === 'published' ||
       t.status === 'registration_open' ||
@@ -455,6 +464,101 @@ export class TournamentsService {
     });
 
     return this.get(tenantId, id);
+  }
+
+  async listPendingApproval(): Promise<TournamentApprovalRow[]> {
+    const rows = await this.tournaments.find({
+      where: { status: 'pending_approval', deletedAt: IsNull() },
+      order: { createdAt: 'ASC' },
+    });
+    if (rows.length === 0) return [];
+
+    const tenantIds = [...new Set(rows.map((t) => t.tenantId))];
+    const businesses = await this.businesses.find({
+      where: { tenantId: In(tenantIds) },
+    });
+    const businessByTenant = new Map(
+      businesses.map((b) => [b.tenantId, b.businessName]),
+    );
+
+    return rows.map((t) => ({
+      ...this.toRow(t),
+      businessName: businessByTenant.get(t.tenantId) ?? null,
+    }));
+  }
+
+  async approveByPlatform(
+    tournamentId: string,
+    actorId?: string,
+  ): Promise<TournamentApprovalRow> {
+    const t = await this.findTournamentById(tournamentId);
+    assertTournamentTransition(t.status as TournamentStatus, 'draft');
+    const before = t.status;
+    t.status = 'draft';
+    t.version += 1;
+    await this.tournaments.save(t);
+
+    await this.audit.log({
+      tenantId: t.tenantId,
+      entityType: 'tournament',
+      entityId: tournamentId,
+      actorId,
+      reason: 'approve',
+      beforeState: { status: before },
+      afterState: { status: 'draft' },
+    });
+
+    return this.toApprovalRow(t);
+  }
+
+  async rejectByPlatform(
+    tournamentId: string,
+    reason: string | undefined,
+    actorId?: string,
+  ): Promise<TournamentApprovalRow> {
+    const t = await this.findTournamentById(tournamentId);
+    assertTournamentTransition(t.status as TournamentStatus, 'rejected');
+    const before = t.status;
+    t.status = 'rejected';
+    t.version += 1;
+    await this.tournaments.save(t);
+
+    await this.audit.log({
+      tenantId: t.tenantId,
+      entityType: 'tournament',
+      entityId: tournamentId,
+      actorId,
+      reason: reason?.trim() || 'reject',
+      beforeState: { status: before },
+      afterState: { status: 'rejected' },
+    });
+
+    return this.toApprovalRow(t);
+  }
+
+  private async toApprovalRow(t: Tournament): Promise<TournamentApprovalRow> {
+    const business = await this.businesses.findOne({
+      where: { tenantId: t.tenantId },
+    });
+    let blueprint: unknown;
+    if (t.currentConfigVersionId) {
+      const cfg = await this.configs.findOne({
+        where: { id: t.currentConfigVersionId },
+      });
+      blueprint = cfg?.structureBlueprint;
+    }
+    return {
+      ...this.toRow(t, blueprint),
+      businessName: business?.businessName ?? null,
+    };
+  }
+
+  private async findTournamentById(id: string): Promise<Tournament> {
+    const t = await this.tournaments.findOne({
+      where: { id, deletedAt: IsNull() },
+    });
+    if (!t) throw new NotFoundException('Tournament not found');
+    return t;
   }
 
   previewStructure(dto: PreviewStructureDto) {

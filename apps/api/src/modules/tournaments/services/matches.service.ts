@@ -15,6 +15,7 @@ import { Team } from '../entities/team.entity';
 import {
   ScheduleMatchDto,
   SubmitScoreDto,
+  UpdateMatchStatusDto,
   WalkoverMatchDto,
 } from '../dto/match-ops.dto';
 import { TOURNAMENT_ERROR_CODES } from '../types/tournament.types';
@@ -249,6 +250,35 @@ export class MatchesService {
         awayScore: dto.awayScore,
         status: 'approved',
       },
+    });
+    return match;
+  }
+
+  async updateStatus(
+    tenantId: string,
+    matchId: string,
+    dto: UpdateMatchStatusDto,
+    actorId?: string,
+  ) {
+    const match = await this.findMatch(tenantId, matchId);
+    if (
+      dto.expectedVersion != null &&
+      dto.expectedVersion !== match.version
+    ) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.CONFLICT_RETRY,
+      });
+    }
+    assertMatchTransition(match.status as MatchStatus, dto.status);
+    match.status = dto.status;
+    match.version += 1;
+    await this.matches.save(match);
+    await this.audit.log({
+      tenantId,
+      entityType: 'match',
+      entityId: matchId,
+      actorId,
+      afterState: { status: dto.status },
     });
     return match;
   }

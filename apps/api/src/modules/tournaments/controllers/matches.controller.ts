@@ -18,6 +18,7 @@ import { RolesGuard } from '../../iam/authz/roles.guard';
 import {
   ScheduleMatchDto,
   SubmitScoreDto,
+  UpdateMatchStatusDto,
   WalkoverMatchDto,
 } from '../dto/match-ops.dto';
 import { MatchesService } from '../services/matches.service';
@@ -106,6 +107,22 @@ export class MatchesController {
     return this.matchesService.approveResult(
       this.tenantId(tenant),
       id,
+      this.userId(req),
+    );
+  }
+
+  @Patch(':id/status')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  updateStatus(
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateMatchStatusDto,
+  ) {
+    return this.matchesService.updateStatus(
+      this.tenantId(tenant),
+      id,
+      dto,
       this.userId(req),
     );
   }

@@ -9,6 +9,8 @@ export type TournamentStructureType =
   (typeof TOURNAMENT_STRUCTURE_TYPES)[number];
 
 export const TOURNAMENT_STATUSES = [
+  'pending_approval',
+  'rejected',
   'draft',
   'published',
   'registration_open',

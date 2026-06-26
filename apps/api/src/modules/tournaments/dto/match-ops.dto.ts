@@ -1,11 +1,13 @@
 import {
   IsDateString,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
   Min,
 } from 'class-validator';
+import { MATCH_STATUSES } from '../types/tournament.types';
 
 export class ScheduleMatchDto {
   @IsDateString()
@@ -56,4 +58,14 @@ export class WalkoverMatchDto {
   @IsOptional()
   @IsString()
   reason?: string;
+}
+
+export class UpdateMatchStatusDto {
+  @IsIn([...MATCH_STATUSES])
+  status!: (typeof MATCH_STATUSES)[number];
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  expectedVersion?: number;
 }
