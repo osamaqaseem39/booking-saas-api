@@ -4,6 +4,8 @@ export type CricketInningsScore = {
   balls: number;
 };
 
+export const MAX_CRICKET_WICKETS = 10;
+
 export function ballsToOversDisplay(balls: number): string {
   const legal = Math.max(0, Math.floor(balls));
   return `${Math.floor(legal / 6)}.${legal % 6}`;
@@ -25,7 +27,7 @@ export function validateCricketMatchScore(
   if (home.balls < 1 || away.balls < 1) {
     throw new Error('Both teams need a completed innings');
   }
-  if (home.wickets > 10 || away.wickets > 10) {
+  if (home.wickets > MAX_CRICKET_WICKETS || away.wickets > MAX_CRICKET_WICKETS) {
     throw new Error('Wickets cannot exceed 10');
   }
   const maxBalls = maxOvers != null ? maxOvers * 6 : undefined;
