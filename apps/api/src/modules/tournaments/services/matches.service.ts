@@ -27,7 +27,8 @@ import {
   type MatchResultInput,
 } from '../engines/standings.engine';
 import { DEFAULT_STANDINGS_RULES } from '../types/tournament.types';
-import { validatePadelMatchScore } from '../engines/padel-set.engine';
+import { validateSubmitScorePayload, walkoverScoreForSport } from '../engines/match-score-validation.engine';
+import type { StructureBlueprint } from '../types/tournament.types';
 import { TournamentAuditService } from './tournament-audit.service';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
 import { TournamentFixture } from '../entities/tournament-fixture.entity';
@@ -230,32 +231,44 @@ export class MatchesService {
 
     let homeScore = dto.homeScore;
     let awayScore = dto.awayScore;
-    if (dto.sets?.length) {
-      try {
-        const validated = validatePadelMatchScore(dto.sets, {
-          setsToWin: match.groupId ? 1 : 2,
-        });
-        homeScore = validated.homeSets;
-        awayScore = validated.awaySets;
-        match.metadata = {
-          ...(match.metadata ?? {}),
-          scoring: 'padel_sets',
-          sets: validated.sets,
-        };
-      } catch (e) {
-        throw new ConflictException({
-          code: TOURNAMENT_ERROR_CODES.INVALID_SCORE,
-          message: e instanceof Error ? e.message : 'Invalid padel set score',
-        });
-      }
+    const division = await this.divisions.findOne({
+      where: { id: match.divisionId, deletedAt: IsNull() },
+    });
+    if (!division) {
+      throw new NotFoundException('Tournament division not found');
+    }
+    let blueprint: StructureBlueprint | null = null;
+    if (division.currentConfigVersionId) {
+      const cfg = await this.configs.findOne({
+        where: { id: division.currentConfigVersionId },
+      });
+      blueprint = (cfg?.structureBlueprint as StructureBlueprint) ?? null;
     }
 
-    if (!match.groupId && homeScore === awayScore) {
+    let scoreMetadata: Record<string, unknown> = {};
+    try {
+      const validated = validateSubmitScorePayload(
+        {
+          sport: division.sport,
+          blueprint,
+          isKnockout: !match.groupId,
+        },
+        dto,
+      );
+      homeScore = validated.homeScore;
+      awayScore = validated.awayScore;
+      scoreMetadata = validated.metadata;
+    } catch (e) {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.INVALID_SCORE,
-        message: 'Knockout matches cannot end in a draw',
+        message: e instanceof Error ? e.message : 'Invalid score',
       });
     }
+
+    match.metadata = {
+      ...(match.metadata ?? {}),
+      ...scoreMetadata,
+    };
 
     match.homeScore = homeScore;
     match.awayScore = awayScore;
@@ -335,10 +348,32 @@ export class MatchesService {
         message: 'Winner must be a participant',
       });
     }
-    match.homeScore = isHome ? 3 : 0;
-    match.awayScore = isAway ? 3 : 0;
+    const division = await this.divisions.findOne({
+      where: { id: match.divisionId, deletedAt: IsNull() },
+    });
+    if (!division) {
+      throw new NotFoundException('Tournament division not found');
+    }
+    let blueprint: StructureBlueprint | null = null;
+    if (division.currentConfigVersionId) {
+      const cfg = await this.configs.findOne({
+        where: { id: division.currentConfigVersionId },
+      });
+      blueprint = (cfg?.structureBlueprint as StructureBlueprint) ?? null;
+    }
+    const walkover = walkoverScoreForSport(
+      division.sport,
+      blueprint,
+      isHome ? 'home' : 'away',
+    );
+    match.homeScore = walkover.homeScore;
+    match.awayScore = walkover.awayScore;
     match.status = 'walkover';
-    match.metadata = { ...(match.metadata ?? {}), walkoverReason: dto.reason };
+    match.metadata = {
+      ...(match.metadata ?? {}),
+      ...walkover.metadata,
+      walkoverReason: dto.reason,
+    };
     match.version += 1;
     await this.matches.save(match);
     await this.applyMatchResult(match, tenantId);

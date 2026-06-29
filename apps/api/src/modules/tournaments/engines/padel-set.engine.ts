@@ -28,19 +28,14 @@ export function countPadelSetsWon(sets: PadelSetScore[]): {
   return { home, away };
 }
 
-export type PadelMatchScoreOptions = {
-  setsToWin?: number;
-};
-
 export function validatePadelMatchScore(
   sets: PadelSetScore[],
-  options?: PadelMatchScoreOptions,
+  setsToWin = 2,
 ): {
   sets: PadelSetScore[];
   homeSets: number;
   awaySets: number;
 } {
-  const setsToWin = options?.setsToWin ?? 2;
   const active = sets.filter((s) => s.home > 0 || s.away > 0);
   if (active.length === 0) {
     throw new Error('Enter at least one completed set');
@@ -55,23 +50,15 @@ export function validatePadelMatchScore(
     throw new Error('Match cannot end in a draw');
   }
   if (Math.max(home, away) !== setsToWin) {
-    throw new Error(
-      setsToWin === 1
-        ? 'Group matches are won in a single set'
-        : 'Winning side must win 2 sets',
-    );
+    throw new Error(`Winning side must win ${setsToWin} sets`);
   }
-  if (setsToWin === 1) {
-    if (active.length !== 1) {
-      throw new Error('A single-set match needs exactly 1 set');
-    }
-    return { sets: active, homeSets: home, awaySets: away };
+  const totalSets = home + away;
+  const maxSets = setsToWin * 2 - 1;
+  if (totalSets < setsToWin || totalSets > maxSets) {
+    throw new Error('Invalid set count for match result');
   }
-  if (home + away === 2 && active.length !== 2) {
-    throw new Error('A 2-0 match needs exactly 2 sets');
-  }
-  if (home + away === 3 && active.length !== 3) {
-    throw new Error('A 2-1 match needs exactly 3 sets');
+  if (active.length !== totalSets) {
+    throw new Error(`Match needs exactly ${totalSets} completed sets`);
   }
   return { sets: active, homeSets: home, awaySets: away };
 }

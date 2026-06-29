@@ -82,6 +82,15 @@ export class CreateTournamentDivisionDto {
   @IsInt()
   @Min(1)
   matchesPerTeam?: number;
+
+  @IsOptional()
+  @IsIn([3, 5])
+  padelBestOfSets?: 3 | 5;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  cricketMaxOvers?: number;
 }
 
 export class CreateTournamentDto {
@@ -180,6 +189,17 @@ export class CreateTournamentDto {
   @IsInt()
   @Min(1)
   matchesPerTeam?: number;
+
+  @ValidateIf((o) => !o.divisions?.length)
+  @IsOptional()
+  @IsIn([3, 5])
+  padelBestOfSets?: 3 | 5;
+
+  @ValidateIf((o) => !o.divisions?.length)
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  cricketMaxOvers?: number;
 }
 
 export class PreviewStructureDto {
@@ -296,4 +316,13 @@ export class UpdateTournamentDto {
   @IsInt()
   @Min(1)
   matchesPerTeam?: number;
+
+  @IsOptional()
+  @IsIn([3, 5])
+  padelBestOfSets?: 3 | 5;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  cricketMaxOvers?: number;
 }

@@ -88,6 +88,10 @@ export type StructureBlueprint = {
   };
   advancement?: Record<string, unknown>;
   stages?: { order: number; name: string; stageType: string }[];
+  scoring?: {
+    padelBestOfSets?: 3 | 5;
+    cricketMaxOvers?: number;
+  };
 };
 
 export type StandingsRules = {

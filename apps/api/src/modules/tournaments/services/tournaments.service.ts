@@ -34,6 +34,7 @@ import {
   type StructureBlueprint,
 } from '../types/tournament.types';
 import { previewStructure, TOURNAMENT_TEMPLATES } from '../engines/structure.engine';
+import { buildSportScoringConfig } from '../engines/scoring-config.engine';
 import { resolveMatchWinner } from '../engines/knockout-result.engine';
 import {
   assertTournamentTransition,
@@ -227,6 +228,8 @@ export class TournamentsService {
         minTeamsPerGroup: dto.minTeamsPerGroup,
         maxTeamsPerGroup: dto.maxTeamsPerGroup,
         matchesPerTeam: dto.matchesPerTeam,
+        padelBestOfSets: dto.padelBestOfSets,
+        cricketMaxOvers: dto.cricketMaxOvers,
       },
     ];
   }
@@ -349,6 +352,12 @@ export class TournamentsService {
           maxTeamsPerGroup: divDto.maxTeamsPerGroup,
           matchesPerTeam: divDto.matchesPerTeam,
         });
+        const scoring = buildSportScoringConfig({
+          sport: divDto.sport,
+          padelBestOfSets: divDto.padelBestOfSets,
+          cricketMaxOvers: divDto.cricketMaxOvers,
+        });
+        if (scoring) blueprint = { ...blueprint, scoring };
       } catch (e) {
         throw new BadRequestException(
           e instanceof Error ? e.message : 'Invalid tournament structure',
@@ -523,6 +532,31 @@ export class TournamentsService {
     if (dto.prizePool != null) division.prizePool = dto.prizePool;
 
     if (
+      !limited &&
+      division.currentConfigVersionId &&
+      (dto.padelBestOfSets != null || dto.cricketMaxOvers != null)
+    ) {
+      const config = await this.configs.findOne({
+        where: { id: division.currentConfigVersionId },
+      });
+      if (config) {
+        const blueprint = config.structureBlueprint as StructureBlueprint;
+        const scoring = buildSportScoringConfig({
+          sport: division.sport,
+          padelBestOfSets:
+            dto.padelBestOfSets ?? blueprint.scoring?.padelBestOfSets,
+          cricketMaxOvers:
+            dto.cricketMaxOvers ?? blueprint.scoring?.cricketMaxOvers,
+        });
+        if (scoring) {
+          blueprint.scoring = { ...blueprint.scoring, ...scoring };
+          config.structureBlueprint = blueprint;
+          await this.configs.save(config);
+        }
+      }
+    }
+
+    if (
       (hasStructureChange || dto.maxTeams != null) &&
       !limited &&
       !structureLocked &&
@@ -550,6 +584,14 @@ export class TournamentsService {
             matchesPerTeam:
               dto.matchesPerTeam ?? existing.groupStage?.matchesPerTeam,
           });
+          const scoring = buildSportScoringConfig({
+            sport: division.sport,
+            padelBestOfSets:
+              dto.padelBestOfSets ?? existing.scoring?.padelBestOfSets,
+            cricketMaxOvers:
+              dto.cricketMaxOvers ?? existing.scoring?.cricketMaxOvers,
+          });
+          if (scoring) blueprint = { ...blueprint, scoring };
         } catch (e) {
           throw new BadRequestException(
             e instanceof Error ? e.message : 'Invalid tournament structure',

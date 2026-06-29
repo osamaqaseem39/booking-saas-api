@@ -22,6 +22,20 @@ export class PadelSetScoreDto {
   away!: number;
 }
 
+export class CricketInningsScoreDto {
+  @IsInt()
+  @Min(0)
+  runs!: number;
+
+  @IsInt()
+  @Min(0)
+  wickets!: number;
+
+  @IsInt()
+  @Min(0)
+  balls!: number;
+}
+
 export class ScheduleMatchDto {
   @IsDateString()
   scheduledAt!: string;
@@ -68,6 +82,16 @@ export class SubmitScoreDto {
   @ValidateNested({ each: true })
   @Type(() => PadelSetScoreDto)
   sets?: PadelSetScoreDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CricketInningsScoreDto)
+  homeInnings?: CricketInningsScoreDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CricketInningsScoreDto)
+  awayInnings?: CricketInningsScoreDto;
 }
 
 export class WalkoverMatchDto {

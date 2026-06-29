@@ -1,0 +1,166 @@
+import { validateCricketMatchScore } from './cricket-innings.engine';
+import { validatePadelMatchScore } from './padel-set.engine';
+import {
+  resolveCricketMaxOvers,
+  resolvePadelSetsToWin,
+} from './scoring-config.engine';
+import type { StructureBlueprint } from '../types/tournament.types';
+
+export type SubmitScorePayload = {
+  homeScore: number;
+  awayScore: number;
+  sets?: { home: number; away: number }[];
+  homeInnings?: { runs: number; wickets: number; balls: number };
+  awayInnings?: { runs: number; wickets: number; balls: number };
+};
+
+export type SubmitScoreContext = {
+  sport: string;
+  blueprint: StructureBlueprint | null;
+  isKnockout: boolean;
+};
+
+export type ValidatedMatchScore = {
+  homeScore: number;
+  awayScore: number;
+  metadata: Record<string, unknown>;
+};
+
+export function normalizeTournamentSport(
+  sport: string,
+): 'padel' | 'cricket' | 'futsal' | 'other' {
+  const s = sport.trim().toLowerCase();
+  if (s === 'padel') return 'padel';
+  if (s === 'cricket') return 'cricket';
+  if (s === 'futsal') return 'futsal';
+  return 'other';
+}
+
+export function validateSubmitScorePayload(
+  ctx: SubmitScoreContext,
+  dto: SubmitScorePayload,
+): ValidatedMatchScore {
+  const sport = normalizeTournamentSport(ctx.sport);
+  const hasSets = (dto.sets?.length ?? 0) > 0;
+  const hasInnings = Boolean(dto.homeInnings && dto.awayInnings);
+
+  if (sport === 'padel') {
+    if (!hasSets) {
+      throw new Error('Padel matches require set-by-set scores');
+    }
+    if (hasInnings) {
+      throw new Error('Cricket innings cannot be submitted for a padel match');
+    }
+    const validated = validatePadelMatchScore(
+      dto.sets!,
+      resolvePadelSetsToWin(ctx.blueprint),
+    );
+    if (ctx.isKnockout && validated.homeSets === validated.awaySets) {
+      throw new Error('Knockout matches cannot end in a draw');
+    }
+    return {
+      homeScore: validated.homeSets,
+      awayScore: validated.awaySets,
+      metadata: {
+        scoring: 'padel_sets',
+        sets: validated.sets,
+        padelBestOfSets: ctx.blueprint?.scoring?.padelBestOfSets ?? 3,
+      },
+    };
+  }
+
+  if (sport === 'cricket') {
+    if (!hasInnings) {
+      throw new Error(
+        'Cricket matches require innings detail (runs, wickets, balls)',
+      );
+    }
+    if (hasSets) {
+      throw new Error('Padel set scores cannot be submitted for a cricket match');
+    }
+    const validated = validateCricketMatchScore(
+      dto.homeInnings!,
+      dto.awayInnings!,
+      resolveCricketMaxOvers(ctx.blueprint),
+    );
+    if (ctx.isKnockout && validated.homeRuns === validated.awayRuns) {
+      throw new Error('Knockout matches cannot end in a draw');
+    }
+    return {
+      homeScore: validated.homeRuns,
+      awayScore: validated.awayRuns,
+      metadata: {
+        scoring: 'cricket_innings',
+        homeInnings: validated.home,
+        awayInnings: validated.away,
+        cricketMaxOvers: ctx.blueprint?.scoring?.cricketMaxOvers ?? null,
+      },
+    };
+  }
+
+  if (hasSets || hasInnings) {
+    throw new Error(
+      `Set or innings detail is not valid for ${ctx.sport} matches`,
+    );
+  }
+  if (dto.homeScore === 0 && dto.awayScore === 0) {
+    throw new Error('Enter a match score');
+  }
+  if (ctx.isKnockout && dto.homeScore === dto.awayScore) {
+    throw new Error('Knockout matches cannot end in a draw');
+  }
+  return {
+    homeScore: dto.homeScore,
+    awayScore: dto.awayScore,
+    metadata: {},
+  };
+}
+
+export function walkoverScoreForSport(
+  sport: string,
+  blueprint: StructureBlueprint | null,
+  winnerSide: 'home' | 'away',
+): ValidatedMatchScore {
+  const normalized = normalizeTournamentSport(sport);
+  if (normalized === 'padel') {
+    const setsToWin = resolvePadelSetsToWin(blueprint);
+    const sets = Array.from({ length: setsToWin }, () =>
+      winnerSide === 'home' ? { home: 6, away: 0 } : { home: 0, away: 6 },
+    );
+    return {
+      homeScore: winnerSide === 'home' ? setsToWin : 0,
+      awayScore: winnerSide === 'away' ? setsToWin : 0,
+      metadata: {
+        scoring: 'padel_sets',
+        walkover: true,
+        sets,
+        padelBestOfSets: blueprint?.scoring?.padelBestOfSets ?? 3,
+      },
+    };
+  }
+  if (normalized === 'cricket') {
+    return {
+      homeScore: winnerSide === 'home' ? 1 : 0,
+      awayScore: winnerSide === 'away' ? 1 : 0,
+      metadata: {
+        scoring: 'cricket_innings',
+        walkover: true,
+        homeInnings: {
+          runs: winnerSide === 'home' ? 1 : 0,
+          wickets: 0,
+          balls: 1,
+        },
+        awayInnings: {
+          runs: winnerSide === 'away' ? 1 : 0,
+          wickets: 0,
+          balls: 1,
+        },
+      },
+    };
+  }
+  return {
+    homeScore: winnerSide === 'home' ? 3 : 0,
+    awayScore: winnerSide === 'away' ? 3 : 0,
+    metadata: { walkover: true },
+  };
+}
