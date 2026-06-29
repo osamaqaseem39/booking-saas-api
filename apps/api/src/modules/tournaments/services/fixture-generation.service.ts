@@ -255,6 +255,7 @@ export class FixtureGenerationService {
     division.status = 'in_progress';
     division.version += 1;
     await this.divisions.save(division);
+  }
 
   async swapGroupTeams(
     divisionId: string,

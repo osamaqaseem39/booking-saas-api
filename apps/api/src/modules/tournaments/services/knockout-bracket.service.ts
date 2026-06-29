@@ -57,8 +57,7 @@ export class KnockoutBracketService {
       const matchesGenerated = roundNodes.filter((n) => n.matchId).length;
       const matchesResolved = roundNodes.filter((n) => {
         if (!n.matchId) {
-          return (n.isBye && Boolean(n.teamId?.trim())) ||
-            (Boolean(n.teamId?.trim()) && !n.awayTeamId);
+          return n.isBye && Boolean(n.teamId?.trim());
         }
         const m = matchById.get(n.matchId);
         return m != null && ['approved', 'walkover'].includes(m.status);
