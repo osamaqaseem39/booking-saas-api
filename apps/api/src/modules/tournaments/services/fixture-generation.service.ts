@@ -13,6 +13,8 @@ import { TournamentDivision } from '../entities/tournament-division.entity';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
 import { generateKnockoutBracket } from '../engines/bracket.engine';
 import { generateRoundRobinFixtures } from '../engines/fixture.engine';
+import { assertTournamentTransition } from '../state/tournament-state.machine';
+import type { TournamentStatus } from '../types/tournament.types';
 import {
   DEFAULT_STANDINGS_RULES,
   TOURNAMENT_ERROR_CODES,
@@ -229,8 +231,30 @@ export class FixtureGenerationService {
       stage.status = 'in_progress';
       await this.stages.save(stage);
     }
+    await this.ensureDivisionInProgress(divisionId);
     return { stageId: stage.id, ...result };
   }
+
+  private async ensureDivisionInProgress(divisionId: string): Promise<void> {
+    const division = await this.divisions.findOne({
+      where: { id: divisionId, deletedAt: IsNull() },
+    });
+    if (!division || division.status === 'in_progress') return;
+    if (!['ready', 'registration_closed', 'completed'].includes(division.status)) {
+      return;
+    }
+    const open = await this.matches.count({
+      where: {
+        divisionId,
+        deletedAt: IsNull(),
+        status: Not(In(['approved', 'walkover', 'cancelled'])),
+      },
+    });
+    if (open === 0) return;
+    assertTournamentTransition(division.status as TournamentStatus, 'in_progress');
+    division.status = 'in_progress';
+    division.version += 1;
+    await this.divisions.save(division);
 
   async swapGroupTeams(
     divisionId: string,

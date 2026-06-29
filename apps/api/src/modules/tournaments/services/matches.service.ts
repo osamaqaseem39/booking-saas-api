@@ -20,8 +20,8 @@ import {
   WalkoverMatchDto,
 } from '../dto/match-ops.dto';
 import { TOURNAMENT_ERROR_CODES } from '../types/tournament.types';
-import { assertMatchTransition } from '../state/tournament-state.machine';
-import type { MatchStatus } from '../types/tournament.types';
+import { assertMatchTransition, assertTournamentTransition } from '../state/tournament-state.machine';
+import type { MatchStatus, TournamentStatus } from '../types/tournament.types';
 import {
   computeStandings,
   type MatchResultInput,
@@ -326,12 +326,35 @@ export class MatchesService {
     divisionId: string,
   ): Promise<void> {
     const { division } = await this.findDivisionContext(tenantId, divisionId);
-    if (division.status !== 'in_progress') {
-      throw new ConflictException({
-        code: TOURNAMENT_ERROR_CODES.TOURNAMENT_INVALID_STATE,
-        message: 'Tournament has not started yet',
-      });
+    if (division.status === 'in_progress') return;
+
+    const open = await this.matches.count({
+      where: {
+        divisionId,
+        deletedAt: IsNull(),
+        status: Not(In(['approved', 'walkover', 'cancelled'])),
+      },
+    });
+    const playable = await this.matches.count({
+      where: { divisionId, deletedAt: IsNull() },
+    });
+
+    if (
+      playable > 0 &&
+      open > 0 &&
+      ['ready', 'registration_closed', 'completed'].includes(division.status)
+    ) {
+      assertTournamentTransition(division.status as TournamentStatus, 'in_progress');
+      division.status = 'in_progress';
+      division.version += 1;
+      await this.divisions.save(division);
+      return;
     }
+
+    throw new ConflictException({
+      code: TOURNAMENT_ERROR_CODES.TOURNAMENT_INVALID_STATE,
+      message: 'Tournament has not started yet',
+    });
   }
 
   private async applyMatchResult(
