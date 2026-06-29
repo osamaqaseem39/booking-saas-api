@@ -27,9 +27,27 @@ describe('validatePadelMatchScore', () => {
     expect(result.awaySets).toBe(2);
   });
 
-  it('rejects a single-set result for best of 3', () => {
-    expect(() => validatePadelMatchScore([{ home: 6, away: 4 }], 2)).toThrow(
-      '2 sets',
+  it('accepts a tie-break set 7-6', () => {
+    const result = validatePadelMatchScore(
+      [
+        { home: 7, away: 6 },
+        { home: 6, away: 3 },
+      ],
+      2,
     );
+    expect(result.homeSets).toBe(2);
+  });
+
+  it('accepts a super tie-break deciding set', () => {
+    const result = validatePadelMatchScore(
+      [
+        { home: 6, away: 4 },
+        { home: 3, away: 6 },
+        { home: 10, away: 8, superTiebreak: true },
+      ],
+      2,
+    );
+    expect(result.homeSets).toBe(2);
+    expect(result.awaySets).toBe(1);
   });
 });

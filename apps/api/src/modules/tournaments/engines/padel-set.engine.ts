@@ -1,10 +1,18 @@
-export type PadelSetScore = { home: number; away: number };
+export type PadelSetScore = {
+  home: number;
+  away: number;
+  superTiebreak?: boolean;
+};
 
-export function padelSetWinner(
-  home: number,
-  away: number,
-): 'home' | 'away' | null {
+export function padelSetWinner(set: PadelSetScore): 'home' | 'away' | null {
+  const { home, away, superTiebreak } = set;
   if (home === away) return null;
+  if (superTiebreak) {
+    const w = Math.max(home, away);
+    const l = Math.min(home, away);
+    if (w >= 10 && w - l >= 2) return home > away ? 'home' : 'away';
+    return null;
+  }
   const w = Math.max(home, away);
   const l = Math.min(home, away);
   if (w < 6) return null;
@@ -21,7 +29,7 @@ export function countPadelSetsWon(sets: PadelSetScore[]): {
   let home = 0;
   let away = 0;
   for (const s of sets) {
-    const w = padelSetWinner(s.home, s.away);
+    const w = padelSetWinner(s);
     if (w === 'home') home += 1;
     if (w === 'away') away += 1;
   }
@@ -41,8 +49,11 @@ export function validatePadelMatchScore(
     throw new Error('Enter at least one completed set');
   }
   for (const s of active) {
-    if (!padelSetWinner(s.home, s.away)) {
-      throw new Error(`Set ${s.home}-${s.away} is not a valid completed set`);
+    if (!padelSetWinner(s)) {
+      const label = s.superTiebreak
+        ? `${s.home}-${s.away} (super tie-break)`
+        : `${s.home}-${s.away}`;
+      throw new Error(`Set ${label} is not a valid completed set`);
     }
   }
   const { home, away } = countPadelSetsWon(active);

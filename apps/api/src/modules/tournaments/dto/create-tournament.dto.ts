@@ -88,6 +88,18 @@ export class CreateTournamentDivisionDto {
   padelBestOfSets?: 3 | 5;
 
   @IsOptional()
+  @IsIn(['advantage', 'golden_point'])
+  padelDeuceRule?: 'advantage' | 'golden_point';
+
+  @IsOptional()
+  @IsIn(['full_set', 'super_tiebreak'])
+  padelDecidingSet?: 'full_set' | 'super_tiebreak';
+
+  @IsOptional()
+  @IsIn([5, 7])
+  tableTennisBestOfGames?: 5 | 7;
+
+  @IsOptional()
   @IsInt()
   @Min(1)
   cricketMaxOvers?: number;
@@ -194,6 +206,21 @@ export class CreateTournamentDto {
   @IsOptional()
   @IsIn([3, 5])
   padelBestOfSets?: 3 | 5;
+
+  @ValidateIf((o) => !o.divisions?.length)
+  @IsOptional()
+  @IsIn(['advantage', 'golden_point'])
+  padelDeuceRule?: 'advantage' | 'golden_point';
+
+  @ValidateIf((o) => !o.divisions?.length)
+  @IsOptional()
+  @IsIn(['full_set', 'super_tiebreak'])
+  padelDecidingSet?: 'full_set' | 'super_tiebreak';
+
+  @ValidateIf((o) => !o.divisions?.length)
+  @IsOptional()
+  @IsIn([5, 7])
+  tableTennisBestOfGames?: 5 | 7;
 
   @ValidateIf((o) => !o.divisions?.length)
   @IsOptional()
@@ -320,6 +347,18 @@ export class UpdateTournamentDto {
   @IsOptional()
   @IsIn([3, 5])
   padelBestOfSets?: 3 | 5;
+
+  @IsOptional()
+  @IsIn(['advantage', 'golden_point'])
+  padelDeuceRule?: 'advantage' | 'golden_point';
+
+  @IsOptional()
+  @IsIn(['full_set', 'super_tiebreak'])
+  padelDecidingSet?: 'full_set' | 'super_tiebreak';
+
+  @IsOptional()
+  @IsIn([5, 7])
+  tableTennisBestOfGames?: 5 | 7;
 
   @IsOptional()
   @IsInt()

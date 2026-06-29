@@ -90,6 +90,9 @@ export type StructureBlueprint = {
   stages?: { order: number; name: string; stageType: string }[];
   scoring?: {
     padelBestOfSets?: 3 | 5;
+    padelDeuceRule?: 'advantage' | 'golden_point';
+    padelDecidingSet?: 'full_set' | 'super_tiebreak';
+    tableTennisBestOfGames?: 5 | 7;
     cricketMaxOvers?: number;
   };
 };

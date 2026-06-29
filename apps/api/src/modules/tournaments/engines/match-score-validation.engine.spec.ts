@@ -46,6 +46,15 @@ describe('validateSubmitScorePayload', () => {
       ),
     ).toThrow('draw');
   });
+
+  it('accepts 0-0 draw for futsal league', () => {
+    const result = validateSubmitScorePayload(
+      { sport: 'futsal', blueprint: null, isKnockout: false },
+      { homeScore: 0, awayScore: 0 },
+    );
+    expect(result.homeScore).toBe(0);
+    expect(result.awayScore).toBe(0);
+  });
 });
 
 describe('walkoverScoreForSport', () => {

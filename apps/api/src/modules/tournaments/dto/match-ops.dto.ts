@@ -1,5 +1,6 @@
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsIn,
   IsInt,
@@ -20,6 +21,10 @@ export class PadelSetScoreDto {
   @IsInt()
   @Min(0)
   away!: number;
+
+  @IsOptional()
+  @IsBoolean()
+  superTiebreak?: boolean;
 }
 
 export class CricketInningsScoreDto {
@@ -34,6 +39,16 @@ export class CricketInningsScoreDto {
   @IsInt()
   @Min(0)
   balls!: number;
+}
+
+export class TableTennisGameScoreDto {
+  @IsInt()
+  @Min(0)
+  home!: number;
+
+  @IsInt()
+  @Min(0)
+  away!: number;
 }
 
 export class ScheduleMatchDto {
@@ -82,6 +97,12 @@ export class SubmitScoreDto {
   @ValidateNested({ each: true })
   @Type(() => PadelSetScoreDto)
   sets?: PadelSetScoreDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => TableTennisGameScoreDto)
+  games?: TableTennisGameScoreDto[];
 
   @IsOptional()
   @ValidateNested()

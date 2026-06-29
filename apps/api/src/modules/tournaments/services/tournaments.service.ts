@@ -232,6 +232,9 @@ export class TournamentsService {
         maxTeamsPerGroup: dto.maxTeamsPerGroup,
         matchesPerTeam: dto.matchesPerTeam,
         padelBestOfSets: dto.padelBestOfSets,
+        padelDeuceRule: dto.padelDeuceRule,
+        padelDecidingSet: dto.padelDecidingSet,
+        tableTennisBestOfGames: dto.tableTennisBestOfGames,
         cricketMaxOvers: dto.cricketMaxOvers,
       },
     ];
@@ -358,6 +361,9 @@ export class TournamentsService {
         const scoring = buildSportScoringConfig({
           sport: divDto.sport,
           padelBestOfSets: divDto.padelBestOfSets,
+          padelDeuceRule: divDto.padelDeuceRule,
+          padelDecidingSet: divDto.padelDecidingSet,
+          tableTennisBestOfGames: divDto.tableTennisBestOfGames,
           cricketMaxOvers: divDto.cricketMaxOvers,
         });
         if (scoring) blueprint = { ...blueprint, scoring };
@@ -537,7 +543,11 @@ export class TournamentsService {
     if (
       !limited &&
       division.currentConfigVersionId &&
-      (dto.padelBestOfSets != null || dto.cricketMaxOvers != null)
+      (dto.padelBestOfSets != null ||
+        dto.padelDeuceRule != null ||
+        dto.padelDecidingSet != null ||
+        dto.tableTennisBestOfGames != null ||
+        dto.cricketMaxOvers != null)
     ) {
       const config = await this.configs.findOne({
         where: { id: division.currentConfigVersionId },
@@ -548,6 +558,13 @@ export class TournamentsService {
           sport: division.sport,
           padelBestOfSets:
             dto.padelBestOfSets ?? blueprint.scoring?.padelBestOfSets,
+          padelDeuceRule:
+            dto.padelDeuceRule ?? blueprint.scoring?.padelDeuceRule,
+          padelDecidingSet:
+            dto.padelDecidingSet ?? blueprint.scoring?.padelDecidingSet,
+          tableTennisBestOfGames:
+            dto.tableTennisBestOfGames ??
+            blueprint.scoring?.tableTennisBestOfGames,
           cricketMaxOvers:
             dto.cricketMaxOvers ?? blueprint.scoring?.cricketMaxOvers,
         });
@@ -591,6 +608,13 @@ export class TournamentsService {
             sport: division.sport,
             padelBestOfSets:
               dto.padelBestOfSets ?? existing.scoring?.padelBestOfSets,
+            padelDeuceRule:
+              dto.padelDeuceRule ?? existing.scoring?.padelDeuceRule,
+            padelDecidingSet:
+              dto.padelDecidingSet ?? existing.scoring?.padelDecidingSet,
+            tableTennisBestOfGames:
+              dto.tableTennisBestOfGames ??
+              existing.scoring?.tableTennisBestOfGames,
             cricketMaxOvers:
               dto.cricketMaxOvers ?? existing.scoring?.cricketMaxOvers,
           });
