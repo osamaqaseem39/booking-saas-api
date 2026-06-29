@@ -988,6 +988,7 @@ export class TournamentsService {
         : null,
       homeScore: m.homeScore ?? null,
       awayScore: m.awayScore ?? null,
+      metadata: m.metadata ?? null,
       version: m.version,
     }));
   }

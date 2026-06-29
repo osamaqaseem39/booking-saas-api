@@ -1,4 +1,5 @@
 import {
+  IsArray,
   IsDateString,
   IsIn,
   IsInt,
@@ -6,8 +7,20 @@ import {
   IsString,
   IsUUID,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { MATCH_STATUSES } from '../types/tournament.types';
+
+export class PadelSetScoreDto {
+  @IsInt()
+  @Min(0)
+  home!: number;
+
+  @IsInt()
+  @Min(0)
+  away!: number;
+}
 
 export class ScheduleMatchDto {
   @IsDateString()
@@ -49,6 +62,12 @@ export class SubmitScoreDto {
   @IsInt()
   @Min(1)
   expectedVersion?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => PadelSetScoreDto)
+  sets?: PadelSetScoreDto[];
 }
 
 export class WalkoverMatchDto {

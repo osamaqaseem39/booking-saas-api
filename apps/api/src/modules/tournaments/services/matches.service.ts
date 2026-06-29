@@ -27,6 +27,7 @@ import {
   type MatchResultInput,
 } from '../engines/standings.engine';
 import { DEFAULT_STANDINGS_RULES } from '../types/tournament.types';
+import { validatePadelMatchScore } from '../engines/padel-set.engine';
 import { TournamentAuditService } from './tournament-audit.service';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
 import { TournamentFixture } from '../entities/tournament-fixture.entity';
@@ -114,6 +115,7 @@ export class MatchesService {
         : null,
       homeScore: match.homeScore ?? null,
       awayScore: match.awayScore ?? null,
+      metadata: match.metadata ?? null,
       version: match.version,
       createdAt: match.createdAt.toISOString(),
       updatedAt: match.updatedAt.toISOString(),
@@ -226,15 +228,37 @@ export class MatchesService {
       });
     }
 
-    if (!match.groupId && dto.homeScore === dto.awayScore) {
+    let homeScore = dto.homeScore;
+    let awayScore = dto.awayScore;
+    if (dto.sets?.length) {
+      try {
+        const validated = validatePadelMatchScore(dto.sets, {
+          setsToWin: match.groupId ? 1 : 2,
+        });
+        homeScore = validated.homeSets;
+        awayScore = validated.awaySets;
+        match.metadata = {
+          ...(match.metadata ?? {}),
+          scoring: 'padel_sets',
+          sets: validated.sets,
+        };
+      } catch (e) {
+        throw new ConflictException({
+          code: TOURNAMENT_ERROR_CODES.INVALID_SCORE,
+          message: e instanceof Error ? e.message : 'Invalid padel set score',
+        });
+      }
+    }
+
+    if (!match.groupId && homeScore === awayScore) {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.INVALID_SCORE,
         message: 'Knockout matches cannot end in a draw',
       });
     }
 
-    match.homeScore = dto.homeScore;
-    match.awayScore = dto.awayScore;
+    match.homeScore = homeScore;
+    match.awayScore = awayScore;
     match.status = 'approved';
     match.version += 1;
     await this.matches.save(match);
