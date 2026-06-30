@@ -16,9 +16,10 @@ export type KnockoutMatchLike = {
   awayTeamId?: string | null;
   homeScore?: number | null;
   awayScore?: number | null;
+  metadata?: Record<string, unknown> | null;
 };
 
-const RESOLVED = new Set(['approved', 'walkover']);
+const RESOLVED = new Set(['approved', 'walkover', 'completed']);
 
 export function resolveKnockoutFeederTeam(
   feeder: KnockoutNodeLike,

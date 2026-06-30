@@ -111,9 +111,13 @@ export class KnockoutBracketService {
     const matchById = new Map(linkedMatches.map((m) => [m.id, m]));
     const nextRound = findNextKnockoutRoundToGenerate(nodes, matchById);
     if (nextRound == null) {
+      const maxRound = Math.max(...nodes.map((n) => n.round));
+      const roundComplete = isKnockoutRoundComplete(maxRound, nodes, matchById);
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.STAGE_NOT_READY,
-        message: 'No knockout round is ready to generate',
+        message: roundComplete
+          ? 'Knockout round is complete or has no further pairings'
+          : `Finish all matches in round ${maxRound} before generating the next round`,
       });
     }
 
