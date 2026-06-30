@@ -1,4 +1,4 @@
-import { validateCricketMatchScore } from './cricket-innings.engine';
+import { inferFirstBatting, validateCricketMatchScore } from './cricket-innings.engine';
 import { validatePadelMatchScore } from './padel-set.engine';
 import {
   resolveCricketMaxOvers,
@@ -15,6 +15,7 @@ export type SubmitScorePayload = {
   games?: { home: number; away: number }[];
   homeInnings?: { runs: number; wickets: number; balls: number };
   awayInnings?: { runs: number; wickets: number; balls: number };
+  firstBatting?: 'home' | 'away';
 };
 
 export type SubmitScoreContext = {
@@ -88,6 +89,10 @@ export function validateSubmitScorePayload(
       dto.awayInnings!,
       resolveCricketMaxOvers(ctx.blueprint),
     );
+    const firstBatting =
+      dto.firstBatting === 'home' || dto.firstBatting === 'away'
+        ? dto.firstBatting
+        : inferFirstBatting(validated.home, validated.away);
     if (ctx.isKnockout && validated.homeRuns === validated.awayRuns) {
       throw new Error('Knockout matches cannot end in a draw');
     }
@@ -98,6 +103,7 @@ export function validateSubmitScorePayload(
         scoring: 'cricket_innings',
         homeInnings: validated.home,
         awayInnings: validated.away,
+        firstBatting,
         cricketMaxOvers: ctx.blueprint?.scoring?.cricketMaxOvers ?? null,
       },
     };

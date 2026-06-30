@@ -11,6 +11,41 @@ export function ballsToOversDisplay(balls: number): string {
   return `${Math.floor(legal / 6)}.${legal % 6}`;
 }
 
+export function inferFirstBatting(
+  home: CricketInningsScore,
+  away: CricketInningsScore,
+): 'home' | 'away' | null {
+  if (home.balls > 0 && away.balls === 0) return 'home';
+  if (away.balls > 0 && home.balls === 0) return 'away';
+  if (home.balls > 0 && away.balls > 0) {
+    return home.balls >= away.balls ? 'home' : 'away';
+  }
+  return null;
+}
+
+export function isChaseWon(
+  chasing: CricketInningsScore,
+  firstInningsRuns: number,
+): boolean {
+  return chasing.runs >= firstInningsRuns + 1;
+}
+
+export function resolveCricketWinnerSide(
+  home: CricketInningsScore,
+  away: CricketInningsScore,
+  firstBatting: 'home' | 'away',
+): 'home' | 'away' | null {
+  const first = firstBatting === 'home' ? home : away;
+  const second = firstBatting === 'home' ? away : home;
+  if (isChaseWon(second, first.runs)) {
+    return firstBatting === 'home' ? 'away' : 'home';
+  }
+  if (second.balls < 1) return null;
+  if (second.runs < first.runs) return firstBatting;
+  if (second.runs > first.runs) return firstBatting === 'home' ? 'away' : 'home';
+  return null;
+}
+
 export function validateCricketMatchScore(
   home: CricketInningsScore,
   away: CricketInningsScore,

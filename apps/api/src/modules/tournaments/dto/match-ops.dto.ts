@@ -113,6 +113,10 @@ export class SubmitScoreDto {
   @ValidateNested()
   @Type(() => CricketInningsScoreDto)
   awayInnings?: CricketInningsScoreDto;
+
+  @IsOptional()
+  @IsIn(['home', 'away'])
+  firstBatting?: 'home' | 'away';
 }
 
 export class WalkoverMatchDto {
