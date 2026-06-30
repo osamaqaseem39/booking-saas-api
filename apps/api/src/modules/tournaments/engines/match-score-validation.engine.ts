@@ -16,6 +16,9 @@ export type SubmitScorePayload = {
   homeInnings?: { runs: number; wickets: number; balls: number };
   awayInnings?: { runs: number; wickets: number; balls: number };
   firstBatting?: 'home' | 'away';
+  homeSuperOver?: { runs: number; wickets: number; balls: number };
+  awaySuperOver?: { runs: number; wickets: number; balls: number };
+  superOverFirstBatting?: 'home' | 'away';
 };
 
 export type SubmitScoreContext = {
@@ -84,18 +87,27 @@ export function validateSubmitScorePayload(
     if (hasSets || hasGames) {
       throw new Error('Cricket matches cannot include set or game detail');
     }
+    const superOver =
+      dto.homeSuperOver &&
+      dto.awaySuperOver &&
+      (dto.superOverFirstBatting === 'home' || dto.superOverFirstBatting === 'away')
+        ? {
+            home: dto.homeSuperOver,
+            away: dto.awaySuperOver,
+            firstBatting: dto.superOverFirstBatting,
+          }
+        : null;
     const validated = validateCricketMatchScore(
       dto.homeInnings!,
       dto.awayInnings!,
       resolveCricketMaxOvers(ctx.blueprint),
+      superOver,
+      { isKnockout: ctx.isKnockout },
     );
     const firstBatting =
       dto.firstBatting === 'home' || dto.firstBatting === 'away'
         ? dto.firstBatting
         : inferFirstBatting(validated.home, validated.away);
-    if (ctx.isKnockout && validated.homeRuns === validated.awayRuns) {
-      throw new Error('Knockout matches cannot end in a draw');
-    }
     return {
       homeScore: validated.homeRuns,
       awayScore: validated.awayRuns,
@@ -105,6 +117,13 @@ export function validateSubmitScorePayload(
         awayInnings: validated.away,
         firstBatting,
         cricketMaxOvers: ctx.blueprint?.scoring?.cricketMaxOvers ?? null,
+        ...(validated.superOver
+          ? {
+              homeSuperOver: validated.superOver.home,
+              awaySuperOver: validated.superOver.away,
+              superOverFirstBatting: validated.superOver.firstBatting,
+            }
+          : {}),
       },
     };
   }

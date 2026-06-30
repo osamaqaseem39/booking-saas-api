@@ -117,6 +117,20 @@ export class SubmitScoreDto {
   @IsOptional()
   @IsIn(['home', 'away'])
   firstBatting?: 'home' | 'away';
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CricketInningsScoreDto)
+  homeSuperOver?: CricketInningsScoreDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CricketInningsScoreDto)
+  awaySuperOver?: CricketInningsScoreDto;
+
+  @IsOptional()
+  @IsIn(['home', 'away'])
+  superOverFirstBatting?: 'home' | 'away';
 }
 
 export class WalkoverMatchDto {
