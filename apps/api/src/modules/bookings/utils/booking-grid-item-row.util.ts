@@ -15,7 +15,13 @@ export type BookingGridItemRow = {
 function pickRaw(raw: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) {
     const v = raw[k];
-    if (v != null && String(v).trim() !== '') return String(v);
+    if (v == null) continue;
+    if (v instanceof Date) {
+      if (!Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+      continue;
+    }
+    const s = String(v).trim();
+    if (s !== '') return s;
   }
   return undefined;
 }

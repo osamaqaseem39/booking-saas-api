@@ -1,4 +1,5 @@
 import {
+  addDaysYmdWall,
   bookingItemCoversFacilitySlotOnGridDate,
   buildItemFacilitySlotSyncWindows,
   facilitySlotEffectiveEndTime,
@@ -7,11 +8,24 @@ import {
   facilitySlotOverlapsWallWindow,
   facilitySlotStartInMarkWindow,
   filterSlotsForBookingPicker,
+  formatDateOnlyYmd,
   resolveBookingMatchEndTime,
   wallSlotEffectiveEndTime,
 } from './slot-wall-time.util';
 
 describe('slot-wall-time.util', () => {
+  it('formatDateOnlyYmd handles Date objects and ISO strings', () => {
+    expect(formatDateOnlyYmd(new Date('2026-07-02T00:00:00.000Z'))).toBe(
+      '2026-07-02',
+    );
+    expect(formatDateOnlyYmd('2026-07-02')).toBe('2026-07-02');
+    expect(formatDateOnlyYmd('')).toBe('');
+  });
+
+  it('addDaysYmdWall does not throw on invalid input', () => {
+    expect(addDaysYmdWall('', 1)).toBe('');
+    expect(addDaysYmdWall('2026-07-02', 1)).toBe('2026-07-03');
+  });
   it('maps facility row 08:00–24:00 to one hour for overlap', () => {
     expect(facilitySlotEffectiveEndTime('08:00', '24:00', 60)).toBe('09:00');
     expect(wallSlotEffectiveEndTime('08:00', '24:00', 60)).toBe('09:00');

@@ -73,12 +73,23 @@ export function wallMinutesToTime(m: number): string {
 }
 
 export function formatDateOnlyYmd(d: Date | string): string {
-  if (d instanceof Date) return d.toISOString().slice(0, 10);
-  return String(d).slice(0, 10);
+  if (d instanceof Date) {
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toISOString().slice(0, 10);
+  }
+  const s = String(d).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  if (!s) return '';
+  const parsed = new Date(s);
+  if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
+  return '';
 }
 
 export function addDaysYmdWall(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00.000Z`);
+  const ymd = formatDateOnlyYmd(date);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+  const d = new Date(`${ymd}T00:00:00.000Z`);
+  if (Number.isNaN(d.getTime())) return ymd;
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }
@@ -285,9 +296,10 @@ export function bookingItemWindowsOnGridDate(
 ): Array<{ windowStart: string; windowEnd: string }> {
   if (!isValidWallStartTime(item.startTime)) return [];
 
-  const anchorDate = formatDateOnlyYmd(
-    item.itemDate ?? item.bookingDate ?? gridDate,
-  );
+  const anchorDate =
+    formatDateOnlyYmd(item.itemDate || item.bookingDate || gridDate) ||
+    formatDateOnlyYmd(item.startDatetime ?? '') ||
+    gridDate;
   const wallEnd = hasPersistedWallDatetimes(item)
     ? resolveBookingMatchEndTime(item, slotStepMinutes)
     : item.endTime;
@@ -371,7 +383,10 @@ export function buildItemFacilitySlotSyncWindows(
   bookingDate: string,
   slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
 ): Array<{ slotDate: string; windowStart: string; windowEnd: string }> {
-  const date = formatDateOnlyYmd(item.date ?? bookingDate);
+  const date =
+    formatDateOnlyYmd(item.date || bookingDate) ||
+    formatDateOnlyYmd(item.startDatetime ?? '') ||
+    bookingDate;
   const effectiveEnd = item.useMarkingWallEnd
     ? item.endTime
     : item.startDatetime != null && item.endDatetime != null
