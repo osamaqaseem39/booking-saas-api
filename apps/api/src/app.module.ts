@@ -28,6 +28,7 @@ import { ExpensesModule } from './modules/expenses/expenses.module';
 import { InventoryModule } from './modules/inventory/inventory.module';
 import { JourneyModule } from './modules/journey/journey.module';
 import { SupportModule } from './modules/support/support.module';
+import { MailModule } from './modules/mail/mail.module';
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
   const poolMax = resolvePoolMax();
@@ -167,6 +168,7 @@ function sslModeFromEnv() {
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    MailModule,
     RedisModule,
     HttpMetricsModule,
     AuditModule,

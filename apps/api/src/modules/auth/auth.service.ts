@@ -17,7 +17,11 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterEndUserDto } from './dto/register-end-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { LoginOtpDto } from './dto/login-otp.dto';
+import { SendOtpDto } from './dto/send-otp.dto';
 import { IamService } from '../iam/iam.service';
+import { MailService } from '../mail/mail.service';
+import { OtpService } from './otp.service';
 import { Role } from '../iam/entities/role.entity';
 import { User } from '../iam/entities/user.entity';
 import { UserRole } from '../iam/entities/user-role.entity';
@@ -35,6 +39,8 @@ export class AuthService {
     private readonly userRolesRepository: Repository<UserRole>,
     private readonly jwtService: JwtService,
     private readonly iamService: IamService,
+    private readonly otpService: OtpService,
+    private readonly mailService: MailService,
   ) {}
 
   private accessExpiresIn(): string {
@@ -99,6 +105,43 @@ export class AuthService {
     const refreshToken = await this.signRefreshToken(user.id);
     const profile = await this.iamService.getMe(user.id);
     this.logger.log(`Login success (${safeEmail}, id=${user.id})`);
+    return { token, refreshToken, user: profile };
+  }
+
+  async sendOtp(dto: SendOtpDto): Promise<{ ok: true; message: string }> {
+    const email = dto.email.toLowerCase().trim();
+    const user = await this.usersRepository.findOne({ where: { email } });
+
+    if (dto.purpose === 'register' && user) {
+      throw new BadRequestException(`User with email ${email} already exists`);
+    }
+    if (dto.purpose === 'login' && (!user || !user.isActive)) {
+      return {
+        ok: true,
+        message: 'If this email is valid, a verification code has been sent.',
+      };
+    }
+
+    return this.otpService.sendOtp(email, dto.purpose);
+  }
+
+  async loginOtp(dto: LoginOtpDto): Promise<{
+    token: string;
+    refreshToken: string;
+    user: Awaited<ReturnType<IamService['getMe']>>;
+  }> {
+    const email = dto.email.toLowerCase().trim();
+    await this.otpService.verifyOtp(email, 'login', dto.otp);
+
+    const user = await this.usersRepository.findOne({ where: { email } });
+    if (!user?.isActive) {
+      throw new UnauthorizedException('Invalid email or verification code');
+    }
+
+    const token = await this.signAccessToken(user.id);
+    const refreshToken = await this.signRefreshToken(user.id);
+    const profile = await this.iamService.getMe(user.id);
+    this.logger.log(`OTP login success (${this.maskEmail(email)}, id=${user.id})`);
     return { token, refreshToken, user: profile };
   }
 
@@ -206,6 +249,13 @@ export class AuthService {
       throw new BadRequestException(`User with email ${email} already exists`);
     }
 
+    if (this.otpService.isRequired()) {
+      if (!dto.otp?.trim()) {
+        throw new BadRequestException('Verification code is required');
+      }
+      await this.otpService.verifyOtp(email, 'register', dto.otp);
+    }
+
     const passwordHash = await bcrypt.hash(dto.password, 10);
     const user = this.usersRepository.create({
       fullName: dto.fullName.trim(),
@@ -278,9 +328,20 @@ export class AuthService {
       return { ...generic, resetToken: token };
     }
 
-    this.logger.log(
-      `Password reset requested (${this.maskEmail(email)}). Deliver token via email in production.`,
-    );
+    const dashboardUrl = (
+      process.env.DASHBOARD_URL ?? 'https://www.velay.pro'
+    ).replace(/\/+$/, '');
+    const resetUrl = `${dashboardUrl}/reset-password?token=${encodeURIComponent(token)}`;
+    try {
+      await this.mailService.sendPasswordResetEmail(email, resetUrl);
+    } catch (err) {
+      this.logger.error(
+        `Failed to send password reset email (${this.maskEmail(email)})`,
+        err,
+      );
+    }
+
+    this.logger.log(`Password reset email sent (${this.maskEmail(email)})`);
     return generic;
   }
 

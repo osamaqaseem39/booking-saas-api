@@ -14,6 +14,8 @@ import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { RegisterEndUserDto } from './dto/register-end-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { LoginOtpDto } from './dto/login-otp.dto';
+import { SendOtpDto } from './dto/send-otp.dto';
 import { AuthService } from './auth.service';
 import { RolesGuard } from '../iam/authz/roles.guard';
 import { Roles } from '../iam/authz/roles.decorator';
@@ -30,6 +32,22 @@ export class AuthController {
     user: Awaited<ReturnType<AuthService['login']>>['user'];
   }> {
     return this.authService.login(dto);
+  }
+
+  @Post('send-otp')
+  async sendOtp(
+    @Body() dto: SendOtpDto,
+  ): Promise<{ ok: true; message: string }> {
+    return this.authService.sendOtp(dto);
+  }
+
+  @Post('login-otp')
+  async loginOtp(@Body() dto: LoginOtpDto): Promise<{
+    token: string;
+    refreshToken: string;
+    user: Awaited<ReturnType<AuthService['loginOtp']>>['user'];
+  }> {
+    return this.authService.loginOtp(dto);
   }
 
   @Post('refresh')

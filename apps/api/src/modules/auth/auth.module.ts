@@ -3,6 +3,8 @@ import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { OtpService } from './otp.service';
+import { EmailOtp } from './entities/email-otp.entity';
 import { IamModule } from '../iam/iam.module';
 import { Role } from '../iam/entities/role.entity';
 import { User } from '../iam/entities/user.entity';
@@ -11,7 +13,7 @@ import { UserRole } from '../iam/entities/user-role.entity';
 @Module({
   imports: [
     IamModule,
-    TypeOrmModule.forFeature([User, Role, UserRole]),
+    TypeOrmModule.forFeature([User, Role, UserRole, EmailOtp]),
     JwtModule.register({
       secret:
         process.env.JWT_SECRET ??
@@ -24,6 +26,7 @@ import { UserRole } from '../iam/entities/user-role.entity';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService],
+  providers: [AuthService, OtpService],
+  exports: [OtpService],
 })
 export class AuthModule {}

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import { GamingStation } from '../arena/gaming-station/entities/gaming-station.e
 import { BookingItem } from '../bookings/entities/booking-item.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { IamService } from '../iam/iam.service';
+import { MailService } from '../mail/mail.service';
 import { EntitlementsService } from '../saas-subscriptions/entitlements.service';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
@@ -46,6 +48,7 @@ import {
 
 @Injectable()
 export class BusinessesService {
+  private readonly logger = new Logger(BusinessesService.name);
   private publicLocationsCache:
     | { rows: any[]; expiresAtMs: number }
     | null = null;
@@ -91,6 +94,7 @@ export class BusinessesService {
   constructor(
     private readonly iamService: IamService,
     private readonly entitlementsService: EntitlementsService,
+    private readonly mailService: MailService,
     @InjectRepository(Business)
     private readonly businessesRepository: Repository<Business>,
     @InjectRepository(BusinessMembership)
@@ -519,9 +523,16 @@ export class BusinessesService {
             fullName: dto.owner.name,
             email: dto.owner.email,
             phone: dto.owner.phone,
-            password: dto.owner.password ?? `Tmp#${randomUUID().replace(/-/g, '').slice(0, 12)}`,
+            password:
+              dto.owner.password ??
+              `Tmp#${randomUUID().replace(/-/g, '').slice(0, 12)}`,
           }
         : null;
+
+    const tempPassword =
+      adminSource && !dto.admin?.password && !dto.owner?.password
+        ? adminSource.password
+        : undefined;
 
     if (!adminSource) return { business, adminUser: null, membership: null };
     const adminUser = await this.iamService.ensureUser(adminSource);
@@ -533,6 +544,28 @@ export class BusinessesService {
         membershipRole: 'owner',
       }),
     );
+
+    if (this.mailService.isEnabled()) {
+      const loginUrl = (
+        process.env.DASHBOARD_URL ?? 'https://www.velay.pro'
+      ).replace(/\/+$/, '');
+      try {
+        await this.mailService.sendVendorWelcomeEmail({
+          to: adminUser.email,
+          fullName: adminUser.fullName,
+          businessName: business.businessName,
+          loginUrl,
+          email: adminUser.email,
+          tempPassword,
+        });
+      } catch (err) {
+        this.logger.error(
+          `Failed to send vendor welcome email for ${business.businessName}`,
+          err,
+        );
+      }
+    }
+
     return { business, adminUser, membership };
   }
 
