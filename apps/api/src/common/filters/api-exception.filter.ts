@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
+import { InvalidWallDateError } from '../../modules/bookings/errors/invalid-wall-date.error';
 
 @Catch()
 export class ApiExceptionFilter implements ExceptionFilter {
@@ -75,6 +76,21 @@ export class ApiExceptionFilter implements ExceptionFilter {
         statusCode,
         error: error ?? this.httpStatusLabel(statusCode),
         message,
+        timestamp: new Date().toISOString(),
+        path: req.url,
+      });
+      return;
+    }
+
+    if (exception instanceof InvalidWallDateError) {
+      this.logger.error(
+        `Invalid wall date on ${req.method} ${req.url} — ${exception.message}`,
+        exception.stack,
+      );
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        error: 'Internal Server Error',
+        message: exception.message,
         timestamp: new Date().toISOString(),
         path: req.url,
       });

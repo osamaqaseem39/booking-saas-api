@@ -1,5 +1,7 @@
 /** Wall-clock slot helpers shared by bookings + facility-slot sync. */
 
+import { InvalidWallDateError } from '../errors/invalid-wall-date.error';
+
 export const DEFAULT_SLOT_STEP_MINUTES = 60;
 export const DEFAULT_BOOKING_GRID_TZ = 'Asia/Karachi';
 
@@ -85,11 +87,24 @@ export function formatDateOnlyYmd(d: Date | string): string {
   return '';
 }
 
-export function addDaysYmdWall(date: string, days: number): string {
-  const ymd = formatDateOnlyYmd(date);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+function assertValidGridYmd(
+  raw: Date | string,
+  operation: string,
+): string {
+  const ymd = formatDateOnlyYmd(raw);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    throw InvalidWallDateError.forGridDate(operation, raw, ymd);
+  }
   const d = new Date(`${ymd}T00:00:00.000Z`);
-  if (Number.isNaN(d.getTime())) return ymd;
+  if (Number.isNaN(d.getTime())) {
+    throw InvalidWallDateError.forGridDate(operation, raw, ymd);
+  }
+  return ymd;
+}
+
+export function addDaysYmdWall(date: string, days: number): string {
+  const ymd = assertValidGridYmd(date, 'addDaysYmdWall');
+  const d = new Date(`${ymd}T00:00:00.000Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 }

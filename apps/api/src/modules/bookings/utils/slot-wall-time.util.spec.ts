@@ -22,8 +22,10 @@ describe('slot-wall-time.util', () => {
     expect(formatDateOnlyYmd('')).toBe('');
   });
 
-  it('addDaysYmdWall does not throw on invalid input', () => {
-    expect(addDaysYmdWall('', 1)).toBe('');
+  it('addDaysYmdWall throws InvalidWallDateError on invalid input', () => {
+    expect(() => addDaysYmdWall('', 1)).toThrow(
+      'Invalid booking grid date during addDaysYmdWall: expected YYYY-MM-DD, received ""',
+    );
     expect(addDaysYmdWall('2026-07-02', 1)).toBe('2026-07-03');
   });
   it('maps facility row 08:00–24:00 to one hour for overlap', () => {

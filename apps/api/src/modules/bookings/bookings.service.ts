@@ -2531,42 +2531,88 @@ export class BookingsService {
     });
     const baseItem = itemsSorted[itemsSorted.length - 1];
     const baseDate = formatDateOnly(baseItem.date ?? booking.bookingDate);
-    const baseWindow = this.toSlotDateTimes(baseDate, baseItem.startTime, baseItem.endTime);
-    const currentEnd = baseItem.endDatetime ?? baseWindow.endDatetime;
+    const baseWall = itemWallWindowFromParts(
+      baseDate,
+      baseItem.startTime,
+      baseItem.endTime,
+      (d, s, e) => this.toSlotDateTimes(d, s, e),
+      baseItem.startDatetime,
+      baseItem.endDatetime,
+    );
+    const now = new Date();
+    const extensionStart = liveBookingOccupiedEnd(
+      booking.bookingStatus,
+      baseWall.end,
+      now,
+    );
+    const extensionEnd = new Date(extensionStart.getTime() + addOnMinutes * 60 * 1000);
 
-    const checkWindowStart = currentEnd;
-    const checkWindowEnd = new Date(currentEnd.getTime() + 60 * 60 * 1000);
-
-    const overlapCount = await this.bookingRepo
+    const courtKind = normalizeCourtKindForOverlap(baseItem.courtKind) as CourtKind;
+    const candidates = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
       .where('b.tenantId = :tenantId', { tenantId })
       .andWhere('b.id <> :bookingId', { bookingId })
-      .andWhere("b.bookingStatus IN ('pending', 'confirmed', 'live', 'completed')")
+      .andWhere("b.bookingStatus NOT IN ('cancelled', 'no_show', 'completed')")
       .andWhere("i.itemStatus <> 'cancelled'")
-      .andWhere('i.courtKind = :courtKind', { courtKind: baseItem.courtKind })
+      .andWhere('i.courtKind = :courtKind', { courtKind })
       .andWhere('i.courtId = :courtId', { courtId: baseItem.courtId })
-      .andWhere('i.startDatetime < :checkWindowEnd', {
-        checkWindowEnd: checkWindowEnd.toISOString(),
+      .andWhere('i.startDatetime < :extensionEnd', {
+        extensionEnd: extensionEnd.toISOString(),
       })
-      .andWhere('i.endDatetime > :checkWindowStart', {
-        checkWindowStart: checkWindowStart.toISOString(),
+      .andWhere('i.endDatetime > :extensionStart', {
+        extensionStart: extensionStart.toISOString(),
       })
-      .getCount();
+      .select([
+        'b.bookingStatus AS "bookingStatus"',
+        'i.startDatetime AS "startDatetime"',
+        'i.endDatetime AS "endDatetime"',
+        'i.startTime AS "startTime"',
+        'i.endTime AS "endTime"',
+        'i.date AS "itemDate"',
+      ])
+      .getRawMany<{
+        bookingStatus: string;
+        startDatetime: string | null;
+        endDatetime: string | null;
+        startTime: string;
+        endTime: string;
+        itemDate: string;
+      }>();
 
-    if (overlapCount > 0) {
-      throw new ConflictException('Upcoming slot is not empty for extension');
+    for (const row of candidates) {
+      const rowDate = formatDateOnly(row.itemDate ?? booking.bookingDate);
+      const existingWall = itemWallWindowFromParts(
+        rowDate,
+        row.startTime,
+        row.endTime,
+        (d, s, e) => this.toSlotDateTimes(d, s, e),
+        row.startDatetime,
+        row.endDatetime,
+      );
+      const existingEnd = liveBookingOccupiedEnd(
+        row.bookingStatus,
+        existingWall.end,
+        now,
+      );
+      if (
+        wallTimeWindowsOverlap(
+          existingWall.start,
+          existingEnd,
+          extensionStart,
+          extensionEnd,
+        )
+      ) {
+        throw new ConflictException('Upcoming slot is not empty for extension');
+      }
     }
-
-    const extensionStart = currentEnd;
-    const extensionEnd = new Date(currentEnd.getTime() + addOnMinutes * 60 * 1000);
     const extensionStartTime = extensionStart.toISOString().slice(11, 16);
     const extensionEndTime = extensionEnd.toISOString().slice(11, 16);
     const extensionDate = formatDateOnly(extensionStart);
 
     const baseDurationMinutes = Math.max(
       1,
-      Math.round((baseWindow.endDatetime.getTime() - baseWindow.startDatetime.getTime()) / 60000),
+      Math.round((baseWall.end.getTime() - baseWall.start.getTime()) / 60000),
     );
     const basePrice = numFromDec(baseItem.price);
     const perMinutePrice = basePrice / baseDurationMinutes;
