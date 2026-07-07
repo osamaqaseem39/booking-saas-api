@@ -11,7 +11,9 @@ import {
   IsUUID,
   MaxLength,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
+import { TimeSlotTemplateScheduleDto } from '../../../bookings/dto/time-slot-template-schedule.dto';
 
 const COURT_STATUS = ['active', 'maintenance', 'draft'] as const;
 
@@ -60,6 +62,11 @@ export class CreateTableTennisCourtDto {
   @ValidateIf((_, v) => v != null && v !== '')
   @IsUUID('4')
   timeSlotTemplateId?: string | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TimeSlotTemplateScheduleDto)
+  timeSlotTemplateSchedule?: TimeSlotTemplateScheduleDto;
 
   @IsOptional()
   @IsObject()

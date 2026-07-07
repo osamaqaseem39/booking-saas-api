@@ -34,6 +34,9 @@ export class TenantTimeSlotTemplateLine {
   @Column({ type: 'varchar', length: 20, default: 'available' })
   status!: 'available' | 'blocked';
 
+  @Column({ type: 'varchar', length: 16, default: 'standard' })
+  priceTier!: 'standard' | 'peak';
+
   @Column({ type: 'int' })
   sortOrder!: number;
 

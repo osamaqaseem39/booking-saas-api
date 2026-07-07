@@ -5,6 +5,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import type { TimeSlotTemplateSchedule } from '../../../bookings/types/time-slot-template.types';
 import type {
   TurfCoveredType,
   TurfPricingConfig,
@@ -65,6 +66,9 @@ export class TurfCourt {
 
   @Column({ type: 'uuid', nullable: true })
   timeSlotTemplateId!: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  timeSlotTemplateSchedule?: TimeSlotTemplateSchedule | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;

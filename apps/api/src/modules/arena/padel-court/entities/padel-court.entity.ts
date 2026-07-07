@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { BusinessLocation } from '../../../businesses/entities/business-location.entity';
+import type { TimeSlotTemplateSchedule } from '../../../bookings/types/time-slot-template.types';
 import type {
   PadelAmenities,
   PadelExtras,
@@ -114,6 +115,9 @@ export class PadelCourt {
 
   @Column({ type: 'uuid', nullable: true })
   timeSlotTemplateId!: string | null;
+
+  @Column({ type: 'jsonb', nullable: true })
+  timeSlotTemplateSchedule?: TimeSlotTemplateSchedule | null;
 
   @Column({ type: 'boolean', default: true })
   isActive!: boolean;

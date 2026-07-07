@@ -8,6 +8,8 @@ import { BookingsController } from './bookings.controller';
 import { BookingsService } from './bookings.service';
 import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
 import { TenantTimeSlotTemplateLine } from './entities/tenant-time-slot-template-line.entity';
+import { TenantPromoCode } from './entities/tenant-promo-code.entity';
+import { PromoCodesService } from './promo-codes/promo-codes.service';
 import { TimeSlotTemplatesService } from './time-slot-templates/time-slot-templates.service';
 import { CourtFacilitySlot } from './entities/court-facility-slot.entity';
 import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entity';
@@ -18,6 +20,7 @@ import { BusinessLocation } from '../businesses/entities/business-location.entit
 import { Business } from '../businesses/entities/business.entity';
 import { PlacePadelBookingController } from './public/place-padel-booking.controller';
 import { PublicBookingsController } from './public/public-bookings.controller';
+import { PublicPromoCodesController } from './public/public-promo-codes.controller';
 import { PreviousBookingsController } from './user/previous-bookings.controller';
 import { IamModule } from '../iam/iam.module';
 import { RealtimeModule } from '../realtime/realtime.module';
@@ -42,15 +45,17 @@ import { BookingsSlotsTask } from './tasks/bookings-slots.task';
       CourtFacilitySlot,
       TenantTimeSlotTemplate,
       TenantTimeSlotTemplateLine,
+      TenantPromoCode,
     ]),
   ],
   controllers: [
     BookingsController,
     PlacePadelBookingController,
     PublicBookingsController,
+    PublicPromoCodesController,
     PreviousBookingsController,
   ],
-  providers: [BookingsService, TimeSlotTemplatesService, BookingsSlotsTask],
-  exports: [BookingsService, TimeSlotTemplatesService],
+  providers: [BookingsService, TimeSlotTemplatesService, PromoCodesService, BookingsSlotsTask],
+  exports: [BookingsService, TimeSlotTemplatesService, PromoCodesService],
 })
 export class BookingsModule {}

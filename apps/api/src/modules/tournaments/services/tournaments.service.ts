@@ -1235,6 +1235,7 @@ export class TournamentsService {
     const qb = this.divisions
       .createQueryBuilder('d')
       .innerJoin(Tournament, 't', 't.id = d.tournamentId')
+      .addSelect('t.startsAt')
       .where('t.tenantId = :tenantId', { tenantId })
       .andWhere('t.deletedAt IS NULL')
       .andWhere('d.deletedAt IS NULL')

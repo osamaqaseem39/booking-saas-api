@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, MoreThanOrEqual, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import type { CreateTimeSlotTemplateDto } from '../dto/create-time-slot-template.dto';
 import type { UpdateTimeSlotTemplateDto } from '../dto/update-time-slot-template.dto';
 import { TenantTimeSlotTemplate } from '../entities/tenant-time-slot-template.entity';
@@ -13,6 +13,14 @@ import { PadelCourt } from '../../arena/padel-court/entities/padel-court.entity'
 import { TableTennisCourt } from '../../arena/table-tennis-court/entities/table-tennis-court.entity';
 import { TurfCourt } from '../../arena/turf/entities/turf-court.entity';
 import { CourtFacilitySlot } from '../entities/court-facility-slot.entity';
+import type { SlotPriceTier } from '../types/time-slot-template.types';
+import type { CourtTemplateBinding } from '../types/time-slot-template.types';
+import {
+  courtUsesTemplateOnAnyDay,
+  resolveTimeSlotTemplateId,
+} from '../utils/time-slot-template-schedule.util';
+
+type FacilityCourtKind = 'padel_court' | 'turf_court' | 'table_tennis_court';
 
 function toMinutes(time: string, isEndTime = false): number {
   if (time === '24:00' || (time === '00:00' && isEndTime)) return 24 * 60;
@@ -36,6 +44,7 @@ export type TimeSlotTemplateApiRow = {
     startTime: string;
     endTime: string;
     status: 'available' | 'blocked';
+    priceTier: SlotPriceTier;
     sortOrder: number;
   }>;
   slotStarts: string[];
@@ -45,8 +54,6 @@ export type TimeSlotTemplateApiRow = {
 
 @Injectable()
 export class TimeSlotTemplatesService {
-  private static readonly FACILITY_SLOT_INSERT_BATCH_SIZE = 2000;
-
   constructor(
     @InjectRepository(TenantTimeSlotTemplate)
     private readonly templateRepo: Repository<TenantTimeSlotTemplate>,
@@ -62,6 +69,92 @@ export class TimeSlotTemplatesService {
     private readonly facilitySlotRepo: Repository<CourtFacilitySlot>,
   ) {}
 
+  private buildRollingSlotDates(days = 30): string[] {
+    const dates: string[] = [];
+    for (let i = 0; i < days; i++) {
+      const d = new Date();
+      d.setUTCDate(d.getUTCDate() + i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    return dates;
+  }
+
+  private async loadTemplateLines(
+    tenantId: string,
+    templateId: string,
+  ): Promise<TenantTimeSlotTemplateLine[]> {
+    return this.lineRepo.find({
+      where: { templateId, tenantId },
+      order: { sortOrder: 'ASC' },
+    });
+  }
+
+  private async replaceCourtDaySlots(
+    tenantId: string,
+    kind: FacilityCourtKind,
+    courtId: string,
+    slotDate: string,
+    slotLines: TenantTimeSlotTemplateLine[],
+  ): Promise<void> {
+    await this.facilitySlotRepo.delete({
+      tenantId,
+      courtKind: kind,
+      courtId,
+      slotDate,
+    });
+    if (!slotLines.length) return;
+
+    const values = slotLines.map((line) =>
+      this.facilitySlotRepo.create({
+        tenantId,
+        courtKind: kind,
+        courtId,
+        slotDate,
+        startTime: line.startTime,
+        endTime: line.endTime,
+        status: line.status,
+        priceTier: line.priceTier === 'peak' ? 'peak' : 'standard',
+      }),
+    );
+    await this.facilitySlotRepo.insert(values);
+  }
+
+  async syncCourtFacilitySlots(
+    tenantId: string,
+    kind: FacilityCourtKind,
+    court: CourtTemplateBinding & { id: string },
+    days = 30,
+  ): Promise<void> {
+    const dates = this.buildRollingSlotDates(days);
+    const lineCache = new Map<string, TenantTimeSlotTemplateLine[]>();
+
+    for (const slotDate of dates) {
+      const templateId = resolveTimeSlotTemplateId(court, slotDate);
+      if (!templateId) {
+        await this.facilitySlotRepo.delete({
+          tenantId,
+          courtKind: kind,
+          courtId: court.id,
+          slotDate,
+        });
+        continue;
+      }
+
+      let lines = lineCache.get(templateId);
+      if (!lines) {
+        lines = await this.loadTemplateLines(tenantId, templateId);
+        lineCache.set(templateId, lines);
+      }
+      await this.replaceCourtDaySlots(
+        tenantId,
+        kind,
+        court.id,
+        slotDate,
+        lines,
+      );
+    }
+  }
+
   private async syncTemplateToFacilitySlots(
     tenantId: string,
     templateId: string,
@@ -69,113 +162,60 @@ export class TimeSlotTemplatesService {
   ): Promise<void> {
     const [padelCourts, turfCourts, tableTennisCourts] = await Promise.all([
       this.padelRepo.find({
-        where: { tenantId, timeSlotTemplateId: templateId },
-        select: ['id'],
+        where: { tenantId },
+        select: ['id', 'timeSlotTemplateId', 'timeSlotTemplateSchedule'],
       }),
       this.turfRepo.find({
-        where: { tenantId, timeSlotTemplateId: templateId },
-        select: ['id'],
+        where: { tenantId },
+        select: ['id', 'timeSlotTemplateId', 'timeSlotTemplateSchedule'],
       }),
       this.tableTennisRepo.find({
-        where: { tenantId, timeSlotTemplateId: templateId },
-        select: ['id'],
+        where: { tenantId },
+        select: ['id', 'timeSlotTemplateId', 'timeSlotTemplateSchedule'],
       }),
     ]);
 
-    const padelCourtIds = padelCourts.map((c) => c.id);
-    const turfCourtIds = turfCourts.map((c) => c.id);
-    const tableTennisIds = tableTennisCourts.map((c) => c.id);
+    const padelCourtIds = padelCourts
+      .filter((c) => courtUsesTemplateOnAnyDay(c, templateId))
+      .map((c) => c.id);
+    const turfCourtIds = turfCourts
+      .filter((c) => courtUsesTemplateOnAnyDay(c, templateId))
+      .map((c) => c.id);
+    const tableTennisIds = tableTennisCourts
+      .filter((c) => courtUsesTemplateOnAnyDay(c, templateId))
+      .map((c) => c.id);
     if (!padelCourtIds.length && !turfCourtIds.length && !tableTennisIds.length)
       return;
 
-    const today = new Date().toISOString().slice(0, 10);
-    const dates: string[] = [];
-    for (let i = 0; i < 30; i++) {
-      const d = new Date();
-      d.setUTCDate(d.getUTCDate() + i);
-      dates.push(d.toISOString().slice(0, 10));
-    }
+    const dates = this.buildRollingSlotDates();
 
-    if (padelCourtIds.length) {
-      await this.facilitySlotRepo.delete({
-        tenantId,
-        courtKind: 'padel_court',
-        courtId: In(padelCourtIds),
-        slotDate: MoreThanOrEqual(today),
-      });
-    }
-    if (turfCourtIds.length) {
-      await this.facilitySlotRepo.delete({
-        tenantId,
-        courtKind: 'turf_court',
-        courtId: In(turfCourtIds),
-        slotDate: MoreThanOrEqual(today),
-      });
-    }
-    if (tableTennisIds.length) {
-      await this.facilitySlotRepo.delete({
-        tenantId,
-        courtKind: 'table_tennis_court',
-        courtId: In(tableTennisIds),
-        slotDate: MoreThanOrEqual(today),
-      });
-    }
+    const courtBindings: Array<{
+      kind: FacilityCourtKind;
+      court: CourtTemplateBinding & { id: string };
+    }> = [
+      ...padelCourts
+        .filter((c) => padelCourtIds.includes(c.id))
+        .map((c) => ({ kind: 'padel_court' as const, court: c })),
+      ...turfCourts
+        .filter((c) => turfCourtIds.includes(c.id))
+        .map((c) => ({ kind: 'turf_court' as const, court: c })),
+      ...tableTennisCourts
+        .filter((c) => tableTennisIds.includes(c.id))
+        .map((c) => ({ kind: 'table_tennis_court' as const, court: c })),
+    ];
 
-    if (!slotLines.length) return;
-
-    const values: CourtFacilitySlot[] = [];
-    for (const slotDate of dates) {
-      for (const line of slotLines) {
-        for (const courtId of padelCourtIds) {
-          values.push(
-            this.facilitySlotRepo.create({
-              tenantId,
-              courtKind: 'padel_court',
-              courtId,
-              slotDate,
-              startTime: line.startTime,
-              endTime: line.endTime,
-              status: line.status,
-            }),
-          );
-        }
-        for (const courtId of turfCourtIds) {
-          values.push(
-            this.facilitySlotRepo.create({
-              tenantId,
-              courtKind: 'turf_court',
-              courtId,
-              slotDate,
-              startTime: line.startTime,
-              endTime: line.endTime,
-              status: line.status,
-            }),
-          );
-        }
-        for (const courtId of tableTennisIds) {
-          values.push(
-            this.facilitySlotRepo.create({
-              tenantId,
-              courtKind: 'table_tennis_court',
-              courtId,
-              slotDate,
-              startTime: line.startTime,
-              endTime: line.endTime,
-              status: line.status,
-            }),
-          );
-        }
+    for (const { kind, court } of courtBindings) {
+      for (const slotDate of dates) {
+        if (resolveTimeSlotTemplateId(court, slotDate) !== templateId) continue;
+        await this.replaceCourtDaySlots(
+          tenantId,
+          kind,
+          court.id,
+          slotDate,
+          slotLines,
+        );
       }
     }
-
-    if (values.length) {
-      const batchSize = TimeSlotTemplatesService.FACILITY_SLOT_INSERT_BATCH_SIZE;
-      for (let i = 0; i < values.length; i += batchSize) {
-        const batch = values.slice(i, i + batchSize);
-        await this.facilitySlotRepo.insert(batch);
-      }
-    }
-
   }
 
   private normalizeSlotStarts(raw: string[]): string[] {
@@ -207,6 +247,7 @@ export class TimeSlotTemplatesService {
     startTime: string;
     endTime: string;
     status: 'available' | 'blocked';
+    priceTier: SlotPriceTier;
     sortOrder: number;
   }> {
     const hasLines = Array.isArray(dto.slotLines);
@@ -221,6 +262,7 @@ export class TimeSlotTemplatesService {
         startTime: string;
         endTime: string;
         status: 'available' | 'blocked';
+        priceTier: SlotPriceTier;
         sortOrder: number;
       }> = (dto.slotLines ?? []).map((line, idx) => {
         const startTime = String(line.startTime ?? '').trim();
@@ -249,10 +291,13 @@ export class TimeSlotTemplatesService {
         }
         const status: 'available' | 'blocked' =
           line.status === 'blocked' ? 'blocked' : 'available';
+        const priceTier: SlotPriceTier =
+          line.priceTier === 'peak' ? 'peak' : 'standard';
         return {
           startTime: minutesToLabel(startMin),
           endTime: minutesToLabel(endMin),
           status,
+          priceTier,
           sortOrder: idx + 1,
         };
       });
@@ -297,6 +342,7 @@ export class TimeSlotTemplatesService {
         startTime,
         endTime: minutesToLabel(end),
         status: 'available' as const,
+        priceTier: 'standard' as const,
         sortOrder: idx + 1,
       };
     });
@@ -345,6 +391,7 @@ export class TimeSlotTemplatesService {
           startTime: line.startTime,
           endTime: line.endTime,
           status: line.status,
+          priceTier: line.priceTier,
           sortOrder: line.sortOrder,
         }),
       ),
@@ -390,6 +437,7 @@ export class TimeSlotTemplatesService {
             startTime: line.startTime,
             endTime: line.endTime,
             status: line.status,
+            priceTier: line.priceTier,
             sortOrder: line.sortOrder,
           })),
         );
@@ -438,6 +486,7 @@ export class TimeSlotTemplatesService {
         startTime: line.startTime,
         endTime: line.endTime,
         status: line.status === 'blocked' ? 'blocked' : 'available',
+        priceTier: line.priceTier === 'peak' ? 'peak' : 'standard',
         sortOrder: line.sortOrder,
       }));
     return {

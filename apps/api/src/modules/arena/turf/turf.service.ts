@@ -5,10 +5,9 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { TimeSlotTemplatesService } from '../../bookings/time-slot-templates/time-slot-templates.service';
 import { BusinessesService } from '../../businesses/businesses.service';
 import { TenantTimeSlotTemplate } from '../../bookings/entities/tenant-time-slot-template.entity';
-import { TenantTimeSlotTemplateLine } from '../../bookings/entities/tenant-time-slot-template-line.entity';
-import { CourtFacilitySlot } from '../../bookings/entities/court-facility-slot.entity';
 import { TurfCourt } from './entities/turf-court.entity';
 import type { TurfSportType } from './turf.types';
 
@@ -19,11 +18,8 @@ export class TurfService {
     private readonly turfRepo: Repository<TurfCourt>,
     @InjectRepository(TenantTimeSlotTemplate)
     private readonly timeSlotTemplateRepo: Repository<TenantTimeSlotTemplate>,
-    @InjectRepository(TenantTimeSlotTemplateLine)
-    private readonly timeSlotTemplateLineRepo: Repository<TenantTimeSlotTemplateLine>,
-    @InjectRepository(CourtFacilitySlot)
-    private readonly courtFacilitySlotRepo: Repository<CourtFacilitySlot>,
     private readonly businessesService: BusinessesService,
+    private readonly timeSlotTemplates: TimeSlotTemplatesService,
   ) {}
 
   private requireTenant(tenantId: string): void {
@@ -182,11 +178,16 @@ export class TurfService {
           tenantId,
           input.timeSlotTemplateId,
         )) ?? null,
+      timeSlotTemplateSchedule:
+        input.timeSlotTemplateSchedule &&
+        typeof input.timeSlotTemplateSchedule === 'object'
+          ? (input.timeSlotTemplateSchedule as TurfCourt['timeSlotTemplateSchedule'])
+          : null,
     });
 
     const saved = await this.turfRepo.save(row);
 
-    if (saved.timeSlotTemplateId) {
+    if (saved.timeSlotTemplateId || saved.timeSlotTemplateSchedule) {
       await this.syncSlotsFromTemplate(tenantId, saved);
     }
 
@@ -278,8 +279,15 @@ export class TurfService {
     if (nextTemplateId !== undefined) {
       row.timeSlotTemplateId = nextTemplateId;
     }
+    if (input.timeSlotTemplateSchedule !== undefined) {
+      row.timeSlotTemplateSchedule =
+        input.timeSlotTemplateSchedule &&
+        typeof input.timeSlotTemplateSchedule === 'object'
+          ? (input.timeSlotTemplateSchedule as TurfCourt['timeSlotTemplateSchedule'])
+          : null;
+    }
 
-    // Update sports types if provided (though UI typically prevents this for existing courts)
+    // Update sports types if provided
     if (Array.isArray(input.supportedSports) && input.supportedSports.length > 0) {
       row.supportedSports = input.supportedSports as TurfSportType[];
     } else if (input.supportsCricket === true && !row.supportedSports.includes('cricket')) {
@@ -329,7 +337,10 @@ export class TurfService {
     }
 
     const saved = await this.turfRepo.save(row);
-    if (input.timeSlotTemplateId !== undefined && saved.timeSlotTemplateId) {
+    if (
+      input.timeSlotTemplateId !== undefined ||
+      input.timeSlotTemplateSchedule !== undefined
+    ) {
       await this.syncSlotsFromTemplate(tenantId, saved);
     }
     return saved;
@@ -348,37 +359,11 @@ export class TurfService {
     tenantId: string,
     court: TurfCourt,
   ): Promise<void> {
-    if (!court.timeSlotTemplateId) return;
-    const lines = await this.timeSlotTemplateLineRepo.find({
-      where: { templateId: court.timeSlotTemplateId, tenantId },
-    });
-    if (!lines.length) return;
-
-    const values: Partial<CourtFacilitySlot>[] = [];
-    const d = new Date();
-    for (let i = 0; i < 30; i++) {
-      const slotDate = new Date(d);
-      slotDate.setUTCDate(slotDate.getUTCDate() + i);
-      const dateStr = slotDate.toISOString().slice(0, 10);
-      for (const line of lines) {
-        values.push({
-          tenantId,
-          courtKind: 'turf_court',
-          courtId: court.id,
-          slotDate: dateStr,
-          startTime: line.startTime,
-          endTime: line.endTime,
-          status: line.status as any,
-        });
-      }
-    }
-    await this.courtFacilitySlotRepo
-      .createQueryBuilder()
-      .insert()
-      .into(CourtFacilitySlot)
-      .values(values as CourtFacilitySlot[])
-      .orIgnore()
-      .execute();
+    await this.timeSlotTemplates.syncCourtFacilitySlots(
+      tenantId,
+      'turf_court',
+      court,
+    );
   }
 
   private calculateSportConfig(

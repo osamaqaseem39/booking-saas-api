@@ -58,4 +58,8 @@ export class CreateBookingDto {
   @IsOptional()
   @IsBoolean()
   allowImmediate?: boolean;
+
+  @IsOptional()
+  @IsString()
+  promoCode?: string;
 }

@@ -87,6 +87,12 @@ export class Booking {
   @Column({ type: 'text', nullable: true })
   notes?: string;
 
+  @Column({ type: 'uuid', nullable: true })
+  promoCodeId?: string | null;
+
+  @Column({ type: 'varchar', length: 32, nullable: true })
+  promoCode?: string | null;
+
   @Column({ type: 'text', nullable: true })
   cancellationReason?: string;
 

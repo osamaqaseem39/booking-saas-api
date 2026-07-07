@@ -41,9 +41,15 @@ import { SetCourtSlotBlockDto } from './dto/set-court-slot-block.dto';
 import { EditBookingFacilitySlotsDto } from './dto/edit-booking-facility-slots.dto';
 import { CreateTimeSlotTemplateDto } from './dto/create-time-slot-template.dto';
 import { UpdateTimeSlotTemplateDto } from './dto/update-time-slot-template.dto';
+import {
+  CreatePromoCodeDto,
+  UpdatePromoCodeDto,
+  ValidatePromoCodeDto,
+} from './dto/promo-code.dto';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
 import { TimeSlotTemplatesService } from './time-slot-templates/time-slot-templates.service';
+import { PromoCodesService } from './promo-codes/promo-codes.service';
 import { logBookingsCreateFailure } from './utils/log-bookings-create-failure';
 import { ParseFreeTextBookingDto } from './dto/parse-free-text-booking.dto';
 
@@ -59,6 +65,7 @@ export class BookingsController {
   constructor(
     private readonly bookingsService: BookingsService,
     private readonly timeSlotTemplatesService: TimeSlotTemplatesService,
+    private readonly promoCodesService: PromoCodesService,
   ) {}
 
   private getTenantUuidOrNull(tenant: TenantContext): string | null {
@@ -186,6 +193,71 @@ export class BookingsController {
       throw new BadRequestException('Unable to resolve tenant for template.');
     }
     return this.timeSlotTemplatesService.remove(tenantId, templateId);
+  }
+
+  @Get('promo-codes')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  listPromoCodes(@CurrentTenant() tenant: TenantContext) {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) return [];
+    return this.promoCodesService.list(tenantId);
+  }
+
+  @Post('promo-codes')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  createPromoCode(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() dto: CreatePromoCodeDto,
+  ) {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      throw new BadRequestException('X-Tenant-Id is required to create a promo code.');
+    }
+    return this.promoCodesService.create(tenantId, dto);
+  }
+
+  @Patch('promo-codes/:promoCodeId')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  updatePromoCode(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('promoCodeId', ParseUUIDPipe) promoCodeId: string,
+    @Body() dto: UpdatePromoCodeDto,
+  ) {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      throw new BadRequestException('X-Tenant-Id is required.');
+    }
+    return this.promoCodesService.update(tenantId, promoCodeId, dto);
+  }
+
+  @Delete('promo-codes/:promoCodeId')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  deletePromoCode(
+    @CurrentTenant() tenant: TenantContext,
+    @Param('promoCodeId', ParseUUIDPipe) promoCodeId: string,
+  ) {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      throw new BadRequestException('X-Tenant-Id is required.');
+    }
+    return this.promoCodesService.remove(tenantId, promoCodeId);
+  }
+
+  @Post('promo-codes/validate')
+  @HttpCode(200)
+  validatePromoCode(
+    @CurrentTenant() tenant: TenantContext,
+    @Body() dto: ValidatePromoCodeDto,
+  ) {
+    const tenantId = this.getTenantUuidOrNull(tenant);
+    if (!tenantId) {
+      throw new BadRequestException('X-Tenant-Id is required.');
+    }
+    return this.promoCodesService.validate(tenantId, dto.code, dto.subTotal);
   }
 
   @Post('parse-free-text')

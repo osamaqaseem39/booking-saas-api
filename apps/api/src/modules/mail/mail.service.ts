@@ -87,6 +87,7 @@ export class MailService {
     businessName: string;
     loginUrl: string;
     email: string;
+    setupUrl?: string;
     tempPassword?: string;
   }) {
     const lines = [
@@ -94,12 +95,17 @@ export class MailService {
       '',
       `Your business "${opts.businessName}" has been created on Velay.`,
       '',
-      `Login URL: ${opts.loginUrl}`,
-      `Email: ${opts.email}`,
     ];
-    if (opts.tempPassword) {
-      lines.push(`Temporary password: ${opts.tempPassword}`);
-      lines.push('', 'Please change your password after your first login.');
+    if (opts.setupUrl) {
+      lines.push(`Set up your account: ${opts.setupUrl}`);
+      lines.push('', `After setting your password, sign in at: ${opts.loginUrl}`);
+    } else {
+      lines.push(`Sign in: ${opts.loginUrl}`);
+      lines.push(`Email: ${opts.email}`);
+      if (opts.tempPassword) {
+        lines.push(`Temporary password: ${opts.tempPassword}`);
+        lines.push('', 'Please change your password after your first login.');
+      }
     }
     lines.push('', 'Welcome to Velay!');
     return this.sendMail({

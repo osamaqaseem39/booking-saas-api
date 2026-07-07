@@ -9,6 +9,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, QueryFailedError, Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
+import { createHash, randomBytes } from 'crypto';
 import { Business } from '../businesses/entities/business.entity';
 import { BusinessMembership } from '../businesses/entities/business-membership.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
@@ -441,6 +442,23 @@ export class IamService implements OnModuleInit {
     }
 
     return existing;
+  }
+
+  async createPasswordSetupToken(userId: string): Promise<string> {
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+    const token = randomBytes(32).toString('hex');
+    user.passwordResetTokenHash = createHash('sha256')
+      .update(token, 'utf8')
+      .digest('hex');
+    const mins = Number(process.env.VENDOR_SETUP_EXPIRES_MINUTES ?? '10080');
+    const safe =
+      Number.isFinite(mins) && mins > 0 && mins <= 7 * 24 * 60 ? mins : 10080;
+    user.passwordResetExpiresAt = new Date(Date.now() + safe * 60 * 1000);
+    await this.usersRepository.save(user);
+    return token;
   }
 
   async assignRole(

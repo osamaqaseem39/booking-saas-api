@@ -10,6 +10,7 @@ import {
 import { Type } from 'class-transformer';
 
 const HH_MM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const HH_MM_END = /^(([01]\d|2[0-3]):[0-5]\d|24:00)$/;
 
 export class CreateTimeSlotTemplateLineDto {
   @IsString()
@@ -17,13 +18,18 @@ export class CreateTimeSlotTemplateLineDto {
   startTime!: string;
 
   @IsString()
-  @Matches(HH_MM, { message: 'endTime must be HH:mm (24h)' })
+  @Matches(HH_MM_END, { message: 'endTime must be HH:mm or 24:00 (24h)' })
   endTime!: string;
 
   @IsOptional()
   @IsString()
   @IsIn(['available', 'blocked'])
   status?: 'available' | 'blocked';
+
+  @IsOptional()
+  @IsString()
+  @IsIn(['standard', 'peak'])
+  priceTier?: 'standard' | 'peak';
 }
 
 export class CreateTimeSlotTemplateDto {

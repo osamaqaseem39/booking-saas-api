@@ -549,6 +549,13 @@ export class BusinessesService {
       const loginUrl = (
         process.env.DASHBOARD_URL ?? 'https://www.velay.pro'
       ).replace(/\/+$/, '');
+      let setupUrl: string | undefined;
+      if (tempPassword) {
+        const token = await this.iamService.createPasswordSetupToken(
+          adminUser.id,
+        );
+        setupUrl = `${loginUrl}/reset-password?token=${encodeURIComponent(token)}`;
+      }
       try {
         await this.mailService.sendVendorWelcomeEmail({
           to: adminUser.email,
@@ -556,7 +563,7 @@ export class BusinessesService {
           businessName: business.businessName,
           loginUrl,
           email: adminUser.email,
-          tempPassword,
+          setupUrl,
         });
       } catch (err) {
         this.logger.error(

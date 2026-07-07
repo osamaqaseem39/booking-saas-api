@@ -43,6 +43,9 @@ export class CourtFacilitySlot {
   @Column({ type: 'varchar', length: 16 })
   status!: CourtFacilitySlotStatus;
 
+  @Column({ type: 'varchar', length: 16, default: 'standard' })
+  priceTier!: 'standard' | 'peak';
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt!: Date;
 

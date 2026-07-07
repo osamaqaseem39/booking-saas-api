@@ -80,6 +80,10 @@ import { CourtSlotBookingBlock } from './entities/court-slot-booking-block.entit
 import { Booking } from './entities/booking.entity';
 import { PaymentTransaction } from './entities/payment-transaction.entity';
 import { TenantTimeSlotTemplate } from './entities/tenant-time-slot-template.entity';
+import { PromoCodesService } from './promo-codes/promo-codes.service';
+import type { SlotPriceTier } from './types/time-slot-template.types';
+import { resolveTimeSlotTemplateId } from './utils/time-slot-template-schedule.util';
+import { resolveSlotPrice } from './utils/slot-price.util';
 import {
   bookingItemCoversFacilitySlotOnGridDate,
   buildItemFacilitySlotSyncWindows,
@@ -302,6 +306,7 @@ export class BookingsService {
     private readonly slotTemplateLineRepo: Repository<TenantTimeSlotTemplateLine>,
     @InjectRepository(PaymentTransaction)
     private readonly paymentTxnRepo: Repository<PaymentTransaction>,
+    private readonly promoCodes: PromoCodesService,
     private readonly iamService: IamService,
     @Optional() private readonly realtime?: RealtimeService,
   ) {}
@@ -1920,8 +1925,20 @@ export class BookingsService {
     );
 
     const pricingSubTotal = Number(dto.pricing.subTotal ?? 0);
-    const pricingDiscount = Number(dto.pricing.discount ?? 0);
+    let pricingDiscount = Number(dto.pricing.discount ?? 0);
     const pricingTax = Number(dto.pricing.tax ?? 0);
+    let promoCodeId: string | undefined;
+    let promoCode: string | undefined;
+    if (dto.promoCode?.trim()) {
+      const resolved = await this.promoCodes.resolveForCheckout(
+        tenantId,
+        dto.promoCode,
+        pricingSubTotal,
+      );
+      promoCodeId = resolved.promo.id;
+      promoCode = resolved.promo.code;
+      pricingDiscount = resolved.discount;
+    }
     const payableAmount = this.computePayableAmount(
       pricingSubTotal,
       pricingDiscount,
@@ -1946,6 +1963,8 @@ export class BookingsService {
       paidAmount: dec(paidAmount),
       bookingStatus: dto.bookingStatus ?? 'confirmed',
       notes: dto.notes,
+      promoCodeId: promoCodeId ?? null,
+      promoCode: promoCode ?? null,
       items: itemsPayload,
     };
     harmonizePaymentStatusWithAmounts(
@@ -2004,6 +2023,10 @@ export class BookingsService {
         ms: Date.now() - createStarted,
       });
       throw error;
+    }
+
+    if (promoCodeId) {
+      await this.promoCodes.incrementUsage(promoCodeId);
     }
 
     const full = await this.bookingRepo.findOneOrFail({
@@ -3084,6 +3107,12 @@ export class BookingsService {
 
     const rows = normalizeBookingGridItemRows(rowsRaw);
 
+    const slotPricing = await this.resolveCourtSlotPricing(
+      tenantId,
+      params.kind,
+      params.courtId,
+    );
+
     let slots: Array<any> = [];
     if (facilitySlots.length > 0) {
       for (const fs of facilitySlots) {
@@ -3122,18 +3151,33 @@ export class BookingsService {
             bookingId: hit.bookingId,
             itemId: hit.id,
             status: hit.itemStatus,
+            ...this.slotPriceFields(
+              date,
+              fs.priceTier === 'peak' ? 'peak' : 'standard',
+              slotPricing,
+            ),
           });
         } else if (fs.status === 'blocked') {
           slots.push({
             startTime: fs.startTime,
             endTime: displayEnd,
             availability: 'blocked',
+            ...this.slotPriceFields(
+              date,
+              fs.priceTier === 'peak' ? 'peak' : 'standard',
+              slotPricing,
+            ),
           });
         } else {
           slots.push({
             startTime: fs.startTime,
             endTime: displayEnd,
             availability: 'available',
+            ...this.slotPriceFields(
+              date,
+              fs.priceTier === 'peak' ? 'peak' : 'standard',
+              slotPricing,
+            ),
           });
         }
       }
@@ -3172,7 +3216,12 @@ export class BookingsService {
             status: hit.itemStatus,
           });
         } else {
-          slots.push({ startTime: s, endTime: e, availability: 'available' });
+          slots.push({
+            startTime: s,
+            endTime: e,
+            availability: 'available',
+            ...this.slotPriceFields(date, 'standard', slotPricing),
+          });
         }
       }
     }
@@ -3304,24 +3353,26 @@ export class BookingsService {
     tenantId: string,
     params: { kind: CourtKind; courtId: string; date: string },
   ): Promise<{ ok: true; upserted: number }> {
-    let templateId: string | null = null;
+    let courtBinding:
+      | PadelCourt
+      | TurfCourt
+      | TableTennisCourt
+      | null = null;
     if (params.kind === 'padel_court') {
-      const court = await this.assertPadelCourtExists(tenantId, params.courtId);
-      templateId = court.timeSlotTemplateId;
+      courtBinding = await this.assertPadelCourtExists(tenantId, params.courtId);
     } else if (params.kind === 'turf_court') {
-      const court = await this.assertTurfCourtExists(tenantId, params.courtId);
-      templateId = court.timeSlotTemplateId;
+      courtBinding = await this.assertTurfCourtExists(tenantId, params.courtId);
     } else if (params.kind === 'table_tennis_court') {
-      const court = await this.assertTableTennisCourtExists(
+      courtBinding = await this.assertTableTennisCourtExists(
         tenantId,
         params.courtId,
       );
-      templateId = court.timeSlotTemplateId;
     } else {
       throw new BadRequestException('Unsupported court kind');
     }
 
     const date = formatDateOnly(params.date);
+    const templateId = resolveTimeSlotTemplateId(courtBinding, date);
     const values: Partial<CourtFacilitySlot>[] = [];
 
     let templateLines: TenantTimeSlotTemplateLine[] = [];
@@ -3339,22 +3390,15 @@ export class BookingsService {
 
     if (templateLines.length > 0) {
       for (const line of templateLines) {
-        const endTime =
-          line.endTime === '24:00'
-            ? facilitySlotEffectiveEndTime(
-                line.startTime,
-                line.endTime,
-                slotStepMinutes,
-              )
-            : line.endTime;
         values.push({
           tenantId,
           courtKind: params.kind,
           courtId: params.courtId,
           slotDate: date,
           startTime: line.startTime,
-          endTime,
+          endTime: line.endTime,
           status: line.status as any,
+          priceTier: line.priceTier === 'peak' ? 'peak' : 'standard',
         });
       }
     } else {
@@ -3371,13 +3415,16 @@ export class BookingsService {
       }
     }
 
-    await this.facilitySlotRepo
-      .createQueryBuilder()
-      .insert()
-      .into(CourtFacilitySlot)
-      .values(values as CourtFacilitySlot[])
-      .orIgnore()
-      .execute();
+    await this.facilitySlotRepo.delete({
+      tenantId,
+      courtKind: params.kind,
+      courtId: params.courtId,
+      slotDate: date,
+    });
+
+    if (values.length) {
+      await this.facilitySlotRepo.insert(values as CourtFacilitySlot[]);
+    }
 
     return { ok: true, upserted: values.length };
   }
@@ -3968,6 +4015,93 @@ export class BookingsService {
       if (firstSport) priceObj = pricing[firstSport];
     }
     return Number(priceObj?.basePrice ?? 0);
+  }
+
+  private async resolveCourtSlotPricing(
+    tenantId: string,
+    kind: CourtKind,
+    courtId: string,
+  ): Promise<{
+    basePrice: number;
+    peakPricing?: { weekdayEvening?: number; weekend?: number };
+  }> {
+    if (kind === 'padel_court') {
+      const court = await this.padelRepo.findOne({
+        where: { id: courtId, tenantId },
+        select: ['pricePerSlot', 'peakPricing'],
+      });
+      return {
+        basePrice: court?.pricePerSlot ? numFromDec(court.pricePerSlot) : 0,
+        peakPricing: court?.peakPricing ?? undefined,
+      };
+    }
+    if (kind === 'turf_court') {
+      const court = await this.turfRepo.findOne({
+        where: { id: courtId, tenantId },
+        select: ['pricing', 'supportedSports'],
+      });
+      const base = court ? this.resolveTurfPrice(court) : 0;
+      const pricing = (court?.pricing ?? {}) as Record<string, any>;
+      const firstSport = court?.supportedSports?.[0];
+      const priceObj =
+        (firstSport ? pricing[firstSport] : null) ??
+        pricing.futsal ??
+        pricing.cricket ??
+        {};
+      return {
+        basePrice: base,
+        peakPricing: {
+          weekdayEvening:
+            typeof priceObj.peakPrice === 'number'
+              ? priceObj.peakPrice
+              : undefined,
+          weekend:
+            typeof priceObj.weekendPrice === 'number'
+              ? priceObj.weekendPrice
+              : undefined,
+        },
+      };
+    }
+    if (kind === 'table_tennis_court') {
+      const court = await this.tableTennisRepo.findOne({
+        where: { id: courtId, tenantId },
+        select: ['pricePerSlot', 'meta'],
+      });
+      const meta = (court?.meta ?? {}) as Record<string, unknown>;
+      return {
+        basePrice: court?.pricePerSlot ? numFromDec(court.pricePerSlot) : 0,
+        peakPricing: {
+          weekdayEvening:
+            typeof meta.peakWeekdayEvening === 'number'
+              ? meta.peakWeekdayEvening
+              : undefined,
+          weekend:
+            typeof meta.peakWeekend === 'number'
+              ? meta.peakWeekend
+              : undefined,
+        },
+      };
+    }
+    return { basePrice: 0 };
+  }
+
+  private slotPriceFields(
+    date: string,
+    priceTier: SlotPriceTier,
+    pricing: {
+      basePrice: number;
+      peakPricing?: { weekdayEvening?: number; weekend?: number };
+    },
+  ) {
+    return {
+      priceTier,
+      price: resolveSlotPrice({
+        date,
+        priceTier,
+        basePrice: pricing.basePrice,
+        peakPricing: pricing.peakPricing,
+      }),
+    };
   }
 
   private normalizeTableTennisPlayType(
