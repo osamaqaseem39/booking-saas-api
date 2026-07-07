@@ -616,6 +616,52 @@ export class IamService implements OnModuleInit {
     return this.getUserPermissions(userId);
   }
 
+  /**
+   * For optional-auth endpoints: enforce `permissionKey` only when the caller is
+   * `business-staff`. Admins and unauthenticated callers pass through.
+   */
+  async assertStaffPermissionIfApplicable(
+    userId: string | undefined,
+    permissionKey: string,
+  ): Promise<void> {
+    const id = userId?.trim();
+    if (!id) return;
+    const roleCodes = (
+      await this.userRolesRepository.find({ where: { userId: id } })
+    ).map((r) => r.roleCode);
+    if (roleCodes.some((c) => ADMIN_ROLES.includes(c as SystemRole))) return;
+    if (!roleCodes.includes('business-staff')) return;
+    if (!(await this.hasPermission(id, permissionKey))) {
+      throw new ForbiddenException(
+        `You do not have permission to perform this action (${permissionKey})`,
+      );
+    }
+  }
+
+  /** Staff must hold at least one of the listed permissions. */
+  async assertStaffPermissionAnyIfApplicable(
+    userId: string | undefined,
+    permissionKeys: string[],
+  ): Promise<void> {
+    const id = userId?.trim();
+    if (!id) return;
+    const roleCodes = (
+      await this.userRolesRepository.find({ where: { userId: id } })
+    ).map((r) => r.roleCode);
+    if (roleCodes.some((c) => ADMIN_ROLES.includes(c as SystemRole))) return;
+    if (!roleCodes.includes('business-staff')) return;
+    const checks = await Promise.all(
+      permissionKeys.map((key) => this.hasPermission(id, key)),
+    );
+    if (!checks.some(Boolean)) {
+      throw new ForbiddenException(
+        `You do not have permission to perform this action (${permissionKeys.join(
+          ' or ',
+        )})`,
+      );
+    }
+  }
+
   /** True when the user may perform the given `${module}:${action}`. */
   async hasPermission(userId: string, permissionKey: string): Promise<boolean> {
     const roleCodes = (

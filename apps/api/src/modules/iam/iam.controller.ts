@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -100,6 +101,7 @@ export class IamController {
 
   @Get('end-users')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('users:view')
   async listEndUsers() {
     return this.iamService.listEndUsers();
   }
@@ -136,6 +138,14 @@ export class IamController {
     @Body() dto: UpdateUserDto,
   ) {
     const requesterId = this.requesterUserId(req);
+    if (userId !== requesterId) {
+      const mayEdit = await this.iamService.hasPermission(requesterId, 'users:edit');
+      if (!mayEdit) {
+        throw new ForbiddenException(
+          'You do not have permission to edit other users (users:edit)',
+        );
+      }
+    }
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
       'platform-owner',
     ]);

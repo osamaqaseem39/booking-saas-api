@@ -15,6 +15,8 @@ import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { Permissions } from '../iam/authz/permissions.decorator';
+import { IamService } from '../iam/iam.service';
 import { CreateBusinessLocationDto } from './dto/create-business-location.dto';
 import { CreateBusinessDto } from './dto/create-business.dto';
 import { ListBusinessLocationsQueryDto } from './dto/list-business-locations-query.dto';
@@ -30,6 +32,7 @@ export class BusinessesController {
   constructor(
     private readonly businessesService: BusinessesService,
     private readonly jwtService: JwtService,
+    private readonly iamService: IamService,
   ) {}
 
   @Get()
@@ -90,6 +93,10 @@ export class BusinessesController {
       userId &&
       (await this.businessesService.hasConsoleLocationListScope(userId))
     ) {
+      await this.iamService.assertStaffPermissionIfApplicable(
+        userId,
+        'locations:view',
+      );
       const tenantHeader = req.header('x-tenant-id')?.trim() || null;
       return this.businessesService.listLocationsForConsole(
         userId,
@@ -117,6 +124,10 @@ export class BusinessesController {
       userId &&
       (await this.businessesService.hasConsoleLocationListScope(userId))
     ) {
+      await this.iamService.assertStaffPermissionIfApplicable(
+        userId,
+        'locations:view',
+      );
       const tenantHeader = req.header('x-tenant-id')?.trim() || null;
       return this.businessesService.listLocationNameIdsForConsole(
         userId,
@@ -149,6 +160,10 @@ export class BusinessesController {
       userId &&
       (await this.businessesService.hasConsoleLocationListScope(userId))
     ) {
+      await this.iamService.assertStaffPermissionIfApplicable(
+        userId,
+        'locations:view',
+      );
       const tenantHeader = req.header('x-tenant-id')?.trim() || null;
       const locations = await this.businessesService.listLocationsForConsole(
         userId,
@@ -160,7 +175,13 @@ export class BusinessesController {
   }
 
   @Post('locations')
-  @Roles('platform-owner', 'business-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('locations:create')
   async createLocation(
     @Req() req: Request,
     @Body() dto: CreateBusinessLocationDto,
@@ -173,7 +194,13 @@ export class BusinessesController {
   }
 
   @Patch('locations/:locationId')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('locations:edit')
   async updateLocation(
     @Req() req: Request,
     @Param('locationId') locationId: string,
@@ -201,7 +228,13 @@ export class BusinessesController {
   }
 
   @Delete('locations/:locationId')
-  @Roles('platform-owner', 'business-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('locations:delete')
   async deleteLocation(
     @Req() req: Request,
     @Param('locationId') locationId: string,

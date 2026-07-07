@@ -15,6 +15,7 @@ import {
 import type { Request } from 'express';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { Permissions } from '../iam/authz/permissions.decorator';
 import { BankAccountsService } from './bank-accounts.service';
 
 @Controller('bank-accounts')
@@ -30,12 +31,19 @@ export class BankAccountsController {
 
   @Get()
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('payments:view')
   list(@Req() req: Request, @Query('locationId') locationId?: string) {
     return this.service.list(this.uid(req), locationId);
   }
 
   @Post()
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('payments:edit')
   create(
     @Req() req: Request,
     @Body()
@@ -52,7 +60,13 @@ export class BankAccountsController {
   }
 
   @Patch(':id')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('payments:edit')
   patch(
     @Req() req: Request,
     @Param('id', ParseUUIDPipe) id: string,
@@ -70,7 +84,13 @@ export class BankAccountsController {
   }
 
   @Delete(':id')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('payments:edit')
   remove(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     return this.service.remove(this.uid(req), id);
   }

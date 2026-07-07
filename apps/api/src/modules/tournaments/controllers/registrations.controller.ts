@@ -14,6 +14,7 @@ import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import type { TenantContext } from '../../../tenancy/tenant-context.interface';
 import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
+import { Permissions } from '../../iam/authz/permissions.decorator';
 import { RegistrationsService } from '../services/registrations.service';
 
 @Controller('registrations')
@@ -36,7 +37,13 @@ export class RegistrationsController {
   }
 
   @Patch(':id/approve')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   approve(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -50,7 +57,13 @@ export class RegistrationsController {
   }
 
   @Patch(':id/mark-paid')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   markPaid(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -64,7 +77,13 @@ export class RegistrationsController {
   }
 
   @Patch(':id/reject')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   reject(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,

@@ -6,6 +6,7 @@ import { IssueInvoiceDto } from './dto/issue-invoice.dto';
 import { BillingService, InvoiceRecord } from './billing.service';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { Permissions } from '../iam/authz/permissions.decorator';
 
 @Controller('billing')
 export class BillingController {
@@ -14,6 +15,7 @@ export class BillingController {
   @Get('invoices')
   @UseGuards(RolesGuard)
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('payments:view')
   listInvoices(@Req() req: Request, @CurrentTenant() tenant: TenantContext): Promise<InvoiceRecord[]> {
     const userId = (req as any).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');
@@ -21,6 +23,9 @@ export class BillingController {
   }
 
   @Post('invoices')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('payments:create')
   issueInvoice(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: IssueInvoiceDto,

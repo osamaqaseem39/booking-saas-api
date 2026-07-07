@@ -15,6 +15,7 @@ import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import type { TenantContext } from '../../../tenancy/tenant-context.interface';
 import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
+import { Permissions } from '../../iam/authz/permissions.decorator';
 import {
   ScheduleMatchDto,
   SubmitScoreDto,
@@ -44,6 +45,7 @@ export class MatchesController {
 
   @Get(':id')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   get(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -53,6 +55,7 @@ export class MatchesController {
 
   @Patch(':id/schedule')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:edit')
   schedule(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -69,6 +72,7 @@ export class MatchesController {
 
   @Patch(':id/start')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:edit')
   start(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -83,6 +87,7 @@ export class MatchesController {
 
   @Patch(':id/submit-score')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:edit')
   submitScore(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -98,7 +103,13 @@ export class MatchesController {
   }
 
   @Patch(':id/approve-result')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   approveResult(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -112,7 +123,13 @@ export class MatchesController {
   }
 
   @Patch(':id/status')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   updateStatus(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -128,7 +145,13 @@ export class MatchesController {
   }
 
   @Patch(':id/walkover')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   walkover(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,

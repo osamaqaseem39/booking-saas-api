@@ -49,6 +49,7 @@ import {
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
 import { Permissions } from '../iam/authz/permissions.decorator';
+import { IamService } from '../iam/iam.service';
 import { TimeSlotTemplatesService } from './time-slot-templates/time-slot-templates.service';
 import { PromoCodesService } from './promo-codes/promo-codes.service';
 import { logBookingsCreateFailure } from './utils/log-bookings-create-failure';
@@ -67,6 +68,7 @@ export class BookingsController {
     private readonly bookingsService: BookingsService,
     private readonly timeSlotTemplatesService: TimeSlotTemplatesService,
     private readonly promoCodesService: PromoCodesService,
+    private readonly iamService: IamService,
   ) {}
 
   private getTenantUuidOrNull(tenant: TenantContext): string | null {
@@ -109,7 +111,7 @@ export class BookingsController {
   @Get()
   @UseGuards(RolesGuard)
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
-  @Permissions('bookings:view')
+  @Permissions('bookings:view', 'payments:view')
   async list(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -146,6 +148,9 @@ export class BookingsController {
   }
 
   @Get('time-slot-templates')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('timeslots:view')
   listTimeSlotTemplates(@CurrentTenant() tenant: TenantContext) {
     const tenantId = this.getTenantUuidOrNull(tenant);
     if (!tenantId) return [];
@@ -154,7 +159,13 @@ export class BookingsController {
 
   @Post('time-slot-templates')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('timeslots:create')
   async createTimeSlotTemplate(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateTimeSlotTemplateDto,
@@ -170,7 +181,13 @@ export class BookingsController {
 
   @Patch('time-slot-templates/:templateId')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('timeslots:edit')
   async updateTimeSlotTemplate(
     @CurrentTenant() tenant: TenantContext,
     @Param('templateId', ParseUUIDPipe) templateId: string,
@@ -185,7 +202,13 @@ export class BookingsController {
 
   @Delete('time-slot-templates/:templateId')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('timeslots:delete')
   async deleteTimeSlotTemplate(
     @CurrentTenant() tenant: TenantContext,
     @Param('templateId', ParseUUIDPipe) templateId: string,
@@ -290,6 +313,7 @@ export class BookingsController {
 
   @Get('courts/:courtKind/:courtId/slots')
   async courtSlots(
+    @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
     @Param('courtKind') rawCourtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
@@ -301,6 +325,11 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
+    const userId = (req as Request & { userId?: string }).userId?.trim();
+    await this.iamService.assertStaffPermissionIfApplicable(
+      userId,
+      'calendar:view',
+    );
     const tenantId = await this.resolveTenantForCourt(
       tenant,
       courtKind as CourtKind,
@@ -326,6 +355,7 @@ export class BookingsController {
 
   @Get('courts/:courtKind/:courtId/slot-grid')
   async courtSlotGrid(
+    @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
     @Param('courtKind') rawCourtKind: string,
     @Param('courtId', ParseUUIDPipe) courtId: string,
@@ -337,6 +367,11 @@ export class BookingsController {
         `courtKind must be one of: ${COURT_KINDS.join(', ')}`,
       );
     }
+    const userId = (req as Request & { userId?: string }).userId?.trim();
+    await this.iamService.assertStaffPermissionIfApplicable(
+      userId,
+      'calendar:view',
+    );
     const tenantId = await this.resolveTenantForCourt(
       tenant,
       courtKind as CourtKind,
@@ -365,7 +400,13 @@ export class BookingsController {
 
   @Get('locations/:locationId/facilities/live')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('liveview:view')
   async locationLiveFacilities(
     @Req() req: Request,
     @Param('locationId', ParseUUIDPipe) locationId: string,
@@ -523,6 +564,10 @@ export class BookingsController {
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
   ) {
     const userId = (req as Request & { userId?: string }).userId?.trim();
+    await this.iamService.assertStaffPermissionAnyIfApplicable(userId, [
+      'bookings:view',
+      'payments:view',
+    ]);
     const tenantId = await this.resolveTenantForBooking(tenant, bookingId);
     if (!tenantId) {
       throw new BadRequestException('Unable to resolve tenant for booking.');

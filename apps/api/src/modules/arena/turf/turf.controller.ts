@@ -15,6 +15,7 @@ import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../../tenancy/tenant-context.interface';
 import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
+import { Permissions } from '../../iam/authz/permissions.decorator';
 import { RequireSaasFeatures } from '../../saas-subscriptions/require-saas-feature.decorator';
 import { SaasFeatureGuard } from '../../saas-subscriptions/saas-feature.guard';
 import { TurfService } from './turf.service';
@@ -53,6 +54,13 @@ export class TurfController {
   @Get()
   @UseGuards(RolesGuard, SaasFeatureGuard)
   @RequireSaasFeatures('turf_module')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('facilities:view')
   list(
     @CurrentTenant() tenant: TenantContext,
     @Query() query: ListTurfCourtsQueryDto,
@@ -67,7 +75,13 @@ export class TurfController {
   @Post()
   @UseGuards(RolesGuard, SaasFeatureGuard)
   @RequireSaasFeatures('turf_module')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('facilities:create')
   create(@CurrentTenant() tenant: TenantContext, @Body() body: Record<string, unknown>) {
     return this.turfService.createByTenant(tenant.tenantId, body);
   }
@@ -75,6 +89,13 @@ export class TurfController {
   @Get(':id')
   @UseGuards(RolesGuard, SaasFeatureGuard)
   @RequireSaasFeatures('turf_module')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('facilities:view')
   one(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -85,7 +106,13 @@ export class TurfController {
   @Patch(':id')
   @UseGuards(RolesGuard, SaasFeatureGuard)
   @RequireSaasFeatures('turf_module')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('facilities:edit')
   patch(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -97,7 +124,13 @@ export class TurfController {
   @Delete(':id')
   @UseGuards(RolesGuard, SaasFeatureGuard)
   @RequireSaasFeatures('turf_module')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('facilities:delete')
   remove(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,

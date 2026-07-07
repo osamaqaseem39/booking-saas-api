@@ -15,6 +15,7 @@ import {
 import { Request } from 'express';
 import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
+import { Permissions } from '../../iam/authz/permissions.decorator';
 import { RequireSaasFeatures } from '../../saas-subscriptions/require-saas-feature.decorator';
 import { SaasFeatureGuard } from '../../saas-subscriptions/saas-feature.guard';
 import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
@@ -24,6 +25,13 @@ import { UpdateGamingStationDto } from './dto/update-gaming-station.dto';
 import { GamingStationService } from './gaming-station.service';
 import { GamingSetupCode } from './entities/gaming-station.entity';
 
+const STAFF_ROLES = [
+  'platform-owner',
+  'business-admin',
+  'location-admin',
+  'business-staff',
+] as const;
+
 @Controller('gaming/stations')
 @UseGuards(RolesGuard, SaasFeatureGuard)
 @RequireSaasFeatures('gaming_module')
@@ -31,6 +39,8 @@ export class GamingStationController {
   constructor(private readonly service: GamingStationService) {}
 
   @Get()
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:view')
   list(
     @CurrentTenant() tenant: TenantContext,
     @Query('businessLocationId') businessLocationId?: string,
@@ -40,6 +50,8 @@ export class GamingStationController {
   }
 
   @Get(':id')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:view')
   one(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -48,7 +60,8 @@ export class GamingStationController {
   }
 
   @Post()
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:create')
   create(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateGamingStationDto,
@@ -57,7 +70,8 @@ export class GamingStationController {
   }
 
   @Patch(':id')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:edit')
   patch(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -67,7 +81,8 @@ export class GamingStationController {
   }
 
   @Delete(':id')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:delete')
   remove(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -106,6 +121,8 @@ export class TypedGamingStationController {
   constructor(private readonly service: GamingStationService) {}
 
   @Get(TYPE_BASE_PATHS)
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:view')
   list(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -116,6 +133,8 @@ export class TypedGamingStationController {
   }
 
   @Get(TYPE_ID_PATHS)
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:view')
   one(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -126,7 +145,8 @@ export class TypedGamingStationController {
   }
 
   @Post(TYPE_BASE_PATHS)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:create')
   create(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -137,7 +157,8 @@ export class TypedGamingStationController {
   }
 
   @Patch(TYPE_ID_PATHS)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:edit')
   patch(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -149,7 +170,8 @@ export class TypedGamingStationController {
   }
 
   @Delete(TYPE_ID_PATHS)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:delete')
   remove(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,

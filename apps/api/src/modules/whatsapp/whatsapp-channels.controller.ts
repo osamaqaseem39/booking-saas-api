@@ -17,6 +17,7 @@ import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import { TenantContext } from '../../tenancy/tenant-context.interface';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { Permissions } from '../iam/authz/permissions.decorator';
 import { WhatsappChannelsService } from './whatsapp-channels.service';
 import type { WhatsappChannelStatus, WhatsappChannelProvider } from './entities/whatsapp-channel.entity';
 
@@ -42,13 +43,25 @@ export class WhatsappChannelsController {
   }
 
   @Get()
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('whatsapp:view')
   list(@Req() req: Request, @CurrentTenant() tenant: TenantContext) {
     return this.service.listForTenant(this.uid(req), this.tenantId(tenant));
   }
 
   @Post()
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('whatsapp:edit')
   connect(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -71,7 +84,13 @@ export class WhatsappChannelsController {
   }
 
   @Patch(':id')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('whatsapp:edit')
   update(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -91,7 +110,13 @@ export class WhatsappChannelsController {
   }
 
   @Delete(':id')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('whatsapp:edit')
   disconnect(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -101,7 +126,13 @@ export class WhatsappChannelsController {
   }
 
   @Post(':id/test')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('whatsapp:edit')
   test(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -117,7 +148,13 @@ export class WhatsappChannelsController {
   }
 
   @Post(':id/openwa/register-webhook')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('whatsapp:edit')
   registerOpenWaWebhook(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,

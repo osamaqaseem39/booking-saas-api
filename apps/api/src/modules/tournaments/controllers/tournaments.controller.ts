@@ -59,7 +59,13 @@ export class TournamentsController {
   }
 
   @Post('tournaments')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:create')
   create(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -74,18 +80,21 @@ export class TournamentsController {
 
   @Post('tournaments/preview-structure')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   previewStructure(@Body() dto: PreviewStructureDto) {
     return this.tournamentsService.previewStructure(dto);
   }
 
   @Get('tournament-templates')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   templates() {
     return this.tournamentsService.getTemplates();
   }
 
   @Get('tournaments/events/:eventId')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   getEvent(
     @CurrentTenant() tenant: TenantContext,
     @Param('eventId', ParseUUIDPipe) eventId: string,
@@ -95,6 +104,7 @@ export class TournamentsController {
 
   @Get('tournaments/:id')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   get(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -103,7 +113,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   update(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -119,7 +135,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id/publish')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   publish(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -134,7 +156,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id/resubmit')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   resubmit(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -149,7 +177,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id/open-registration')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   openRegistration(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -164,7 +198,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id/close-registration')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   closeRegistration(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -179,7 +219,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id/mark-ready')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   markReady(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -194,7 +240,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id/start')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   start(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -209,7 +261,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id/complete')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   complete(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -224,7 +282,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id/reopen')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   reopen(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -239,7 +303,13 @@ export class TournamentsController {
   }
 
   @Patch('tournaments/:id/cancel')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   cancel(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
@@ -254,7 +324,13 @@ export class TournamentsController {
   }
 
   @Post('tournaments/:id/generate-stage/:stageOrder')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   generateStage(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -276,7 +352,13 @@ export class TournamentsController {
   }
 
   @Post('tournaments/:id/reset-stage/:stageOrder')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   resetStage(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -291,6 +373,7 @@ export class TournamentsController {
 
   @Get('tournaments/:id/stages')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   stages(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -300,6 +383,7 @@ export class TournamentsController {
 
   @Get('tournaments/:id/fixtures')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   fixtures(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -309,6 +393,7 @@ export class TournamentsController {
 
   @Get('tournaments/:id/matches')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   matches(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -318,6 +403,7 @@ export class TournamentsController {
 
   @Get('tournaments/:id/standings')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   standings(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -327,6 +413,7 @@ export class TournamentsController {
 
   @Get('tournaments/:id/knockout-results')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   knockoutResults(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -336,6 +423,7 @@ export class TournamentsController {
 
   @Get('tournaments/:id/knockout-round-status')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   knockoutRoundStatus(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -344,7 +432,13 @@ export class TournamentsController {
   }
 
   @Post('tournaments/:id/generate-knockout-round/:stageOrder')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   generateKnockoutRoundFlat(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -358,7 +452,13 @@ export class TournamentsController {
   }
 
   @Post('tournaments/:id/knockout/generate-round/:stageOrder')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   generateKnockoutRound(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -373,6 +473,7 @@ export class TournamentsController {
 
   @Get('tournaments/:id/bracket')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   bracket(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -400,7 +501,13 @@ export class TournamentsController {
   }
 
   @Post('tournaments/:id/groups/swap-teams')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
   swapGroupTeams(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -416,6 +523,7 @@ export class TournamentsController {
 
   @Get('tournaments/:id/registrations')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   listRegistrations(@Param('id', ParseUUIDPipe) id: string) {
     return this.registrationsService.listForTournament(id);
   }

@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
+import { Permissions } from '../../iam/authz/permissions.decorator';
 import { RequireSaasFeatures } from '../../saas-subscriptions/require-saas-feature.decorator';
 import { SaasFeatureGuard } from '../../saas-subscriptions/saas-feature.guard';
 import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
@@ -20,6 +21,13 @@ import { CreatePadelCourtDto } from './dto/create-padel-court.dto';
 import { UpdatePadelCourtDto } from './dto/update-padel-court.dto';
 import { PadelCourtService } from './padel-court.service';
 
+const STAFF_ROLES = [
+  'platform-owner',
+  'business-admin',
+  'location-admin',
+  'business-staff',
+] as const;
+
 @Controller('arena/padel-court')
 @UseGuards(RolesGuard, SaasFeatureGuard)
 @RequireSaasFeatures('padel_module')
@@ -27,6 +35,8 @@ export class PadelCourtController {
   constructor(private readonly service: PadelCourtService) {}
 
   @Get()
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:view')
   list(
     @CurrentTenant() tenant: TenantContext,
     @Query('businessLocationId') businessLocationId?: string,
@@ -35,6 +45,8 @@ export class PadelCourtController {
   }
 
   @Get(':id')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:view')
   one(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -43,7 +55,8 @@ export class PadelCourtController {
   }
 
   @Post()
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:create')
   create(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreatePadelCourtDto,
@@ -52,7 +65,8 @@ export class PadelCourtController {
   }
 
   @Patch(':id')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:edit')
   patch(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,
@@ -62,7 +76,8 @@ export class PadelCourtController {
   }
 
   @Delete(':id')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(...STAFF_ROLES)
+  @Permissions('facilities:delete')
   remove(
     @CurrentTenant() tenant: TenantContext,
     @Param('id', ParseUUIDPipe) id: string,

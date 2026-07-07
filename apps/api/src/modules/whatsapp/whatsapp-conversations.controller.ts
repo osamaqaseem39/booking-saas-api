@@ -18,6 +18,7 @@ import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import type { TenantContext } from '../../tenancy/tenant-context.interface';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { Permissions } from '../iam/authz/permissions.decorator';
 import { WhatsappChannel } from './entities/whatsapp-channel.entity';
 import { WhatsappConversation } from './entities/whatsapp-conversation.entity';
 import { WhatsappMessagesService } from './whatsapp-messages.service';
@@ -61,7 +62,13 @@ export class WhatsappConversationsController {
 
   @Get('conversations')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('whatsapp:view')
   async listConversations(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -91,7 +98,13 @@ export class WhatsappConversationsController {
 
   @Get('conversations/:id/messages')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('whatsapp:view')
   async listMessages(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
