@@ -15,6 +15,7 @@ import {
 import type { Request } from 'express';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { Permissions } from '../iam/authz/permissions.decorator';
 import { CreateCanteenItemDto } from './dto/create-canteen-item.dto';
 import { UpdateCanteenItemDto } from './dto/update-canteen-item.dto';
 import { CanteenService } from './canteen.service';
@@ -26,6 +27,7 @@ export class CanteenController {
 
   @Get()
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('canteen:view')
   list(
     @Req() req: Request,
     @Query('locationId') locationId?: string,
@@ -37,6 +39,7 @@ export class CanteenController {
 
   @Post()
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('canteen:create')
   create(@Req() req: Request, @Body() dto: CreateCanteenItemDto) {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');
@@ -45,6 +48,7 @@ export class CanteenController {
 
   @Patch(':id')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('canteen:edit')
   patch(
     @Req() req: Request,
     @Param('id', ParseUUIDPipe) id: string,
@@ -57,6 +61,7 @@ export class CanteenController {
 
   @Delete(':id')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('canteen:delete')
   remove(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');

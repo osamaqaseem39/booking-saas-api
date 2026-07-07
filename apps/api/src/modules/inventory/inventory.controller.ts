@@ -15,6 +15,7 @@ import {
 import type { Request } from 'express';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { Permissions } from '../iam/authz/permissions.decorator';
 import { CreateAssetDto } from './dto/create-asset.dto';
 import { UpdateAssetDto } from './dto/update-asset.dto';
 import { InventoryService } from './inventory.service';
@@ -26,6 +27,7 @@ export class InventoryController {
 
   @Get()
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('inventory:view')
   list(
     @Req() req: Request,
     @Query('locationId') locationId?: string,
@@ -37,6 +39,7 @@ export class InventoryController {
 
   @Post()
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('inventory:create')
   create(@Req() req: Request, @Body() dto: CreateAssetDto) {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');
@@ -45,6 +48,7 @@ export class InventoryController {
 
   @Patch(':id')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('inventory:edit')
   patch(
     @Req() req: Request,
     @Param('id', ParseUUIDPipe) id: string,
@@ -57,6 +61,7 @@ export class InventoryController {
 
   @Delete(':id')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('inventory:delete')
   remove(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');

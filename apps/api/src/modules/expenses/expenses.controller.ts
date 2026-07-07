@@ -15,6 +15,7 @@ import {
 import type { Request } from 'express';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { Permissions } from '../iam/authz/permissions.decorator';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
 import { ExpensesService } from './expenses.service';
@@ -26,6 +27,7 @@ export class ExpensesController {
 
   @Get()
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('expenses:view')
   list(
     @Req() req: Request,
     @Query('locationId') locationId?: string,
@@ -37,6 +39,7 @@ export class ExpensesController {
 
   @Post()
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('expenses:create')
   create(@Req() req: Request, @Body() dto: CreateExpenseDto) {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');
@@ -45,6 +48,7 @@ export class ExpensesController {
 
   @Patch(':id')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('expenses:edit')
   patch(
     @Req() req: Request,
     @Param('id', ParseUUIDPipe) id: string,
@@ -57,6 +61,7 @@ export class ExpensesController {
 
   @Delete(':id')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('expenses:delete')
   remove(@Req() req: Request, @Param('id', ParseUUIDPipe) id: string) {
     const userId = (req as Request & { userId?: string }).userId?.trim();
     if (!userId) throw new UnauthorizedException('Missing user');

@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   UnauthorizedException,
@@ -14,13 +15,16 @@ import {
 import type { Request } from 'express';
 import { RolesGuard } from './authz/roles.guard';
 import { Roles } from './authz/roles.decorator';
+import { Permissions } from './authz/permissions.decorator';
 import { AssignRoleDto } from './dto/assign-role.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { SetPermissionsDto } from './dto/set-permissions.dto';
 import { CurrentTenant } from '../../tenancy/tenant-context.decorator';
 import type { TenantContext } from '../../tenancy/tenant-context.interface';
 import { IamService } from './iam.service';
 import { SYSTEM_ROLES } from './iam.constants';
+import { PERMISSION_MODULES } from './authz/permissions.constants';
 
 @Controller('iam')
 @UseGuards(RolesGuard)
@@ -42,8 +46,39 @@ export class IamController {
     return this.iamService.getMe(userId);
   }
 
+  @Get('permissions/catalog')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  permissionCatalog() {
+    return { modules: PERMISSION_MODULES };
+  }
+
+  @Get('users/:userId/permissions')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  async getUserPermissions(@Param('userId') userId: string) {
+    const permissions = await this.iamService.getUserPermissions(userId);
+    return { userId, permissions };
+  }
+
+  @Put('users/:userId/permissions')
+  @Roles('platform-owner', 'business-admin', 'location-admin')
+  async setUserPermissions(
+    @Req() req: Request,
+    @Param('userId') userId: string,
+    @Body() dto: SetPermissionsDto,
+  ) {
+    const requesterId = this.requesterUserId(req);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
+      'platform-owner',
+    ]);
+    return this.iamService.setUserPermissions(userId, dto.permissions ?? [], {
+      requesterId,
+      isPlatformOwner,
+    });
+  }
+
   @Get('users')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('users:view')
   async listUsers(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -70,7 +105,8 @@ export class IamController {
   }
 
   @Post('users')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('users:create')
   async createUser(
     @Req() req: Request,
     @Body() dto: CreateUserDto,
@@ -110,7 +146,8 @@ export class IamController {
   }
 
   @Delete('users/:userId')
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('users:delete')
   async deleteUser(@Req() req: Request, @Param('userId') userId: string) {
     const requesterId = this.requesterUserId(req);
     const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [

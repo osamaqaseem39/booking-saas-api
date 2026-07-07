@@ -48,6 +48,7 @@ import {
 } from './dto/promo-code.dto';
 import { Roles } from '../iam/authz/roles.decorator';
 import { RolesGuard } from '../iam/authz/roles.guard';
+import { Permissions } from '../iam/authz/permissions.decorator';
 import { TimeSlotTemplatesService } from './time-slot-templates/time-slot-templates.service';
 import { PromoCodesService } from './promo-codes/promo-codes.service';
 import { logBookingsCreateFailure } from './utils/log-bookings-create-failure';
@@ -107,7 +108,8 @@ export class BookingsController {
 
   @Get()
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('bookings:view')
   async list(
     @Req() req: Request,
     @CurrentTenant() tenant: TenantContext,
@@ -529,6 +531,9 @@ export class BookingsController {
   }
 
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('bookings:create')
   async create(
     @CurrentTenant() tenant: TenantContext,
     @Body() dto: CreateBookingDto,
@@ -560,6 +565,9 @@ export class BookingsController {
   }
 
   @Patch(':bookingId')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('bookings:edit')
   async update(
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
@@ -575,6 +583,7 @@ export class BookingsController {
   @Post(':bookingId/payment-transactions')
   @UseGuards(RolesGuard)
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('payments:create')
   async addPaymentTransaction(
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
@@ -596,6 +605,7 @@ export class BookingsController {
   @Delete(':bookingId/payment-transactions/:txnId')
   @UseGuards(RolesGuard)
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('payments:delete')
   @HttpCode(200)
   async removePaymentTransaction(
     @CurrentTenant() tenant: TenantContext,
@@ -608,6 +618,9 @@ export class BookingsController {
   }
 
   @Patch(':bookingId/facility-slots')
+  @UseGuards(RolesGuard)
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('bookings:edit')
   async editBookingFacilitySlots(
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,
@@ -633,7 +646,8 @@ export class BookingsController {
 
   @Delete(':bookingId')
   @UseGuards(RolesGuard)
-  @Roles('platform-owner', 'business-admin', 'location-admin')
+  @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('bookings:delete')
   async remove(
     @CurrentTenant() tenant: TenantContext,
     @Param('bookingId', ParseUUIDPipe) bookingId: string,

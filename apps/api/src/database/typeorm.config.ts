@@ -10,6 +10,7 @@ import { BusinessMembership } from '../modules/businesses/entities/business-memb
 import { Business } from '../modules/businesses/entities/business.entity';
 import { Role } from '../modules/iam/entities/role.entity';
 import { UserRole } from '../modules/iam/entities/user-role.entity';
+import { UserPermission } from '../modules/iam/entities/user-permission.entity';
 import { User } from '../modules/iam/entities/user.entity';
 import { AuditEvent } from '../modules/audit/audit-event.entity';
 import { PaymentTransaction } from '../modules/bookings/entities/payment-transaction.entity';
@@ -107,6 +108,7 @@ export const typeOrmOptions: DataSourceOptions = {
     User,
     Role,
     UserRole,
+    UserPermission,
     Business,
     BusinessLocation,
     BusinessMembership,

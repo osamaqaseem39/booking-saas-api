@@ -19,6 +19,17 @@ import { SystemRole } from './iam.constants';
 import { Role } from './entities/role.entity';
 import { User } from './entities/user.entity';
 import { UserRole } from './entities/user-role.entity';
+import { UserPermission } from './entities/user-permission.entity';
+import {
+  ALL_PERMISSION_KEYS,
+  isValidPermissionKey,
+} from './authz/permissions.constants';
+
+const ADMIN_ROLES: SystemRole[] = [
+  'platform-owner',
+  'business-admin',
+  'location-admin',
+];
 
 @Injectable()
 export class IamService implements OnModuleInit {
@@ -27,6 +38,8 @@ export class IamService implements OnModuleInit {
     private readonly usersRepository: Repository<User>,
     @InjectRepository(UserRole)
     private readonly userRolesRepository: Repository<UserRole>,
+    @InjectRepository(UserPermission)
+    private readonly userPermissionsRepository: Repository<UserPermission>,
     @InjectRepository(Role)
     private readonly rolesRepository: Repository<Role>,
     @InjectRepository(Business)
@@ -47,6 +60,8 @@ export class IamService implements OnModuleInit {
       throw new NotFoundException(`User ${userId} not found`);
     }
     const roleRows = await this.userRolesRepository.find({ where: { userId } });
+    const roleCodes = roleRows.map((r) => r.roleCode);
+    const permissions = await this.getEffectivePermissions(userId, roleCodes);
 
     // Find locationId if any
     const locationRole = roleRows.find((r) => r.roleCode === 'location-admin');
@@ -83,7 +98,8 @@ export class IamService implements OnModuleInit {
       phone: user.phone,
       profilePictureUrl: user.profilePictureUrl ?? null,
       isActive: user.isActive,
-      roles: roleRows.map((r) => r.roleCode),
+      roles: roleCodes,
+      permissions,
       locationId,
       tenantId,
       business: business
@@ -571,6 +587,76 @@ export class IamService implements OnModuleInit {
       where: roles.map((roleCode) => ({ userId, roleCode })),
     });
     return count > 0;
+  }
+
+  /** Raw permission keys explicitly granted to a user. */
+  async getUserPermissions(userId: string): Promise<string[]> {
+    const rows = await this.userPermissionsRepository.find({
+      where: { userId },
+    });
+    return rows.map((r) => r.permissionKey);
+  }
+
+  /**
+   * Effective permissions for the session: admins get everything, staff get
+   * only their explicitly granted keys.
+   */
+  async getEffectivePermissions(
+    userId: string,
+    roleCodes?: string[],
+  ): Promise<string[]> {
+    const codes =
+      roleCodes ??
+      (await this.userRolesRepository.find({ where: { userId } })).map(
+        (r) => r.roleCode,
+      );
+    if (codes.some((c) => ADMIN_ROLES.includes(c as SystemRole))) {
+      return [...ALL_PERMISSION_KEYS];
+    }
+    return this.getUserPermissions(userId);
+  }
+
+  /** True when the user may perform the given `${module}:${action}`. */
+  async hasPermission(userId: string, permissionKey: string): Promise<boolean> {
+    const roleCodes = (
+      await this.userRolesRepository.find({ where: { userId } })
+    ).map((r) => r.roleCode);
+    if (roleCodes.some((c) => ADMIN_ROLES.includes(c as SystemRole))) {
+      return true;
+    }
+    const count = await this.userPermissionsRepository.count({
+      where: { userId, permissionKey },
+    });
+    return count > 0;
+  }
+
+  /** Replace a staff user's granted permissions (admin-managed). */
+  async setUserPermissions(
+    userId: string,
+    permissionKeys: string[],
+    opts: { requesterId: string; isPlatformOwner: boolean },
+  ): Promise<{ userId: string; permissions: string[] }> {
+    await this.assertCanManageUser(
+      opts.requesterId,
+      userId,
+      opts.isPlatformOwner,
+      'update',
+    );
+    const user = await this.usersRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException(`User ${userId} not found`);
+    }
+    const unique = [...new Set(permissionKeys)].filter((k) =>
+      isValidPermissionKey(k),
+    );
+    await this.userPermissionsRepository.delete({ userId });
+    if (unique.length > 0) {
+      const rows = unique.map((permissionKey) =>
+        this.userPermissionsRepository.create({ userId, permissionKey }),
+      );
+      await this.userPermissionsRepository.save(rows);
+    }
+    return { userId, permissions: unique };
   }
 
   async getLocationAdminConstraint(userId: string): Promise<string | null> {

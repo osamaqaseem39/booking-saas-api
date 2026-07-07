@@ -17,6 +17,7 @@ import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
 import type { TenantContext } from '../../../tenancy/tenant-context.interface';
 import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
+import { Permissions } from '../../iam/authz/permissions.decorator';
 import {
   CreateTournamentDto,
   PreviewStructureDto,
@@ -52,6 +53,7 @@ export class TournamentsController {
 
   @Get('tournaments')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:view')
   list(@CurrentTenant() tenant: TenantContext) {
     return this.tournamentsService.list(this.tenantId(tenant));
   }
@@ -380,6 +382,7 @@ export class TournamentsController {
 
   @Post('tournaments/:id/register-team')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
+  @Permissions('tournaments:create')
   registerTeam(
     @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,

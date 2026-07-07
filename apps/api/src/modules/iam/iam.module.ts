@@ -10,6 +10,7 @@ import { BusinessLocation } from '../businesses/entities/business-location.entit
 import { Role } from './entities/role.entity';
 import { User } from './entities/user.entity';
 import { UserRole } from './entities/user-role.entity';
+import { UserPermission } from './entities/user-permission.entity';
 import { IamService } from './iam.service';
 
 @Module({
@@ -18,6 +19,7 @@ import { IamService } from './iam.service';
       User,
       Role,
       UserRole,
+      UserPermission,
       Business,
       BusinessMembership,
       BusinessLocation,

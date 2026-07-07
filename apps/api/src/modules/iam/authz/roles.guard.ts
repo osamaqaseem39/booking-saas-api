@@ -13,6 +13,7 @@ import { JwtService } from '@nestjs/jwt';
 import { SystemRole } from '../iam.constants';
 import { IamService } from '../iam.service';
 import { ROLES_KEY } from './roles.decorator';
+import { PERMISSIONS_KEY } from './permissions.decorator';
 
 const TENANT_ALLOWED_ROLES: ReadonlyArray<SystemRole> = [
   'business-admin',
@@ -86,6 +87,10 @@ export class RolesGuard implements CanActivate {
       ROLES_KEY,
       [context.getHandler(), context.getClass()],
     );
+    const requiredPermissions = this.reflector.getAllAndOverride<string[]>(
+      PERMISSIONS_KEY,
+      [context.getHandler(), context.getClass()],
+    );
 
     if (!ext.userId?.trim()) {
       const userId = await this.resolveUserId(request);
@@ -94,14 +99,15 @@ export class RolesGuard implements CanActivate {
       }
     }
 
-    if (!requiredRoles || requiredRoles.length === 0) {
+    const hasRoleRequirement = !!requiredRoles && requiredRoles.length > 0;
+    const hasPermissionRequirement =
+      !!requiredPermissions && requiredPermissions.length > 0;
+
+    if (!hasRoleRequirement && !hasPermissionRequirement) {
       return true;
     }
 
     const userId = ext.userId?.trim();
-    const rolesToCheck = requiredRoles.filter((role) =>
-      TENANT_ALLOWED_ROLES.includes(role),
-    );
 
     if (!userId) {
       throw new UnauthorizedException('Missing authentication');
@@ -113,19 +119,40 @@ export class RolesGuard implements CanActivate {
       );
     }
 
-    if (rolesToCheck.length === 0) {
-      throw new ForbiddenException(
-        'This API is restricted to business roles only',
-      );
-    }
-
     await this.iamService.assertRequesterActive(userId);
 
-    const allowed = await this.iamService.hasAnyRole(userId, rolesToCheck);
-    if (!allowed) {
-      throw new ForbiddenException(
-        `User ${userId} does not have the required role to access this endpoint`,
+    if (hasRoleRequirement) {
+      const rolesToCheck = requiredRoles.filter((role) =>
+        TENANT_ALLOWED_ROLES.includes(role),
       );
+      if (rolesToCheck.length === 0) {
+        throw new ForbiddenException(
+          'This API is restricted to business roles only',
+        );
+      }
+      const allowed = await this.iamService.hasAnyRole(userId, rolesToCheck);
+      if (!allowed) {
+        throw new ForbiddenException(
+          `User ${userId} does not have the required role to access this endpoint`,
+        );
+      }
+    }
+
+    // Fine-grained module/action gate for business-staff. Admin roles bypass
+    // inside `hasPermission`. Requires ANY of the listed permissions.
+    if (hasPermissionRequirement) {
+      const checks = await Promise.all(
+        requiredPermissions.map((perm) =>
+          this.iamService!.hasPermission(userId, perm),
+        ),
+      );
+      if (!checks.some(Boolean)) {
+        throw new ForbiddenException(
+          `You do not have permission to perform this action (${requiredPermissions.join(
+            ' or ',
+          )})`,
+        );
+      }
     }
 
     return true;
