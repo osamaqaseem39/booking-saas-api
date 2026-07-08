@@ -3,6 +3,7 @@
 export type BookingGridItemRow = {
   bookingId: string;
   bookingDate: string;
+  bookingStatus: string;
   id: string;
   itemDate: string | null;
   startTime: string;
@@ -34,6 +35,8 @@ export function normalizeBookingGridItemRow(
       pickRaw(raw, ['bookingId', 'bookingid', 'b_id']) ?? '',
     bookingDate:
       pickRaw(raw, ['bookingDate', 'bookingdate', 'b_bookingDate']) ?? '',
+    bookingStatus:
+      pickRaw(raw, ['bookingStatus', 'bookingstatus', 'b_bookingStatus']) ?? '',
     id: pickRaw(raw, ['id', 'i_id']) ?? '',
     itemDate:
       pickRaw(raw, ['itemDate', 'itemdate', 'i_date']) ?? null,

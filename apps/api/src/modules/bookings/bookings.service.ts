@@ -3089,6 +3089,7 @@ export class BookingsService {
       .select([
         'b.id AS bookingId',
         'b.bookingDate AS bookingDate',
+        'b.bookingStatus AS bookingStatus',
         'i.id AS id',
         'i.date AS itemDate',
         'i.startTime AS startTime',
@@ -3145,6 +3146,7 @@ export class BookingsService {
             bookingId: hit.bookingId,
             itemId: hit.id,
             status: hit.itemStatus,
+            bookingStatus: hit.bookingStatus || undefined,
             ...this.slotPriceFields(
               date,
               fs.priceTier === 'peak' ? 'peak' : 'standard',
@@ -3208,6 +3210,7 @@ export class BookingsService {
             bookingId: hit.bookingId,
             itemId: hit.id,
             status: hit.itemStatus,
+            bookingStatus: hit.bookingStatus || undefined,
           });
         } else {
           slots.push({
@@ -3300,6 +3303,7 @@ export class BookingsService {
             bookingId: s.bookingId,
             itemId: s.itemId,
             status: s.status,
+            bookingStatus: s.bookingStatus || undefined,
           }
         : s.availability === 'blocked'
           ? { startTime: s.startTime, endTime: s.endTime, state: 'blocked' }
