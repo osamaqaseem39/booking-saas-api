@@ -245,4 +245,19 @@ describe('slot-wall-time.util', () => {
       filterSlotsForBookingPicker(slots, '2026-06-03', now, 'Asia/Karachi'),
     ).toEqual([{ startTime: '18:00', endTime: '19:00' }]);
   });
+
+  it('filterSlotsForBookingPicker keeps the in-progress hour after :29', () => {
+    const slots = [
+      { startTime: '14:00', endTime: '15:00' },
+      { startTime: '15:00', endTime: '16:00' },
+      { startTime: '16:00', endTime: '17:00' },
+    ];
+    const now = new Date('2026-06-03T15:45:00+05:00');
+    expect(
+      filterSlotsForBookingPicker(slots, '2026-06-03', now, 'Asia/Karachi'),
+    ).toEqual([
+      { startTime: '15:00', endTime: '16:00' },
+      { startTime: '16:00', endTime: '17:00' },
+    ]);
+  });
 });

@@ -47,17 +47,9 @@ export function filterSlotsForBookingPicker<T extends { startTime: string; endTi
   if (date < todayStr) return [];
   if (date > todayStr) return slots;
 
-  const { hour, minute, timeStr: currentTimeStr } = bookingGridNowParts(now, timeZone);
-  let filtered = slots.filter((s) => s.endTime > currentTimeStr);
-  if (minute > 29) {
-    const currentHourStart = hour * 60;
-    const nextHourStart = (hour + 1) * 60;
-    filtered = filtered.filter((s) => {
-      const slotStart = wallToMinutes(s.startTime, false);
-      return slotStart < currentHourStart || slotStart >= nextHourStart;
-    });
-  }
-  return filtered;
+  const { timeStr: currentTimeStr } = bookingGridNowParts(now, timeZone);
+  // Keep the in-progress hour so walk-ins can book now → hour end (e.g. 8:15–9:00).
+  return slots.filter((s) => s.endTime > currentTimeStr);
 }
 
 export function wallToMinutes(time: string, isEndTime = false): number {

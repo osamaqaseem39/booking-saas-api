@@ -93,6 +93,7 @@ import {
   facilitySlotStartInMarkWindow,
   filterSlotsForBookingPicker,
   resolveBookingMatchEndTime,
+  wallMinutesToTime,
   wallSlotOverlapsWindow,
 } from './utils/slot-wall-time.util';
 import {
@@ -1593,18 +1594,11 @@ export class BookingsService {
         return item;
       }
 
-      const durationMinutes = diffMinutes(item.startTime, item.endTime);
-      const shiftedStart = new Date(`${item.date}T00:00:00Z`);
-      shiftedStart.setUTCMinutes(nowMinutes);
-      const shiftedEnd = new Date(
-        shiftedStart.getTime() + durationMinutes * 60 * 1000,
-      );
-
+      // Mid-hour walk-in: start now, keep original end (e.g. 8:15–9:00, not 8:15–9:15).
       return {
         ...item,
-        date: formatDateOnly(shiftedStart),
-        startTime: shiftedStart.toISOString().slice(11, 16),
-        endTime: shiftedEnd.toISOString().slice(11, 16),
+        startTime: wallMinutesToTime(nowMinutes),
+        endTime: item.endTime,
       };
     });
   }
