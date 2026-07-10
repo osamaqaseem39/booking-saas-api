@@ -12,9 +12,18 @@ import {
   resolveBookingMatchEndTime,
   wallSlotEffectiveEndTime,
   wallTimeHmFromInstant,
+  wallTimeHmFromStoredDate,
+  wallInstantToStoredDate,
 } from './slot-wall-time.util';
 
 describe('slot-wall-time.util', () => {
+  it('wallInstantToStoredDate round-trips Karachi wall clock', () => {
+    const instant = new Date('2026-07-10T09:03:00.000Z');
+    const stored = wallInstantToStoredDate(instant, 'Asia/Karachi');
+    expect(stored.toISOString()).toBe('2026-07-10T14:03:00.000Z');
+    expect(wallTimeHmFromStoredDate(stored)).toBe('14:03');
+  });
+
   it('wallTimeHmFromInstant uses booking grid timezone', () => {
     const instant = new Date('2026-07-10T09:03:00.000Z');
     expect(wallTimeHmFromInstant(instant, 'Asia/Karachi')).toBe('14:03');

@@ -29,6 +29,29 @@ export function wallTimeHmFromInstant(
   return bookingGridNowParts(d, timeZone).timeStr;
 }
 
+/** HH:mm from wall-in-UTC stored dates (`toSlotDateTimes` / live window encoding). */
+export function wallTimeHmFromStoredDate(d: Date): string {
+  return d.toISOString().slice(11, 16);
+}
+
+export function wallDateYmdFromStoredDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Encode a real instant as wall-in-UTC for DB `startDatetime` / `endDatetime`. */
+export function wallInstantToStoredDate(
+  d: Date,
+  timeZone = DEFAULT_BOOKING_GRID_TZ,
+): Date {
+  const ymd = bookingGridTodayYmd(d, timeZone);
+  const hm = wallTimeHmFromInstant(d, timeZone);
+  return new Date(`${ymd}T${hm}:00.000Z`);
+}
+
+export function addWallMinutesToStoredDate(d: Date, minutes: number): Date {
+  return new Date(d.getTime() + minutes * 60 * 1000);
+}
+
 export function bookingGridNowParts(
   now = new Date(),
   timeZone = DEFAULT_BOOKING_GRID_TZ,
@@ -169,7 +192,7 @@ export function facilitySlotMarkingWallEnd(
     if (durationMin > slotStepMinutes + graceMinutes) {
       return '24:00';
     }
-    const dtEnd = new Date(item.endDatetime).toISOString().slice(11, 16);
+    const dtEnd = wallTimeHmFromStoredDate(new Date(item.endDatetime));
     if (dtEnd !== '00:00') {
       return dtEnd;
     }
@@ -201,7 +224,7 @@ export function resolveBookingMatchEndTime(
     if (durationMin > slotStepMinutes + graceMinutes) {
       return '24:00';
     }
-    const dtEnd = new Date(item.endDatetime).toISOString().slice(11, 16);
+    const dtEnd = wallTimeHmFromStoredDate(new Date(item.endDatetime));
     if (dtEnd === '00:00') {
       return wallMinutesToTime(
         Math.min(
@@ -347,8 +370,8 @@ export function bookingItemWindowsOnGridDate(
 
   const clipStart = start > dayStart ? start : dayStart;
   const clipEnd = end < dayEnd ? end : dayEnd;
-  const windowStart = clipStart.toISOString().slice(11, 16);
-  let windowEnd = clipEnd.toISOString().slice(11, 16);
+  const windowStart = wallTimeHmFromStoredDate(clipStart);
+  let windowEnd = wallTimeHmFromStoredDate(clipEnd);
   if (windowEnd === '00:00' && clipEnd.getTime() === dayEnd.getTime()) {
     windowEnd = '24:00';
   }

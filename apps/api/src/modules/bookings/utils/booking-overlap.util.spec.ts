@@ -43,10 +43,10 @@ describe('booking-overlap.util', () => {
 
   it('extends live booking occupied end through now during overtime', () => {
     const scheduledEnd = new Date('2026-06-11T15:00:00.000Z');
-    const now = new Date('2026-06-11T15:30:00.000Z');
-    const occupied = liveBookingOccupiedEnd('live', scheduledEnd, now);
-    expect(occupied.getTime()).toBe(now.getTime());
-    expect(liveBookingOccupiedEnd('confirmed', scheduledEnd, now).getTime()).toBe(
+    const now = new Date('2026-06-11T10:30:00.000Z');
+    const occupied = liveBookingOccupiedEnd('live', scheduledEnd, now, 'Asia/Karachi');
+    expect(occupied.toISOString()).toBe('2026-06-11T15:30:00.000Z');
+    expect(liveBookingOccupiedEnd('confirmed', scheduledEnd, now, 'Asia/Karachi').getTime()).toBe(
       scheduledEnd.getTime(),
     );
   });

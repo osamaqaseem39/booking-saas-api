@@ -91,12 +91,16 @@ import {
   facilitySlotMarkingWallEnd,
   facilitySlotOverlapsWallWindow,
   facilitySlotStartInMarkWindow,
+  addWallMinutesToStoredDate,
   bookingGridTodayYmd,
   filterSlotsForBookingPicker,
   resolveBookingMatchEndTime,
+  wallDateYmdFromStoredDate,
+  wallInstantToStoredDate,
   wallMinutesToTime,
   wallSlotOverlapsWindow,
   wallTimeHmFromInstant,
+  wallTimeHmFromStoredDate,
 } from './utils/slot-wall-time.util';
 import {
   normalizeBookingGridItemRow,
@@ -674,7 +678,7 @@ export class BookingsService {
       if (!o) continue;
       touched = true;
       item.price = dec(numFromDec(item.price) + o.overtimeCharge);
-      item.endDatetime = now;
+      item.endDatetime = wallInstantToStoredDate(now);
       item.endTime = wallTimeHmFromInstant(now);
       item.date = bookingGridTodayYmd(now);
     }
@@ -2470,8 +2474,8 @@ export class BookingsService {
         liveStartDate.getTime() + durationMinutes * 60 * 1000,
       );
       row.item.date = formatDateOnly(liveStartDate);
-      row.item.startTime = liveStartDate.toISOString().slice(11, 16);
-      row.item.endTime = liveEndDate.toISOString().slice(11, 16);
+      row.item.startTime = wallTimeHmFromStoredDate(liveStartDate);
+      row.item.endTime = wallTimeHmFromStoredDate(liveEndDate);
       row.item.startDatetime = liveStartDate;
       row.item.endDatetime = liveEndDate;
     }
@@ -2544,7 +2548,7 @@ export class BookingsService {
       baseDate,
       (d, s, e) => this.toSlotDateTimes(d, s, e),
     );
-    const extensionEnd = new Date(extensionStart.getTime() + addOnMinutes * 60 * 1000);
+    const extensionEnd = addWallMinutesToStoredDate(extensionStart, addOnMinutes);
     const baseWall = itemWallWindowFromParts(
       baseDate,
       baseItem.startTime,
@@ -2613,9 +2617,9 @@ export class BookingsService {
         throw new ConflictException('Upcoming slot is not empty for extension');
       }
     }
-    const extensionStartTime = wallTimeHmFromInstant(extensionStart);
-    const extensionEndTime = wallTimeHmFromInstant(extensionEnd);
-    const extensionDate = bookingGridTodayYmd(extensionStart);
+    const extensionStartTime = wallTimeHmFromStoredDate(extensionStart);
+    const extensionEndTime = wallTimeHmFromStoredDate(extensionEnd);
+    const extensionDate = wallDateYmdFromStoredDate(extensionStart);
 
     const baseDurationMinutes = Math.max(
       1,

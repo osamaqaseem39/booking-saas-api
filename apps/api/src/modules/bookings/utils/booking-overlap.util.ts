@@ -1,3 +1,8 @@
+import {
+  DEFAULT_BOOKING_GRID_TZ,
+  wallInstantToStoredDate,
+} from './slot-wall-time.util';
+
 export function timeHmForOverlap(t: string): string {
   return (t ?? '').trim().slice(0, 5);
 }
@@ -66,9 +71,11 @@ export function liveBookingOccupiedEnd(
   bookingStatus: string,
   endDatetime: Date,
   now = new Date(),
+  timeZone = DEFAULT_BOOKING_GRID_TZ,
 ): Date {
   if (bookingStatus !== 'live') return endDatetime;
-  return new Date(Math.max(endDatetime.getTime(), now.getTime()));
+  const nowStored = wallInstantToStoredDate(now, timeZone);
+  return new Date(Math.max(endDatetime.getTime(), nowStored.getTime()));
 }
 
 export function itemWallWindowFromParts(
