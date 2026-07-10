@@ -1,6 +1,7 @@
 import {
   addDaysYmdWall,
   bookingItemCoversFacilitySlotOnGridDate,
+  bookingItemOccupiesFacilitySlotOnGridDate,
   buildItemFacilitySlotSyncWindows,
   facilitySlotEffectiveEndTime,
   facilitySlotMarkingWallEnd,
@@ -174,6 +175,35 @@ describe('slot-wall-time.util', () => {
         60,
       ),
     ).toBe(false);
+  });
+
+  it('partial-hour booking occupies the containing facility slot', () => {
+    const item = {
+      itemDate: '2026-07-10',
+      bookingDate: '2026-07-10',
+      startTime: '16:35',
+      endTime: '17:00',
+      startDatetime: '2026-07-10T16:35:00.000Z',
+      endDatetime: '2026-07-10T17:00:00.000Z',
+    };
+    expect(
+      bookingItemCoversFacilitySlotOnGridDate(
+        '2026-07-10',
+        '16:00',
+        '24:00',
+        item,
+        60,
+      ),
+    ).toBe(false);
+    expect(
+      bookingItemOccupiesFacilitySlotOnGridDate(
+        '2026-07-10',
+        '16:00',
+        '24:00',
+        item,
+        60,
+      ),
+    ).toBe(true);
   });
 
   it('short evening booking with endTime 24:00 only covers one hour', () => {

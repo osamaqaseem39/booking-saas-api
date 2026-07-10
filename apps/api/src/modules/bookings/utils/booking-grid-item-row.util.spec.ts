@@ -69,6 +69,17 @@ describe('normalizeBookingGridItemRow', () => {
     ).toBe(true);
   });
 
+  it('preserves full ISO for datetime columns returned as Date', () => {
+    const row = normalizeBookingGridItemRow({
+      starttime: '16:35',
+      endtime: '17:00',
+      startdatetime: new Date('2026-07-10T16:35:00.000Z'),
+      enddatetime: new Date('2026-07-10T17:00:00.000Z'),
+    });
+    expect(row.startDatetime).toBe('2026-07-10T16:35:00.000Z');
+    expect(row.endDatetime).toBe('2026-07-10T17:00:00.000Z');
+  });
+
   it('empty raw row does not cover the whole day', () => {
     const row = normalizeBookingGridItemRow({});
     expect(
