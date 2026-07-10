@@ -97,6 +97,69 @@ export function wallMinutesToTime(m: number): string {
   return `${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
 }
 
+export function slotAnchorStartMinutes(
+  atMinutes: number,
+  slotStepMinutes: number,
+): number {
+  const step = Math.max(1, slotStepMinutes);
+  return Math.floor(atMinutes / step) * step;
+}
+
+export function maxContiguousFreeEndMinutes(
+  atMinutes: number,
+  slotStepMinutes: number,
+  freeSlotStartMinutes: number[],
+): number {
+  const step = Math.max(1, slotStepMinutes);
+  const anchor = slotAnchorStartMinutes(atMinutes, step);
+  const free = new Set(freeSlotStartMinutes);
+  let cursor = anchor;
+  let end = anchor + step;
+  if (!free.has(cursor)) {
+    return Math.min(end, 24 * 60);
+  }
+  while (free.has(cursor)) {
+    end = cursor + step;
+    cursor += step;
+    if (end >= 24 * 60) break;
+  }
+  return Math.min(end, 24 * 60);
+}
+
+/**
+ * Mid-hour walk-in end: truncate to the next booking when one exists; otherwise
+ * extend through contiguous free facility slots from the current slot anchor.
+ */
+export function resolveWalkInWallEndMinutes(params: {
+  nowStartMinutes: number;
+  proposedEndMinutes: number;
+  slotStepMinutes: number;
+  nextBookingStartMinutes: number | null;
+  freeSlotStartMinutes: number[];
+}): number {
+  const {
+    nowStartMinutes,
+    proposedEndMinutes,
+    slotStepMinutes,
+    nextBookingStartMinutes,
+    freeSlotStartMinutes,
+  } = params;
+
+  if (
+    nextBookingStartMinutes != null &&
+    nextBookingStartMinutes > nowStartMinutes
+  ) {
+    return Math.min(proposedEndMinutes, nextBookingStartMinutes);
+  }
+
+  const contiguousEnd = maxContiguousFreeEndMinutes(
+    nowStartMinutes,
+    slotStepMinutes,
+    freeSlotStartMinutes,
+  );
+  return Math.max(proposedEndMinutes, contiguousEnd);
+}
+
 export function formatDateOnlyYmd(d: Date | string): string {
   if (d instanceof Date) {
     if (Number.isNaN(d.getTime())) return '';
@@ -402,6 +465,38 @@ export function bookingItemCoversFacilitySlotOnGridDate(
   const windows = bookingItemWindowsOnGridDate(gridDate, item, slotStepMinutes);
   for (const w of windows) {
     if (facilitySlotStartInMarkWindow(slotStart, w.windowStart, w.windowEnd)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** True when any part of the facility grid row overlaps the booking window. */
+export function bookingItemOccupiesFacilitySlotOnGridDate(
+  gridDate: string,
+  slotStart: string,
+  slotEnd: string,
+  item: {
+    itemDate?: string | null;
+    bookingDate?: string;
+    startTime: string;
+    endTime: string;
+    startDatetime?: Date | string | null;
+    endDatetime?: Date | string | null;
+  },
+  slotStepMinutes = DEFAULT_SLOT_STEP_MINUTES,
+): boolean {
+  const windows = bookingItemWindowsOnGridDate(gridDate, item, slotStepMinutes);
+  for (const w of windows) {
+    if (
+      facilitySlotOverlapsWallWindow(
+        slotStart,
+        slotEnd,
+        w.windowStart,
+        w.windowEnd,
+        slotStepMinutes,
+      )
+    ) {
       return true;
     }
   }

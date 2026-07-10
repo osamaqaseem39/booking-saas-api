@@ -10,6 +10,7 @@ import {
   filterSlotsForBookingPicker,
   formatDateOnlyYmd,
   resolveBookingMatchEndTime,
+  resolveWalkInWallEndMinutes,
   wallSlotEffectiveEndTime,
   wallTimeHmFromInstant,
   wallTimeHmFromStoredDate,
@@ -274,5 +275,29 @@ describe('slot-wall-time.util', () => {
       { startTime: '15:00', endTime: '16:00' },
       { startTime: '16:00', endTime: '17:00' },
     ]);
+  });
+
+  it('resolveWalkInWallEndMinutes truncates before next booking', () => {
+    expect(
+      resolveWalkInWallEndMinutes({
+        nowStartMinutes: 16 * 60 + 35,
+        proposedEndMinutes: 17 * 60,
+        slotStepMinutes: 60,
+        nextBookingStartMinutes: 17 * 60,
+        freeSlotStartMinutes: [16 * 60, 17 * 60, 18 * 60],
+      }),
+    ).toBe(17 * 60);
+  });
+
+  it('resolveWalkInWallEndMinutes extends through free slots when no next booking', () => {
+    expect(
+      resolveWalkInWallEndMinutes({
+        nowStartMinutes: 16 * 60 + 35,
+        proposedEndMinutes: 17 * 60,
+        slotStepMinutes: 60,
+        nextBookingStartMinutes: null,
+        freeSlotStartMinutes: [16 * 60, 17 * 60, 18 * 60],
+      }),
+    ).toBe(19 * 60);
   });
 });

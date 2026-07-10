@@ -86,15 +86,16 @@ import { resolveTimeSlotTemplateId } from './utils/time-slot-template-schedule.u
 import { resolveSlotPrice } from './utils/slot-price.util';
 import {
   bookingItemCoversFacilitySlotOnGridDate,
+  bookingItemOccupiesFacilitySlotOnGridDate,
   buildItemFacilitySlotSyncWindows,
   facilitySlotEffectiveEndTime,
   facilitySlotMarkingWallEnd,
   facilitySlotOverlapsWallWindow,
-  facilitySlotStartInMarkWindow,
   addWallMinutesToStoredDate,
   bookingGridTodayYmd,
   filterSlotsForBookingPicker,
   resolveBookingMatchEndTime,
+  resolveWalkInWallEndMinutes,
   wallDateYmdFromStoredDate,
   wallInstantToStoredDate,
   wallMinutesToTime,
@@ -1176,20 +1177,13 @@ export class BookingsService {
     let affected = 0;
     const touchedStarts: string[] = [];
     for (const slot of slots) {
-      const inWindow =
-        params.targetStatus === 'booked' || params.targetStatus === 'blocked'
-          ? facilitySlotStartInMarkWindow(
-              slot.startTime,
-              params.windowStart,
-              params.windowEnd,
-            )
-          : facilitySlotOverlapsWallWindow(
-              slot.startTime,
-              slot.endTime,
-              params.windowStart,
-              params.windowEnd,
-              slotStepMinutes,
-            );
+      const inWindow = facilitySlotOverlapsWallWindow(
+        slot.startTime,
+        slot.endTime,
+        params.windowStart,
+        params.windowEnd,
+        slotStepMinutes,
+      );
       if (!inWindow) {
         continue;
       }
@@ -1303,7 +1297,7 @@ export class BookingsService {
       let hasActiveBooking = false;
       for (const item of activeRows) {
         if (
-          bookingItemCoversFacilitySlotOnGridDate(
+          bookingItemOccupiesFacilitySlotOnGridDate(
             slotDate,
             slot.startTime,
             slot.endTime,
@@ -1572,28 +1566,120 @@ export class BookingsService {
     return expanded;
   }
 
-  private applyImmediateStartShift(
+  private async findNextBookingStartMinutesOnCourt(
+    tenantId: string,
+    courtKind: CourtKind,
+    courtId: string,
+    date: string,
+    afterMinutes: number,
+    excludeBookingId?: string,
+  ): Promise<number | null> {
+    const itemDateYmd = formatDateOnly(date);
+    const kind = normalizeCourtKindForOverlap(courtKind) as CourtKind;
+    const qb = this.bookingRepo
+      .createQueryBuilder('b')
+      .innerJoin('b.items', 'i')
+      .where('b.tenantId = :tenantId', { tenantId })
+      .andWhere('i.courtKind = :kind', { kind })
+      .andWhere('i.courtId = :courtId', { courtId })
+      .andWhere("i.itemStatus <> 'cancelled'")
+      .andWhere("b.bookingStatus NOT IN ('cancelled', 'no_show', 'completed')")
+      .andWhere('i.date = :itemDateYmd', { itemDateYmd })
+      .select(['i.startTime AS "startTime"']);
+    if (excludeBookingId) {
+      qb.andWhere('b.id <> :excludeBookingId', { excludeBookingId });
+    }
+    const rows = await qb.getRawMany<{ startTime: string }>();
+    const next = rows
+      .map((r) => toMinutes(r.startTime, false))
+      .filter((m) => m > afterMinutes)
+      .sort((a, b) => a - b)[0];
+    return next ?? null;
+  }
+
+  private async loadFreeFacilitySlotStartMinutes(
+    tenantId: string,
+    courtKind: CourtKind,
+    courtId: string,
+    date: string,
+  ): Promise<number[]> {
+    try {
+      const { slots } = await this.getCourtSlots(tenantId, {
+        kind: courtKind,
+        courtId,
+        date: formatDateOnly(date),
+        skipCourtCheck: true,
+        fullDay: true,
+        quietLog: true,
+      });
+      return (slots ?? [])
+        .filter((s) => s.availability === 'available')
+        .map((s) => toMinutes(s.startTime, false));
+    } catch {
+      return [];
+    }
+  }
+
+  private async applyImmediateStartShift(
+    tenantId: string,
     items: Array<CreateBookingItemDto & { date: string }>,
-  ): Array<CreateBookingItemDto & { date: string }> {
+  ): Promise<Array<CreateBookingItemDto & { date: string }>> {
     const today = getCurrentDateInKarachi();
     const nowMinutes = getCurrentMinutesInKarachi();
+    const out: Array<CreateBookingItemDto & { date: string }> = [];
 
-    return items.map((item) => {
-      if (formatDateOnly(item.date) !== today) return item;
+    for (const item of items) {
+      if (formatDateOnly(item.date) !== today) {
+        out.push(item);
+        continue;
+      }
 
       const startMinutes = toMinutes(item.startTime, false);
       const endMinutes = toMinutes(item.endTime, true);
       if (nowMinutes <= startMinutes || nowMinutes >= endMinutes) {
-        return item;
+        out.push(item);
+        continue;
       }
 
-      // Mid-hour walk-in: start now, keep original end (e.g. 8:15–9:00, not 8:15–9:15).
-      return {
+      const slotStep = await this.resolveCourtSlotStepMinutes(
+        tenantId,
+        item.courtKind,
+        item.courtId,
+      );
+      const nextStart = await this.findNextBookingStartMinutesOnCourt(
+        tenantId,
+        item.courtKind,
+        item.courtId,
+        item.date,
+        nowMinutes,
+      );
+      const freeStarts = await this.loadFreeFacilitySlotStartMinutes(
+        tenantId,
+        item.courtKind,
+        item.courtId,
+        item.date,
+      );
+      const endMin = resolveWalkInWallEndMinutes({
+        nowStartMinutes: nowMinutes,
+        proposedEndMinutes: endMinutes,
+        slotStepMinutes: slotStep,
+        nextBookingStartMinutes: nextStart,
+        freeSlotStartMinutes: freeStarts,
+      });
+      const originalDuration = Math.max(1, endMinutes - startMinutes);
+      const newDuration = Math.max(1, endMin - nowMinutes);
+      const priceN = Number(item.price ?? 0);
+      const scaledPrice = Number(((priceN * newDuration) / originalDuration).toFixed(2));
+
+      out.push({
         ...item,
         startTime: wallMinutesToTime(nowMinutes),
-        endTime: item.endTime,
-      };
-    });
+        endTime: wallMinutesToTime(endMin),
+        price: scaledPrice,
+      });
+    }
+
+    return out;
   }
 
   private assertBookingItem(item: CreateBookingItemDto): void {
@@ -1845,7 +1931,7 @@ export class BookingsService {
       dto.bookingDate,
       dto.items,
     );
-    expandedItems = this.applyImmediateStartShift(expandedItems);
+    expandedItems = await this.applyImmediateStartShift(tenantId, expandedItems);
     for (const item of expandedItems) {
       this.assertBookingDateInAllowedWindow(item.date);
     }
@@ -1911,7 +1997,14 @@ export class BookingsService {
         ((b.startDatetime as Date)?.getTime() ?? 0),
     );
 
-    const pricingSubTotal = Number(dto.pricing.subTotal ?? 0);
+    const pricingSubTotalFromItems = expandedItems.reduce(
+      (sum, i) => sum + Number(i.price ?? 0),
+      0,
+    );
+    const pricingSubTotal =
+      pricingSubTotalFromItems > 0
+        ? pricingSubTotalFromItems
+        : Number(dto.pricing.subTotal ?? 0);
     let pricingDiscount = Number(dto.pricing.discount ?? 0);
     const pricingTax = Number(dto.pricing.tax ?? 0);
     let promoCodeId: string | undefined;
@@ -2174,7 +2267,7 @@ export class BookingsService {
             { repo: bookingRepo },
           );
         });
-        this.applyLiveWindowToBooking(booking);
+        await this.applyLiveWindowToBooking(booking, tenantId);
       } else {
         booking.bookingStatus = requestedStatus;
       }
@@ -2414,7 +2507,10 @@ export class BookingsService {
     return primary;
   }
 
-  private applyLiveWindowToBooking(booking: Booking): void {
+  private async applyLiveWindowToBooking(
+    booking: Booking,
+    tenantId: string,
+  ): Promise<void> {
     const startMinutes = getCurrentMinutesInKarachi();
     const liveDate = getCurrentDateInKarachi();
     booking.bookingStatus = 'live';
@@ -2423,6 +2519,48 @@ export class BookingsService {
       (item) => item.itemStatus !== 'cancelled',
     );
     if (!activeItems.length) return;
+
+    const timeline = this.sortBookingItemsForTimeline({
+      ...booking,
+      items: activeItems,
+    });
+    const primary = timeline[timeline.length - 1]!;
+    const itemDate = formatDateOnly(primary.date ?? booking.bookingDate);
+    const slotStep = await this.resolveCourtSlotStepMinutes(
+      tenantId,
+      primary.courtKind,
+      primary.courtId,
+    );
+    const proposedEndMinutes = toMinutes(primary.endTime, true);
+    const nextStart = await this.findNextBookingStartMinutesOnCourt(
+      tenantId,
+      primary.courtKind,
+      primary.courtId,
+      itemDate,
+      startMinutes,
+      booking.id,
+    );
+    const freeStarts = await this.loadFreeFacilitySlotStartMinutes(
+      tenantId,
+      primary.courtKind,
+      primary.courtId,
+      itemDate,
+    );
+    const sessionEndMinutes = resolveWalkInWallEndMinutes({
+      nowStartMinutes: startMinutes,
+      proposedEndMinutes,
+      slotStepMinutes: slotStep,
+      nextBookingStartMinutes: nextStart,
+      freeSlotStartMinutes: freeStarts,
+    });
+    const firstItem = timeline[0]!;
+    const originalStartMinutes = toMinutes(firstItem.startTime, false);
+    const originalSpanMinutes = Math.max(
+      1,
+      proposedEndMinutes - originalStartMinutes,
+    );
+    const newSpanMinutes = Math.max(1, sessionEndMinutes - startMinutes);
+    const priceScale = newSpanMinutes / originalSpanMinutes;
 
     const normalizedItems = activeItems.map((item) => {
       const fallbackDate = formatDateOnly(item.date ?? booking.bookingDate);
@@ -2443,6 +2581,7 @@ export class BookingsService {
     const liveBase = new Date(`${liveDate}T00:00:00Z`);
     liveBase.setUTCMinutes(startMinutes);
     const liveBaseMs = liveBase.getTime();
+    const sessionSpanMinutes = Math.max(1, sessionEndMinutes - startMinutes);
     const slotMinutes = Math.max(
       1,
       Math.min(
@@ -2455,7 +2594,8 @@ export class BookingsService {
       ),
     );
 
-    for (const row of normalizedItems) {
+    for (let i = 0; i < normalizedItems.length; i++) {
+      const row = normalizedItems[i]!;
       const durationMinutesRaw = Math.max(
         1,
         Math.round((row.originalEnd.getTime() - row.originalStart.getTime()) / 60000),
@@ -2465,19 +2605,39 @@ export class BookingsService {
         Math.round((row.originalStart.getTime() - firstStartMs) / 60000),
       );
       const durationMinutes =
-        Math.max(1, Math.round(durationMinutesRaw / slotMinutes)) * slotMinutes;
+        normalizedItems.length === 1
+          ? sessionSpanMinutes
+          : Math.max(1, Math.round(durationMinutesRaw / slotMinutes)) * slotMinutes;
       const offsetMinutes =
         Math.max(0, Math.round(offsetMinutesRaw / slotMinutes)) * slotMinutes;
       const liveStartDate = new Date(liveBaseMs + offsetMinutes * 60 * 1000);
-      const liveEndDate = new Date(
-        liveStartDate.getTime() + durationMinutes * 60 * 1000,
-      );
+      const liveEndDate =
+        i === normalizedItems.length - 1
+          ? new Date(liveBase.getTime() + (sessionEndMinutes - startMinutes) * 60 * 1000)
+          : new Date(liveStartDate.getTime() + durationMinutes * 60 * 1000);
       row.item.date = formatDateOnly(liveStartDate);
       row.item.startTime = wallTimeHmFromStoredDate(liveStartDate);
       row.item.endTime = wallTimeHmFromStoredDate(liveEndDate);
       row.item.startDatetime = liveStartDate;
       row.item.endDatetime = liveEndDate;
+      row.item.price = dec(
+        Number((numFromDec(row.item.price) * priceScale).toFixed(2)),
+      );
     }
+
+    const itemsSubTotal = activeItems.reduce(
+      (sum, it) => sum + numFromDec(it.price),
+      0,
+    );
+    booking.subTotal = dec(itemsSubTotal);
+    booking.totalAmount = dec(
+      this.computePayableAmount(
+        itemsSubTotal,
+        numFromDec(booking.discount),
+        numFromDec(booking.tax),
+      ),
+    );
+    harmonizePaymentStatusWithAmounts(booking);
   }
 
   async remove(tenantId: string, bookingId: string): Promise<{ ok: true }> {
@@ -3124,22 +3284,11 @@ export class BookingsService {
           slotStepMinutes,
         );
         const hit = rows.find((r) =>
-          bookingItemCoversFacilitySlotOnGridDate(
+          bookingItemOccupiesFacilitySlotOnGridDate(
             date,
             fs.startTime,
             fs.endTime,
-            {
-              ...r,
-              endTime: resolveBookingMatchEndTime(
-                {
-                  startTime: r.startTime,
-                  endTime: r.endTime,
-                  startDatetime: r.startDatetime,
-                  endDatetime: r.endDatetime,
-                },
-                slotStepMinutes,
-              ),
-            },
+            r,
             slotStepMinutes,
           ),
         );
@@ -3188,22 +3337,11 @@ export class BookingsService {
         const s = minutesToTimeString(m);
         const e = minutesToTimeString(m + slotStepMinutes);
         const hit = rows.find((r) =>
-          bookingItemCoversFacilitySlotOnGridDate(
+          bookingItemOccupiesFacilitySlotOnGridDate(
             date,
             s,
             e,
-            {
-              ...r,
-              endTime: resolveBookingMatchEndTime(
-                {
-                  startTime: r.startTime,
-                  endTime: r.endTime,
-                  startDatetime: r.startDatetime,
-                  endDatetime: r.endDatetime,
-                },
-                slotStepMinutes,
-              ),
-            },
+            r,
             slotStepMinutes,
           ),
         );

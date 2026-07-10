@@ -13,12 +13,40 @@ export type BookingGridItemRow = {
   itemStatus: string;
 };
 
-function pickRaw(raw: Record<string, unknown>, keys: string[]): string | undefined {
+function pickRawString(raw: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = raw[k];
+    if (v == null) continue;
+    if (v instanceof Date) {
+      if (!Number.isNaN(v.getTime())) return v.toISOString();
+      continue;
+    }
+    const s = String(v).trim();
+    if (s !== '') return s;
+  }
+  return undefined;
+}
+
+function pickRawDate(raw: Record<string, unknown>, keys: string[]): string | undefined {
   for (const k of keys) {
     const v = raw[k];
     if (v == null) continue;
     if (v instanceof Date) {
       if (!Number.isNaN(v.getTime())) return v.toISOString().slice(0, 10);
+      continue;
+    }
+    const s = String(v).trim();
+    if (s !== '') return s.length >= 10 ? s.slice(0, 10) : s;
+  }
+  return undefined;
+}
+
+function pickRawDatetime(raw: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = raw[k];
+    if (v == null) continue;
+    if (v instanceof Date) {
+      if (!Number.isNaN(v.getTime())) return v.toISOString();
       continue;
     }
     const s = String(v).trim();
@@ -32,23 +60,23 @@ export function normalizeBookingGridItemRow(
 ): BookingGridItemRow {
   return {
     bookingId:
-      pickRaw(raw, ['bookingId', 'bookingid', 'b_id']) ?? '',
+      pickRawString(raw, ['bookingId', 'bookingid', 'b_id']) ?? '',
     bookingDate:
-      pickRaw(raw, ['bookingDate', 'bookingdate', 'b_bookingDate']) ?? '',
+      pickRawDate(raw, ['bookingDate', 'bookingdate', 'b_bookingDate']) ?? '',
     bookingStatus:
-      pickRaw(raw, ['bookingStatus', 'bookingstatus', 'b_bookingStatus']) ?? '',
-    id: pickRaw(raw, ['id', 'i_id']) ?? '',
+      pickRawString(raw, ['bookingStatus', 'bookingstatus', 'b_bookingStatus']) ?? '',
+    id: pickRawString(raw, ['id', 'i_id']) ?? '',
     itemDate:
-      pickRaw(raw, ['itemDate', 'itemdate', 'i_date']) ?? null,
+      pickRawDate(raw, ['itemDate', 'itemdate', 'i_date']) ?? null,
     startTime:
-      pickRaw(raw, ['startTime', 'starttime', 'i_startTime']) ?? '',
-    endTime: pickRaw(raw, ['endTime', 'endtime', 'i_endTime']) ?? '',
+      pickRawString(raw, ['startTime', 'starttime', 'i_startTime']) ?? '',
+    endTime: pickRawString(raw, ['endTime', 'endtime', 'i_endTime']) ?? '',
     startDatetime:
-      pickRaw(raw, ['startDatetime', 'startdatetime', 'i_startDatetime']) ?? '',
+      pickRawDatetime(raw, ['startDatetime', 'startdatetime', 'i_startDatetime']) ?? '',
     endDatetime:
-      pickRaw(raw, ['endDatetime', 'enddatetime', 'i_endDatetime']) ?? '',
+      pickRawDatetime(raw, ['endDatetime', 'enddatetime', 'i_endDatetime']) ?? '',
     itemStatus:
-      pickRaw(raw, ['itemStatus', 'itemstatus', 'i_itemStatus']) ?? '',
+      pickRawString(raw, ['itemStatus', 'itemstatus', 'i_itemStatus']) ?? '',
   };
 }
 
