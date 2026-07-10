@@ -107,7 +107,6 @@ import {
   normalizeBookingGridItemRows,
 } from './utils/booking-grid-item-row.util';
 import {
-  contiguousBookedWallEnd,
   findOverlappingItemIndices,
   itemWallWindowFromParts,
   liveBookingOccupiedEnd,
@@ -2540,15 +2539,8 @@ export class BookingsService {
       const bStart = (b.startDatetime ?? this.toSlotDateTimes(formatDateOnly(b.date ?? booking.bookingDate), b.startTime, b.endTime).startDatetime).getTime();
       return aStart - bStart;
     });
-    const baseItem = itemsSorted[itemsSorted.length - 1];
+    const baseItem = itemsSorted[itemsSorted.length - 1]!;
     const baseDate = formatDateOnly(baseItem.date ?? booking.bookingDate);
-    const now = new Date();
-    const extensionStart = contiguousBookedWallEnd(
-      booking.items ?? [],
-      baseDate,
-      (d, s, e) => this.toSlotDateTimes(d, s, e),
-    );
-    const extensionEnd = addWallMinutesToStoredDate(extensionStart, addOnMinutes);
     const baseWall = itemWallWindowFromParts(
       baseDate,
       baseItem.startTime,
@@ -2557,8 +2549,30 @@ export class BookingsService {
       baseItem.startDatetime,
       baseItem.endDatetime,
     );
+    const now = new Date();
+    const extensionStart = baseWall.end;
+    const extensionEnd = addWallMinutesToStoredDate(extensionStart, addOnMinutes);
+    const extensionStartTime = wallTimeHmFromStoredDate(extensionStart);
+    const extensionEndTime = wallTimeHmFromStoredDate(extensionEnd);
+    const extensionDate = wallDateYmdFromStoredDate(extensionStart);
 
-    const courtKind = normalizeCourtKindForOverlap(baseItem.courtKind) as CourtKind;
+    const duplicateExtension = (booking.items ?? []).some(
+      (i) =>
+        i.itemStatus !== 'cancelled' &&
+        i.courtId === baseItem.courtId &&
+        i.courtKind === baseItem.courtKind &&
+        ((i.startDatetime &&
+          i.startDatetime.getTime() === extensionStart.getTime()) ||
+          (formatDateOnly(i.date ?? booking.bookingDate) === extensionDate &&
+            i.startTime === extensionStartTime)),
+    );
+    if (duplicateExtension) {
+      throw new ConflictException(
+        'This time extension is already on the booking.',
+      );
+    }
+
+    const courtKind = baseItem.courtKind;
     const candidates = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
@@ -2617,9 +2631,6 @@ export class BookingsService {
         throw new ConflictException('Upcoming slot is not empty for extension');
       }
     }
-    const extensionStartTime = wallTimeHmFromStoredDate(extensionStart);
-    const extensionEndTime = wallTimeHmFromStoredDate(extensionEnd);
-    const extensionDate = wallDateYmdFromStoredDate(extensionStart);
 
     const baseDurationMinutes = Math.max(
       1,

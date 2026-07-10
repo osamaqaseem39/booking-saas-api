@@ -36,12 +36,18 @@ export class DatabaseQueryExceptionFilter
       code === '42703' ||
       lowerMessage.includes('does not exist');
 
+    const uniqueViolation = code === '23505';
+
     const statusCode = schemaOutOfDate
       ? HttpStatus.SERVICE_UNAVAILABLE
-      : HttpStatus.INTERNAL_SERVER_ERROR;
+      : uniqueViolation
+        ? HttpStatus.CONFLICT
+        : HttpStatus.INTERNAL_SERVER_ERROR;
     const message = schemaOutOfDate
       ? 'Database schema is out of date. Run migrations and retry.'
-      : 'Database query failed while processing request.';
+      : uniqueViolation
+        ? 'This facility time slot is already booked. Pick a different time or remove the existing extension.'
+        : 'Database query failed while processing request.';
 
     this.logger.error(
       `[${code || 'unknown'}] ${req.method} ${req.url} -> ${exception.message}`,
@@ -49,7 +55,11 @@ export class DatabaseQueryExceptionFilter
 
     res.status(statusCode).json({
       statusCode,
-      error: schemaOutOfDate ? 'Service Unavailable' : 'Internal Server Error',
+      error: schemaOutOfDate
+        ? 'Service Unavailable'
+        : uniqueViolation
+          ? 'Conflict'
+          : 'Internal Server Error',
       message,
       timestamp: new Date().toISOString(),
       path: req.url,
