@@ -28,7 +28,6 @@ import {
 const ADMIN_ROLES: SystemRole[] = [
   'platform-owner',
   'business-admin',
-  'location-admin',
 ];
 
 @Injectable()
@@ -618,7 +617,7 @@ export class IamService implements OnModuleInit {
 
   /**
    * For optional-auth endpoints: enforce `permissionKey` only when the caller is
-   * `business-staff`. Admins and unauthenticated callers pass through.
+   * `business-staff` or `location-admin`. Admins and unauthenticated callers pass through.
    */
   async assertStaffPermissionIfApplicable(
     userId: string | undefined,
@@ -630,7 +629,11 @@ export class IamService implements OnModuleInit {
       await this.userRolesRepository.find({ where: { userId: id } })
     ).map((r) => r.roleCode);
     if (roleCodes.some((c) => ADMIN_ROLES.includes(c as SystemRole))) return;
-    if (!roleCodes.includes('business-staff')) return;
+    if (
+      !roleCodes.includes('business-staff') &&
+      !roleCodes.includes('location-admin')
+    )
+      return;
     if (!(await this.hasPermission(id, permissionKey))) {
       throw new ForbiddenException(
         `You do not have permission to perform this action (${permissionKey})`,
@@ -649,7 +652,11 @@ export class IamService implements OnModuleInit {
       await this.userRolesRepository.find({ where: { userId: id } })
     ).map((r) => r.roleCode);
     if (roleCodes.some((c) => ADMIN_ROLES.includes(c as SystemRole))) return;
-    if (!roleCodes.includes('business-staff')) return;
+    if (
+      !roleCodes.includes('business-staff') &&
+      !roleCodes.includes('location-admin')
+    )
+      return;
     const checks = await Promise.all(
       permissionKeys.map((key) => this.hasPermission(id, key)),
     );
