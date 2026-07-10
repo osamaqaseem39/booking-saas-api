@@ -297,6 +297,35 @@ function sessionWindowOnCourt(
   return { startMs: minS, endMs: maxE, startTime, endTime };
 }
 
+function uniqueLiveBookingsOnCourt(windows: ItemW[]): Booking[] {
+  return Array.from(
+    new Map(
+      windows
+        .filter((w) => w.booking.bookingStatus === 'live')
+        .map((w) => [w.booking.id, w.booking] as const),
+    ).values(),
+  );
+}
+
+function findLiveSessionInProgress(
+  liveBookings: Booking[],
+  courtKind: CourtKind,
+  courtId: string,
+  tz: string,
+  now: number,
+): { booking: Booking; sw: NonNullable<ReturnType<typeof sessionWindowOnCourt>> } | null {
+  let best: { booking: Booking; sw: NonNullable<ReturnType<typeof sessionWindowOnCourt>> } | null =
+    null;
+  for (const b of liveBookings) {
+    const sw = sessionWindowOnCourt(b, courtKind, courtId, tz);
+    if (!sw) continue;
+    if (sw.startMs <= now && now < sw.endMs) {
+      if (!best || sw.startMs < best.sw.startMs) best = { booking: b, sw };
+    }
+  }
+  return best;
+}
+
 function liveRefFromSessionWindow(
   b: Booking,
   w: { startTime: string; endTime: string },
@@ -403,29 +432,40 @@ export function buildPlaySnapshot(
     }
   }
 
-  // Only expose a booking as `currentBooking` when it is explicitly marked `live`.
-  // Time-window math alone is not sufficient (bookings may still be `confirmed` until the venue flips them to `live`).
-  const ongoing =
-    windows.find((w) => w.startMs <= now && now < w.endMs && w.booking.bookingStatus === 'live') ?? null;
-
   type SessionWindow = NonNullable<ReturnType<typeof sessionWindowOnCourt>>;
+
+  // Live bookings occupy the court for the full session span (including gaps between items).
+  const liveInProgress = (() => {
+    const itemHit =
+      windows.find(
+        (w) =>
+          w.startMs <= now &&
+          now < w.endMs &&
+          w.booking.bookingStatus === 'live',
+      ) ?? null;
+    if (itemHit) {
+      const sw = sessionWindowOnCourt(itemHit.booking, courtKind, courtId, tz);
+      return sw ? { booking: itemHit.booking, sw } : null;
+    }
+    return findLiveSessionInProgress(
+      uniqueLiveBookingsOnCourt(windows),
+      courtKind,
+      courtId,
+      tz,
+      now,
+    );
+  })();
 
   // If a booking is still marked `live` but its session window has already ended, treat it as `overtime`.
   const overtime = (() => {
-    const liveBookings = Array.from(
-      new Map(
-        windows
-          .filter((w) => w.booking.bookingStatus === 'live')
-          .map((w) => [w.booking.id, w.booking] as const),
-      ).values(),
-    );
+    if (liveInProgress) return null;
 
     let best: { booking: Booking; sw: SessionWindow } | null = null;
 
-    for (const b of liveBookings) {
+    for (const b of uniqueLiveBookingsOnCourt(windows)) {
       const sw = sessionWindowOnCourt(b, courtKind, courtId, tz);
       if (!sw) continue;
-      if (sw.endMs > now) continue; // still within session window
+      if (sw.endMs > now) continue;
       if (!best || sw.endMs > best.sw.endMs) best = { booking: b, sw };
     }
 
@@ -434,22 +474,54 @@ export function buildPlaySnapshot(
 
   // If a booking time-window has already started but it's still not marked `live`,
   // keep it visible in `nextBooking` until the venue flips it.
-  const startedButNotLive = windows
-    .filter((w) => w.startMs <= now && now < w.endMs && w.booking.bookingStatus !== 'live')
-    .sort((a, b) => a.startMs - b.startMs);
+  const startedButNotLive = (() => {
+    const perItem = windows
+      .filter(
+        (w) =>
+          w.startMs <= now &&
+          now < w.endMs &&
+          w.booking.bookingStatus !== 'live',
+      )
+      .sort((a, b) => a.startMs - b.startMs);
+    if (perItem.length) return perItem;
+
+    const out: ItemW[] = [];
+    const seen = new Set<string>();
+    for (const w of windows) {
+      const b = w.booking;
+      if (seen.has(b.id)) continue;
+      if (
+        b.bookingStatus === 'live' ||
+        b.bookingStatus === 'cancelled' ||
+        b.bookingStatus === 'no_show' ||
+        b.bookingStatus === 'completed'
+      ) {
+        continue;
+      }
+      const sw = sessionWindowOnCourt(b, courtKind, courtId, tz);
+      if (!sw || sw.startMs > now || now >= sw.endMs) continue;
+      seen.add(b.id);
+      const rep =
+        windows
+          .filter((x) => x.booking.id === b.id)
+          .sort((a, b2) => a.startMs - b2.startMs)[0] ?? w;
+      out.push(rep);
+    }
+    return out.sort((a, b) => a.startMs - b.startMs);
+  })();
 
   const future = windows
-    .filter((w) => w.startMs > now)
+    .filter((w) => w.startMs > now && w.booking.bookingStatus !== 'live')
     .sort((a, b) => a.startMs - b.startMs);
 
-  const currentLiveBooking = ongoing ? ongoing.booking : overtime?.booking ?? null;
+  const currentLiveBooking = liveInProgress?.booking ?? overtime?.booking ?? null;
 
   const next = currentLiveBooking
     ? future.find((w) => w.booking.id !== currentLiveBooking.id) ?? null
     : startedButNotLive[0] ?? future[0] ?? null;
 
   let playStatus: FacilityPlayStatus = 'idle';
-  if (ongoing) {
+  if (liveInProgress) {
     playStatus = 'live';
   } else if (overtime) {
     playStatus = 'overtime';
@@ -462,11 +534,9 @@ export function buildPlaySnapshot(
     }
   }
 
-  const ongoingSw = ongoing
-    ? sessionWindowOnCourt(ongoing.booking, courtKind, courtId, tz)
-    : null;
+  const ongoingSw = liveInProgress?.sw ?? null;
   const overtimeSw = overtime?.sw ?? null;
-  const currentSw = ongoing ? ongoingSw : overtimeSw;
+  const currentSw = liveInProgress ? ongoingSw : overtimeSw;
   const nextSw = next
     ? sessionWindowOnCourt(next.booking, courtKind, courtId, tz)
     : null;
@@ -477,11 +547,11 @@ export function buildPlaySnapshot(
     name,
     playStatus,
     currentBooking:
-      ongoing && ongoingSw
+      liveInProgress && ongoingSw
         ? liveRefFromSessionWindow(
-            ongoing.booking,
+            liveInProgress.booking,
             ongoingSw,
-            computeSessionOvertime(ongoing.booking, courtKind, courtId, now, tz),
+            computeSessionOvertime(liveInProgress.booking, courtKind, courtId, now, tz),
           )
         : overtime && overtimeSw
           ? liveRefFromSessionWindow(
