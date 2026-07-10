@@ -103,6 +103,7 @@ import {
   normalizeBookingGridItemRows,
 } from './utils/booking-grid-item-row.util';
 import {
+  contiguousBookedWallEnd,
   findOverlappingItemIndices,
   itemWallWindowFromParts,
   liveBookingOccupiedEnd,
@@ -697,25 +698,12 @@ export class BookingsService {
   /** Stops further live overtime projection after totals are adjusted (see total-only `pricing` PATCH). */
   private advanceLiveBookingItemEndsThroughNow(
     booking: Booking,
-    now: Date,
-    courtToLocationMap: Record<string, string>,
-    locationTimeZoneMap: Record<string, string>,
+    _now: Date,
+    _courtToLocationMap: Record<string, string>,
+    _locationTimeZoneMap: Record<string, string>,
   ): void {
     if (booking.bookingStatus !== 'live') return;
-    const bd = formatDateOnly(booking.bookingDate);
-    for (const item of booking.items ?? []) {
-      if (item.itemStatus === 'cancelled') continue;
-      const ymd = formatDateOnly(item.date ?? booking.bookingDate);
-      const locId = courtToLocationMap[item.courtId];
-      const rawTz = locId ? locationTimeZoneMap[locId] : undefined;
-      const endMs = rawTz?.trim()
-        ? wallRangeToMs(ymd, item.startTime, item.endTime, rawTz).endMs
-        : this.itemPlayEndMs(item, bd);
-      if (now.getTime() <= endMs) continue;
-      item.endDatetime = now;
-      item.endTime = wallTimeHmFromInstant(now);
-      item.date = bookingGridTodayYmd(now);
-    }
+    // Do not mutate item wall times — that breaks +30 min chaining and session display.
   }
 
   private toApi(
@@ -2550,6 +2538,13 @@ export class BookingsService {
     });
     const baseItem = itemsSorted[itemsSorted.length - 1];
     const baseDate = formatDateOnly(baseItem.date ?? booking.bookingDate);
+    const now = new Date();
+    const extensionStart = contiguousBookedWallEnd(
+      booking.items ?? [],
+      baseDate,
+      (d, s, e) => this.toSlotDateTimes(d, s, e),
+    );
+    const extensionEnd = new Date(extensionStart.getTime() + addOnMinutes * 60 * 1000);
     const baseWall = itemWallWindowFromParts(
       baseDate,
       baseItem.startTime,
@@ -2558,13 +2553,6 @@ export class BookingsService {
       baseItem.startDatetime,
       baseItem.endDatetime,
     );
-    const now = new Date();
-    const extensionStart = liveBookingOccupiedEnd(
-      booking.bookingStatus,
-      baseWall.end,
-      now,
-    );
-    const extensionEnd = new Date(extensionStart.getTime() + addOnMinutes * 60 * 1000);
 
     const courtKind = normalizeCourtKindForOverlap(baseItem.courtKind) as CourtKind;
     const candidates = await this.bookingRepo

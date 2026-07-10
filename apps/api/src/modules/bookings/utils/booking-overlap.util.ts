@@ -1,3 +1,52 @@
+export function timeHmForOverlap(t: string): string {
+  return (t ?? '').trim().slice(0, 5);
+}
+
+/** End of the last contiguous booked segment (for +30/+60 min extensions). */
+export function contiguousBookedWallEnd(
+  items: Array<{
+    startTime: string;
+    endTime: string;
+    date?: string | Date | null;
+    itemStatus?: string;
+  }>,
+  bookingDate: string,
+  toSlotDateTimes: (
+    date: string,
+    start: string,
+    end: string,
+  ) => { startDatetime: Date; endDatetime: Date },
+): Date {
+  const active = items
+    .filter((i) => i.itemStatus !== 'cancelled')
+    .sort((a, b) => {
+      const ad = String(a.date ?? bookingDate).slice(0, 10);
+      const bd = String(b.date ?? bookingDate).slice(0, 10);
+      const d = ad.localeCompare(bd);
+      if (d !== 0) return d;
+      return a.startTime.localeCompare(b.startTime);
+    });
+  if (!active.length) {
+    throw new Error('contiguousBookedWallEnd: no active items');
+  }
+  let lastEnd = toSlotDateTimes(
+    String(active[0]!.date ?? bookingDate).slice(0, 10),
+    active[0]!.startTime,
+    active[0]!.endTime,
+  ).endDatetime;
+  for (let i = 1; i < active.length; i += 1) {
+    const prev = active[i - 1]!;
+    const cur = active[i]!;
+    if (timeHmForOverlap(prev.endTime) !== timeHmForOverlap(cur.startTime)) break;
+    lastEnd = toSlotDateTimes(
+      String(cur.date ?? bookingDate).slice(0, 10),
+      cur.startTime,
+      cur.endTime,
+    ).endDatetime;
+  }
+  return lastEnd;
+}
+
 export function normalizeCourtKindForOverlap(kind: string): string {
   if (kind === 'futsal_court' || kind === 'cricket_court') return 'turf_court';
   return kind;
