@@ -11,9 +11,15 @@ import {
   formatDateOnlyYmd,
   resolveBookingMatchEndTime,
   wallSlotEffectiveEndTime,
+  wallTimeHmFromInstant,
 } from './slot-wall-time.util';
 
 describe('slot-wall-time.util', () => {
+  it('wallTimeHmFromInstant uses booking grid timezone', () => {
+    const instant = new Date('2026-07-10T09:03:00.000Z');
+    expect(wallTimeHmFromInstant(instant, 'Asia/Karachi')).toBe('14:03');
+  });
+
   it('formatDateOnlyYmd handles Date objects and ISO strings', () => {
     expect(formatDateOnlyYmd(new Date('2026-07-02T00:00:00.000Z'))).toBe(
       '2026-07-02',

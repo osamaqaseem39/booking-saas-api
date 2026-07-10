@@ -21,6 +21,14 @@ export function bookingGridTodayYmd(
   return `${y}-${m}-${d}`;
 }
 
+/** HH:mm wall clock for a real instant (not wall-in-UTC hack dates). */
+export function wallTimeHmFromInstant(
+  d: Date,
+  timeZone = DEFAULT_BOOKING_GRID_TZ,
+): string {
+  return bookingGridNowParts(d, timeZone).timeStr;
+}
+
 export function bookingGridNowParts(
   now = new Date(),
   timeZone = DEFAULT_BOOKING_GRID_TZ,

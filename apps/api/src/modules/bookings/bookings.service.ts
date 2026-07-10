@@ -91,10 +91,12 @@ import {
   facilitySlotMarkingWallEnd,
   facilitySlotOverlapsWallWindow,
   facilitySlotStartInMarkWindow,
+  bookingGridTodayYmd,
   filterSlotsForBookingPicker,
   resolveBookingMatchEndTime,
   wallMinutesToTime,
   wallSlotOverlapsWindow,
+  wallTimeHmFromInstant,
 } from './utils/slot-wall-time.util';
 import {
   normalizeBookingGridItemRow,
@@ -672,8 +674,8 @@ export class BookingsService {
       touched = true;
       item.price = dec(numFromDec(item.price) + o.overtimeCharge);
       item.endDatetime = now;
-      item.endTime = now.toISOString().slice(11, 16);
-      item.date = formatDateOnly(now);
+      item.endTime = wallTimeHmFromInstant(now);
+      item.date = bookingGridTodayYmd(now);
     }
     if (!touched) {
       throw new BadRequestException('There is no live overtime to add right now.');
@@ -711,8 +713,8 @@ export class BookingsService {
         : this.itemPlayEndMs(item, bd);
       if (now.getTime() <= endMs) continue;
       item.endDatetime = now;
-      item.endTime = now.toISOString().slice(11, 16);
-      item.date = formatDateOnly(now);
+      item.endTime = wallTimeHmFromInstant(now);
+      item.date = bookingGridTodayYmd(now);
     }
   }
 
@@ -2623,9 +2625,9 @@ export class BookingsService {
         throw new ConflictException('Upcoming slot is not empty for extension');
       }
     }
-    const extensionStartTime = extensionStart.toISOString().slice(11, 16);
-    const extensionEndTime = extensionEnd.toISOString().slice(11, 16);
-    const extensionDate = formatDateOnly(extensionStart);
+    const extensionStartTime = wallTimeHmFromInstant(extensionStart);
+    const extensionEndTime = wallTimeHmFromInstant(extensionEnd);
+    const extensionDate = bookingGridTodayYmd(extensionStart);
 
     const baseDurationMinutes = Math.max(
       1,
