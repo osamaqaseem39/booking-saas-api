@@ -3242,6 +3242,7 @@ export class BookingsService {
     const rowsRaw = await this.bookingRepo
       .createQueryBuilder('b')
       .innerJoin('b.items', 'i')
+      .leftJoin('b.user', 'u')
       .andWhere('b.tenantId = :tenantId', { tenantId })
       .andWhere("b.bookingStatus IN ('confirmed', 'pending', 'live')")
       .andWhere("i.itemStatus <> 'cancelled'")
@@ -3262,6 +3263,8 @@ export class BookingsService {
         'i.startDatetime AS startDatetime',
         'i.endDatetime AS endDatetime',
         'i.itemStatus AS itemStatus',
+        'u.fullName AS customerName',
+        'u.phone AS customerPhone',
       ])
       .getRawMany<Record<string, unknown>>();
 
@@ -3301,6 +3304,8 @@ export class BookingsService {
             itemId: hit.id,
             status: hit.itemStatus,
             bookingStatus: hit.bookingStatus || undefined,
+            customerName: hit.customerName || undefined,
+            customerPhone: hit.customerPhone || undefined,
             ...this.slotPriceFields(
               date,
               fs.priceTier === 'peak' ? 'peak' : 'standard',
@@ -3354,6 +3359,8 @@ export class BookingsService {
             itemId: hit.id,
             status: hit.itemStatus,
             bookingStatus: hit.bookingStatus || undefined,
+            customerName: hit.customerName || undefined,
+            customerPhone: hit.customerPhone || undefined,
           });
         } else {
           slots.push({
@@ -3447,6 +3454,8 @@ export class BookingsService {
             itemId: s.itemId,
             status: s.status,
             bookingStatus: s.bookingStatus || undefined,
+            customerName: s.customerName || undefined,
+            customerPhone: s.customerPhone || undefined,
           }
         : s.availability === 'blocked'
           ? { startTime: s.startTime, endTime: s.endTime, state: 'blocked' }

@@ -11,6 +11,8 @@ export type BookingGridItemRow = {
   startDatetime: string;
   endDatetime: string;
   itemStatus: string;
+  customerName?: string;
+  customerPhone?: string;
 };
 
 function pickRawString(raw: Record<string, unknown>, keys: string[]): string | undefined {
@@ -77,6 +79,10 @@ export function normalizeBookingGridItemRow(
       pickRawDatetime(raw, ['endDatetime', 'enddatetime', 'i_endDatetime']) ?? '',
     itemStatus:
       pickRawString(raw, ['itemStatus', 'itemstatus', 'i_itemStatus']) ?? '',
+    customerName:
+      pickRawString(raw, ['customerName', 'customername', 'u_fullName']) ?? undefined,
+    customerPhone:
+      pickRawString(raw, ['customerPhone', 'customerphone', 'u_phone']) ?? undefined,
   };
 }
 
