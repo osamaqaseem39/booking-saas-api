@@ -650,6 +650,7 @@ export class BookingsService {
   /**
    * Writes projected live overtime into persisted item prices and booking subtotal, and advances
    * each affected item's end to `now` so `computeLiveOvertimeProjection` does not bill the same minutes twice.
+   * Only runs on explicit `materializeLiveOvertime: true` (Apply) — never auto-applied on read/checkout.
    */
   private materializeLiveOvertimeOnBooking(
     booking: Booking,
@@ -699,6 +700,42 @@ export class BookingsService {
     this.applyBookingWindowFields(booking);
   }
 
+  /**
+   * On checkout/complete: set the last segment's wall end to `now` without changing prices.
+   * Early stop keeps full base + full add-on charges; unpaid overtime past end is not billed
+   * unless it was already materialized via Apply.
+   */
+  private recordActualSessionEndPreservingPrices(
+    booking: Booking,
+    now: Date,
+    courtToLocationMap: Record<string, string> = {},
+    locationTimeZoneMap: Record<string, string> = {},
+  ): void {
+    if (booking.bookingStatus !== 'live') return;
+    const active = this.sortBookingItemsForTimeline(booking).filter(
+      (it) => it.itemStatus !== 'cancelled',
+    );
+    if (!active.length) return;
+    const last = active[active.length - 1]!;
+    const bd = formatDateOnly(booking.bookingDate);
+    const ymd = formatDateOnly(last.date ?? booking.bookingDate);
+    const locId = courtToLocationMap[last.courtId];
+    const rawTz = locId ? locationTimeZoneMap[locId] : undefined;
+    const { startMs, endMs } = rawTz?.trim()
+      ? wallRangeToMs(ymd, last.startTime, last.endTime, rawTz)
+      : {
+          startMs: this.itemPlayStartMs(last, bd),
+          endMs: this.itemPlayEndMs(last, bd),
+        };
+    const nowMs = now.getTime();
+    if (nowMs <= startMs) return;
+    if (Math.abs(nowMs - endMs) < 1000) return;
+    last.endDatetime = wallInstantToStoredDate(now);
+    last.endTime = wallTimeHmFromInstant(now);
+    last.date = bookingGridTodayYmd(now);
+    this.applyBookingWindowFields(booking);
+  }
+
   /** Stops further live overtime projection after totals are adjusted (see total-only `pricing` PATCH). */
   private advanceLiveBookingItemEndsThroughNow(
     booking: Booking,
@@ -739,24 +776,9 @@ export class BookingsService {
     const discountN = numFromDec(booking.discount);
     const taxN = numFromDec(booking.tax);
     const baseTotal = numFromDec(booking.totalAmount);
-    const useOvertimePricing = Boolean(projection && extraOvertime > 0);
-    const projectedSubTotal = useOvertimePricing
-      ? Number((baseSubTotal + extraOvertime).toFixed(2))
-      : baseSubTotal;
-    const projectedTotal = useOvertimePricing
-      ? this.computePayableAmount(projectedSubTotal, discountN, taxN)
-      : baseTotal;
-
-    let paymentStatusOut = booking.paymentStatus;
-    if (useOvertimePricing) {
-      const ph = {
-        totalAmount: dec(projectedTotal),
-        paidAmount: booking.paidAmount,
-        paymentStatus: booking.paymentStatus,
-      };
-      harmonizePaymentStatusWithAmounts(ph);
-      paymentStatusOut = ph.paymentStatus;
-    }
+    // Projected overtime is informational only until Apply (`materializeLiveOvertime`).
+    // Do not inflate persisted pricing.totalAmount / item.price on read.
+    const hasProjectedOvertime = Boolean(projection && extraOvertime > 0);
 
     return {
       bookingId: booking.id,
@@ -779,9 +801,6 @@ export class BookingsService {
         const basePrice = numFromDec(it.price);
         const overtimeCharge = o ? o.overtimeCharge : 0;
         const overtimeMinutes = o ? o.overtimeMinutes : 0;
-        const price = o
-          ? Number((basePrice + overtimeCharge).toFixed(2))
-          : basePrice;
         return {
           id: it.id,
           date: it.date,
@@ -794,31 +813,27 @@ export class BookingsService {
           basePrice,
           overtimeCharge,
           overtimeMinutes,
-          price,
+          price: basePrice,
           currency: it.currency,
           status: it.itemStatus,
         };
       }),
       pricing: {
-        subTotal: useOvertimePricing ? projectedSubTotal : baseSubTotal,
+        subTotal: baseSubTotal,
         baseSubTotal,
-        overtimeAmount: useOvertimePricing ? extraOvertime : 0,
+        overtimeAmount: 0,
         discount: discountN,
         tax: taxN,
-        totalAmount: useOvertimePricing ? projectedTotal : baseTotal,
+        totalAmount: baseTotal,
       },
       payment: {
-        paymentStatus: paymentStatusOut,
+        paymentStatus: booking.paymentStatus,
         paymentMethod: booking.paymentMethod,
         transactionId: booking.transactionId,
         paidAt: booking.paidAt?.toISOString(),
         paidAmount: numFromDec(booking.paidAmount),
-        remainingAmount: useOvertimePricing
-          ? Math.max(
-              0,
-              Number((projectedTotal - numFromDec(booking.paidAmount)).toFixed(2)),
-            )
-          : numFromDec(booking.totalAmount) - numFromDec(booking.paidAmount),
+        remainingAmount:
+          numFromDec(booking.totalAmount) - numFromDec(booking.paidAmount),
       },
       bookingStatus:
         opts?.projectLiveViewStatus === false
@@ -828,7 +843,7 @@ export class BookingsService {
               courtToLocationMap,
               locationTimeZoneMap,
             ),
-      ...(useOvertimePricing && projection
+      ...(hasProjectedOvertime && projection
         ? {
             liveOvertime: {
               projectedAt: projection.projectedAt,
@@ -2184,32 +2199,20 @@ export class BookingsService {
         courtToLocationMap,
         locationTimeZoneMap,
       );
-    } else if (
-      dto.payment?.paidAmount !== undefined &&
+    }
+
+    if (
+      dto.bookingStatus === 'completed' &&
       booking.bookingStatus === 'live'
     ) {
-      const requestedPaid = Number(dto.payment.paidAmount);
-      if (
-        Number.isFinite(requestedPaid) &&
-        requestedPaid > numFromDec(booking.totalAmount) + 0.005
-      ) {
-        const { courtToLocationMap, locationTimeZoneMap } =
-          await this.resolveLocationMapping(booking);
-        const projection = this.computeLiveOvertimeProjection(
-          booking,
-          new Date(),
-          courtToLocationMap,
-          locationTimeZoneMap,
-        );
-        if (projection && projection.totalOvertimeCharge > 0) {
-          this.materializeLiveOvertimeOnBooking(
-            booking,
-            new Date(),
-            courtToLocationMap,
-            locationTimeZoneMap,
-          );
-        }
-      }
+      const { courtToLocationMap, locationTimeZoneMap } =
+        await this.resolveLocationMapping(booking);
+      this.recordActualSessionEndPreservingPrices(
+        booking,
+        new Date(),
+        courtToLocationMap,
+        locationTimeZoneMap,
+      );
     }
 
     if (dto.bookingStatus !== undefined) {
@@ -2524,14 +2527,17 @@ export class BookingsService {
       ...booking,
       items: activeItems,
     });
+    const firstItem = timeline[0]!;
     const primary = timeline[timeline.length - 1]!;
     const itemDate = formatDateOnly(primary.date ?? booking.bookingDate);
-    const slotStep = await this.resolveCourtSlotStepMinutes(
-      tenantId,
-      primary.courtKind,
-      primary.courtId,
-    );
+    const originalStartMinutes = toMinutes(firstItem.startTime, false);
     const proposedEndMinutes = toMinutes(primary.endTime, true);
+    const originalSpanMinutes = Math.max(
+      1,
+      proposedEndMinutes - originalStartMinutes,
+    );
+    // Early/late start: keep booked duration (e.g. 3–4 started at 2:11 → ends 3:11).
+    let sessionEndMinutes = startMinutes + originalSpanMinutes;
     const nextStart = await this.findNextBookingStartMinutesOnCourt(
       tenantId,
       primary.courtKind,
@@ -2540,25 +2546,9 @@ export class BookingsService {
       startMinutes,
       booking.id,
     );
-    const freeStarts = await this.loadFreeFacilitySlotStartMinutes(
-      tenantId,
-      primary.courtKind,
-      primary.courtId,
-      itemDate,
-    );
-    const sessionEndMinutes = resolveWalkInWallEndMinutes({
-      nowStartMinutes: startMinutes,
-      proposedEndMinutes,
-      slotStepMinutes: slotStep,
-      nextBookingStartMinutes: nextStart,
-      freeSlotStartMinutes: freeStarts,
-    });
-    const firstItem = timeline[0]!;
-    const originalStartMinutes = toMinutes(firstItem.startTime, false);
-    const originalSpanMinutes = Math.max(
-      1,
-      proposedEndMinutes - originalStartMinutes,
-    );
+    if (nextStart != null && nextStart > startMinutes) {
+      sessionEndMinutes = Math.min(sessionEndMinutes, nextStart);
+    }
     const newSpanMinutes = Math.max(1, sessionEndMinutes - startMinutes);
     const priceScale = newSpanMinutes / originalSpanMinutes;
 

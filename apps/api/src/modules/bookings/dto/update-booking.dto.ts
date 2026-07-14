@@ -83,7 +83,7 @@ export class UpdateBookingItemStatusDto {
 export class UpdateBookingDto {
   @IsOptional()
   @IsBoolean()
-  /** When true, persists current projected live overtime into item prices and booking totals (live bookings only). */
+  /** Persist projected live overtime into prices/totals and advance end to now (Apply only). */
   materializeLiveOvertime?: boolean;
 
   @Transform(({ value }) => {

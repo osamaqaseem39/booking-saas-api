@@ -437,22 +437,6 @@ export class TournamentsService {
     actorId?: string,
   ): Promise<TournamentRow> {
     const { event, division } = await this.findDivisionContext(tenantId, id);
-    const limited = division.status === 'in_progress';
-    const editable =
-      division.status === 'pending_approval' ||
-      division.status === 'rejected' ||
-      division.status === 'draft' ||
-      division.status === 'published' ||
-      division.status === 'registration_open' ||
-      division.status === 'registration_closed' ||
-      division.status === 'ready' ||
-      limited;
-    if (!editable) {
-      throw new ConflictException({
-        code: TOURNAMENT_ERROR_CODES.TOURNAMENT_INVALID_STATE,
-        message: 'Tournament settings cannot be edited in this state',
-      });
-    }
     if (dto.version != null && dto.version !== division.version) {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.CONFLICT_RETRY,
@@ -460,32 +444,7 @@ export class TournamentsService {
       });
     }
 
-    if (limited) {
-      const restricted = [
-        dto.sport,
-        dto.venueIds,
-        dto.registrationOpensAt,
-        dto.registrationClosesAt,
-        dto.startsAt,
-        dto.maxTeams,
-        dto.entryFeeAmount,
-        dto.structureType,
-        dto.advancement,
-        dto.groupCount,
-        dto.minTeamsPerGroup,
-        dto.maxTeamsPerGroup,
-        dto.matchesPerTeam,
-      ].some((v) => v !== undefined);
-      if (restricted) {
-        throw new ConflictException({
-          code: TOURNAMENT_ERROR_CODES.TOURNAMENT_INVALID_STATE,
-          message:
-            'Only name, rules, and end date can be changed while in progress',
-        });
-      }
-    }
-
-    if (dto.maxTeams != null && !limited) {
+    if (dto.maxTeams != null) {
       const activeCount = await this.registrations.count({
         where: {
           divisionId: id,
@@ -509,39 +468,24 @@ export class TournamentsService {
       dto.maxTeamsPerGroup != null ||
       dto.matchesPerTeam != null;
 
-    const stageList = await this.stages.find({
-      where: { divisionId: id, deletedAt: IsNull() },
-    });
-    const structureLocked = stageList.some((s) => s.status !== 'pending');
-
-    if (hasStructureChange && !limited && structureLocked) {
-      throw new ConflictException({
-        code: TOURNAMENT_ERROR_CODES.BRACKET_LOCKED,
-        message: 'Structure cannot be changed after stages are generated',
-      });
-    }
-
     const before = { event: { ...event }, division: { ...division } };
 
     if (dto.name != null) event.name = dto.name;
-    if (!limited) {
-      if (dto.sport != null) division.sport = dto.sport;
-      if (dto.venueIds != null) event.venueIds = dto.venueIds;
-      if (dto.registrationOpensAt != null)
-        division.registrationOpensAt = new Date(dto.registrationOpensAt);
-      if (dto.registrationClosesAt != null)
-        division.registrationClosesAt = new Date(dto.registrationClosesAt);
-      if (dto.startsAt != null) event.startsAt = new Date(dto.startsAt);
-      if (dto.maxTeams != null) division.maxTeams = dto.maxTeams;
-      if (dto.entryFeeAmount != null)
-        division.entryFeeAmount = String(dto.entryFeeAmount);
-    }
+    if (dto.sport != null) division.sport = dto.sport;
+    if (dto.venueIds != null) event.venueIds = dto.venueIds;
+    if (dto.registrationOpensAt != null)
+      division.registrationOpensAt = new Date(dto.registrationOpensAt);
+    if (dto.registrationClosesAt != null)
+      division.registrationClosesAt = new Date(dto.registrationClosesAt);
+    if (dto.startsAt != null) event.startsAt = new Date(dto.startsAt);
+    if (dto.maxTeams != null) division.maxTeams = dto.maxTeams;
+    if (dto.entryFeeAmount != null)
+      division.entryFeeAmount = String(dto.entryFeeAmount);
     if (dto.endsAt != null) event.endsAt = new Date(dto.endsAt);
     if (dto.rules != null) division.rules = dto.rules;
     if (dto.prizePool != null) division.prizePool = dto.prizePool;
 
     if (
-      !limited &&
       division.currentConfigVersionId &&
       (dto.padelBestOfSets != null ||
         dto.padelDeuceRule != null ||
@@ -578,8 +522,6 @@ export class TournamentsService {
 
     if (
       (hasStructureChange || dto.maxTeams != null) &&
-      !limited &&
-      !structureLocked &&
       division.currentConfigVersionId
     ) {
       const config = await this.configs.findOne({

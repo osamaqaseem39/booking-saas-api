@@ -332,9 +332,8 @@ function liveRefFromSessionWindow(
   overtime?: { minutes: number; charge: number },
 ): LiveBookingRef {
   const st = String(b.sportType || 'futsal').toLowerCase();
-  const baseTotal = numFromDecLike(b.totalAmount);
-  const extra = overtime?.charge ?? 0;
-  const totalAmount = Number((baseTotal + extra).toFixed(2));
+  // Persisted totals only — projected overtime is not part of the bill until Apply.
+  const totalAmount = numFromDecLike(b.totalAmount);
   const discount = numFromDecLike(b.discount);
   const paidAmount = numFromDecLike(b.paidAmount);
   const remainingAmount = Math.max(
