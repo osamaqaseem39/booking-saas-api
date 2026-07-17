@@ -11,7 +11,7 @@ import { TournamentRegistration } from '../entities/tournament-registration.enti
 import { TournamentStage } from '../entities/tournament-stage.entity';
 import { TournamentDivision } from '../entities/tournament-division.entity';
 import { TournamentConfigVersion } from '../entities/tournament-config-version.entity';
-import { generateKnockoutBracket } from '../engines/bracket.engine';
+import { generateKnockoutBracket, orderTeamsForKnockout } from '../engines/bracket.engine';
 import { generateRoundRobinFixtures } from '../engines/fixture.engine';
 import { assertTournamentTransition } from '../state/tournament-state.machine';
 import type { TournamentStatus } from '../types/tournament.types';
@@ -20,6 +20,7 @@ import {
   TOURNAMENT_ERROR_CODES,
   type StandingsRules,
   type StructureBlueprint,
+  type SeedingMode,
 } from '../types/tournament.types';
 import {
   pickAdvancingTeams,
@@ -131,6 +132,7 @@ export class FixtureGenerationService {
           stage,
           blueprint,
           teamIds,
+          config.seedingMode,
         );
       }
 
@@ -504,8 +506,9 @@ export class FixtureGenerationService {
     stage: TournamentStage,
     _blueprint: StructureBlueprint,
     teamIds: string[],
+    seedingMode: SeedingMode = 'ranking',
   ): Promise<number> {
-    const drafts = generateKnockoutBracket(teamIds);
+    const drafts = generateKnockoutBracket(orderTeamsForKnockout(teamIds, seedingMode));
     const saved = new Map<string, BracketNode>();
     let count = 0;
 

@@ -108,24 +108,26 @@ export function buildNextRoundPairings(
   matches: { homeTeamId: string; awayTeamId: string }[];
   carryTeamId: string | null;
 } {
-  if (winners.length === 3) {
-    const carry = winners.find((id) => byeTeamIds.has(id)) ?? winners[0];
-    const play = winners.filter((id) => id !== carry);
-    return {
-      matches: [{ homeTeamId: play[0], awayTeamId: play[1] }],
-      carryTeamId: carry,
-    };
+  if (winners.length % 2 === 0) {
+    const matches: { homeTeamId: string; awayTeamId: string }[] = [];
+    for (let i = 0; i + 1 < winners.length; i += 2) {
+      matches.push({
+        homeTeamId: winners[i],
+        awayTeamId: winners[i + 1],
+      });
+    }
+    return { matches, carryTeamId: null };
   }
 
+  const carry =
+    winners.find((id) => byeTeamIds.has(id)) ?? winners[0];
+  const play = winners.filter((id) => id !== carry);
   const matches: { homeTeamId: string; awayTeamId: string }[] = [];
-  const pairable = winners.length % 2 === 0 ? winners : winners.slice(0, -1);
-  for (let i = 0; i + 1 < pairable.length; i += 2) {
+  for (let i = 0; i + 1 < play.length; i += 2) {
     matches.push({
-      homeTeamId: pairable[i],
-      awayTeamId: pairable[i + 1],
+      homeTeamId: play[i],
+      awayTeamId: play[i + 1],
     });
   }
-  const carryTeamId =
-    winners.length % 2 === 1 ? winners[winners.length - 1] : null;
-  return { matches, carryTeamId };
+  return { matches, carryTeamId: carry };
 }

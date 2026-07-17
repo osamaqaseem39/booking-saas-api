@@ -57,14 +57,20 @@ export function allocateByes(teamCount: number): {
   bracketSize: number;
   byeCount: number;
 } {
-  return { bracketSize: teamCount, byeCount: teamCount % 2 === 1 ? 1 : 0 };
+  if (teamCount < 2) return { bracketSize: teamCount, byeCount: 0 };
+  const bracketSize = nextPowerOfTwo(teamCount);
+  return { bracketSize, byeCount: bracketSize - teamCount };
 }
 
 function knockoutPreview(teamCount: number) {
+  if (teamCount < 2) {
+    return { bracketSize: teamCount, byes: 0, rounds: 0 };
+  }
+  const bracketSize = nextPowerOfTwo(teamCount);
   return {
-    bracketSize: teamCount,
-    byes: teamCount > 0 && teamCount % 2 === 1 ? 1 : 0,
-    rounds: teamCount < 2 ? 0 : Math.ceil(Math.log2(teamCount)),
+    bracketSize,
+    byes: bracketSize - teamCount,
+    rounds: Math.log2(bracketSize),
   };
 }
 

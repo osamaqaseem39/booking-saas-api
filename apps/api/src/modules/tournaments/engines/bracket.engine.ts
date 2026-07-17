@@ -1,3 +1,6 @@
+import { nextPowerOfTwo } from './structure.engine';
+import type { SeedingMode } from '../types/tournament.types';
+
 export type BracketNodeDraft = {
   round: number;
   slotIndex: number;
@@ -16,11 +19,12 @@ export function log2(n: number): number {
 
 export function knockoutRoundCount(teamCount: number): number {
   if (teamCount < 2) return 0;
-  return Math.ceil(Math.log2(teamCount));
+  return Math.log2(nextPowerOfTwo(teamCount));
 }
 
 export function knockoutByeCount(teamCount: number): number {
-  return teamCount > 0 && teamCount % 2 === 1 ? 1 : 0;
+  if (teamCount < 2) return 0;
+  return nextPowerOfTwo(teamCount) - teamCount;
 }
 
 export function pairConsecutiveTeams(
@@ -33,6 +37,19 @@ export function pairConsecutiveTeams(
   return pairs;
 }
 
+export function orderTeamsForKnockout(
+  teamIds: string[],
+  seedingMode: SeedingMode = 'ranking',
+): string[] {
+  if (seedingMode !== 'random') return teamIds;
+  const shuffled = [...teamIds];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 export function generateKnockoutBracket(
   teamIds: string[],
   _bracketSize?: number,
@@ -40,34 +57,30 @@ export function generateKnockoutBracket(
   const n = teamIds.length;
   if (n < 2) return [];
 
+  const bracketSize = nextPowerOfTwo(n);
+  const byeCount = bracketSize - n;
   const nodes: BracketNodeDraft[] = [];
+  let slotIndex = 0;
 
-  if (n % 2 === 1) {
-    const pairs = pairConsecutiveTeams(teamIds.slice(1));
-    for (let i = 0; i < pairs.length; i++) {
-      nodes.push({
-        round: 1,
-        slotIndex: i,
-        teamId: pairs[i].homeTeamId,
-        awayTeamId: pairs[i].awayTeamId,
-        isBye: false,
-      });
-    }
+  for (let i = 0; i < byeCount; i++) {
     nodes.push({
       round: 1,
-      slotIndex: pairs.length,
-      teamId: teamIds[0],
+      slotIndex: slotIndex++,
+      teamId: teamIds[i],
       isBye: true,
     });
-    return nodes;
   }
 
-  const pairs = pairConsecutiveTeams(teamIds);
-  return pairs.map((pair, slotIndex) => ({
-    round: 1,
-    slotIndex,
-    teamId: pair.homeTeamId,
-    awayTeamId: pair.awayTeamId,
-    isBye: false,
-  }));
+  const pairs = pairConsecutiveTeams(teamIds.slice(byeCount));
+  for (const pair of pairs) {
+    nodes.push({
+      round: 1,
+      slotIndex: slotIndex++,
+      teamId: pair.homeTeamId,
+      awayTeamId: pair.awayTeamId,
+      isBye: false,
+    });
+  }
+
+  return nodes;
 }
