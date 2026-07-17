@@ -75,6 +75,7 @@ export type TournamentRow = {
   eventId: string;
   tenantId: string;
   name: string;
+  bannerImage: string | null;
   sport: string;
   sports: string[];
   venueIds: string[];
@@ -177,6 +178,7 @@ export class TournamentsService {
       eventId: event.id,
       tenantId: event.tenantId,
       name: event.name,
+      bannerImage: event.bannerImage ?? null,
       sport: division.sport,
       sports,
       venueIds: event.venueIds ?? [],
@@ -314,6 +316,7 @@ export class TournamentsService {
       id: event.id,
       tenantId: event.tenantId,
       name: event.name,
+      bannerImage: event.bannerImage ?? null,
       venueIds: event.venueIds ?? [],
       startsAt: event.startsAt.toISOString(),
       endsAt: event.endsAt?.toISOString() ?? null,
@@ -338,6 +341,7 @@ export class TournamentsService {
     const event = await this.tournaments.save({
       tenantId,
       name: dto.name,
+      bannerImage: dto.bannerImage?.trim() || null,
       venueIds: dto.venueIds,
       startsAt: new Date(dto.startsAt),
       endsAt: dto.endsAt ? new Date(dto.endsAt) : null,
@@ -471,6 +475,7 @@ export class TournamentsService {
     const before = { event: { ...event }, division: { ...division } };
 
     if (dto.name != null) event.name = dto.name;
+    if (dto.bannerImage != null) event.bannerImage = dto.bannerImage.trim() || null;
     if (dto.sport != null) division.sport = dto.sport;
     if (dto.venueIds != null) event.venueIds = dto.venueIds;
     if (dto.registrationOpensAt != null)
@@ -1291,6 +1296,7 @@ export class TournamentsService {
       id: division.id,
       eventId: event.id,
       name: event.name,
+      bannerImage: event.bannerImage ?? null,
       sport: division.sport,
       status: division.status,
       venueIds: event.venueIds ?? [],

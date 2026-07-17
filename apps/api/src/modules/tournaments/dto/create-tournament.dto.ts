@@ -110,6 +110,11 @@ export class CreateTournamentDto {
   @MaxLength(300)
   name!: string;
 
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  bannerImage?: string;
+
   @IsArray()
   @IsUUID('4', { each: true })
   venueIds!: string[];
@@ -267,6 +272,11 @@ export class UpdateTournamentDto {
   @IsString()
   @MaxLength(300)
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  bannerImage?: string;
 
   @IsOptional()
   @IsArray()

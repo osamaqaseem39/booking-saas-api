@@ -17,6 +17,9 @@ export class Tournament {
   @Column({ type: 'varchar', length: 300 })
   name!: string;
 
+  @Column({ type: 'varchar', length: 2048, nullable: true })
+  bannerImage?: string | null;
+
   @Column({ type: 'jsonb', default: [] })
   venueIds!: string[];
 
