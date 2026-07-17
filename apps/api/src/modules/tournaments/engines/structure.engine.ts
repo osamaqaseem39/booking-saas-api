@@ -112,11 +112,7 @@ export function previewStructure(input: {
     };
   }
 
-  if (
-    structureType === 'group_only' ||
-    structureType === 'group_plus_knockout' ||
-    structureType === 'qualifier_group_knockout'
-  ) {
+  if (structureType === 'group_only' || structureType === 'group_plus_knockout') {
     const sizes = generateBalancedGroups(teamCount, groupCount, {
       minPerGroup: minTeamsPerGroup,
       maxPerGroup: maxTeamsPerGroup,
@@ -143,24 +139,42 @@ export function previewStructure(input: {
       },
       advancement,
     };
-    if (
-      structureType === 'group_plus_knockout' ||
-      structureType === 'qualifier_group_knockout'
-    ) {
+    if (structureType === 'group_plus_knockout') {
       const advCount = resolveAdvancerCount(sizes, advancement);
       blueprint.knockout = knockoutPreview(advCount);
     }
     return blueprint;
   }
 
+  // Legacy DB values (qualifier_group_knockout / custom_multi_stage) → groups + knockout
+  const sizes = generateBalancedGroups(teamCount, groupCount, {
+    minPerGroup: minTeamsPerGroup,
+    maxPerGroup: maxTeamsPerGroup,
+  });
+  const groups = sizes.map((size, i) => ({
+    name: String.fromCharCode(65 + i),
+    size,
+  }));
+  const maxSize = Math.max(1, ...sizes);
+  const fullRoundRobin = Math.max(1, maxSize - 1);
+  const perTeam = Math.max(
+    1,
+    Math.min(matchesPerTeam ?? fullRoundRobin, fullRoundRobin * 2),
+  );
+  const advCount = resolveAdvancerCount(sizes, advancement);
   return {
     teamCount,
-    structureType,
-    stages: [
-      { order: 1, name: 'Stage 1', stageType: 'group' },
-      { order: 2, name: 'Stage 2', stageType: 'knockout' },
-    ],
+    structureType: 'group_plus_knockout',
+    groups,
+    groupStage: {
+      rounds: perTeam,
+      matchesPerTeam: perTeam,
+      groupCount: sizes.length,
+      minTeamsPerGroup: minTeamsPerGroup,
+      maxTeamsPerGroup: maxTeamsPerGroup,
+    },
     advancement,
+    knockout: knockoutPreview(advCount),
   };
 }
 

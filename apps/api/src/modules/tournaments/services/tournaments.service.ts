@@ -595,6 +595,25 @@ export class TournamentsService {
     return this.get(tenantId, id);
   }
 
+  private async assertDivisionFullForStart(
+    divisionId: string,
+    maxTeams: number,
+  ): Promise<void> {
+    const approvedCount = await this.registrations.count({
+      where: {
+        divisionId,
+        status: 'approved' as const,
+        deletedAt: IsNull(),
+      },
+    });
+    if (approvedCount < maxTeams) {
+      throw new ConflictException({
+        code: TOURNAMENT_ERROR_CODES.INSUFFICIENT_TEAMS,
+        message: `Tournament requires ${maxTeams} approved teams before it can start (${approvedCount} approved)`,
+      });
+    }
+  }
+
   private async assertDivisionReadyToComplete(divisionId: string): Promise<void> {
     const incompleteStages = await this.stages.count({
       where: {
@@ -677,6 +696,10 @@ export class TournamentsService {
 
     if (eventName === 'complete') {
       await this.assertDivisionReadyToComplete(id);
+    }
+
+    if (eventName === 'start' || eventName === 'mark_ready') {
+      await this.assertDivisionFullForStart(id, division.maxTeams);
     }
 
     if (eventName === 'start') {
@@ -1168,10 +1191,13 @@ export class TournamentsService {
     return { champion, results };
   }
 
-  async listPublic(
-    tenantId: string,
-    opts?: { sport?: string; status?: string; page?: number; limit?: number },
-  ) {
+  async listPublic(opts?: {
+    sport?: string;
+    status?: string;
+    tenantId?: string;
+    page?: number;
+    limit?: number;
+  }) {
     const page = Math.max(1, opts?.page ?? 1);
     const limit = Math.min(50, Math.max(1, opts?.limit ?? 20));
     const defaultStatuses = ['registration_open', 'in_progress', 'published'];
@@ -1183,10 +1209,14 @@ export class TournamentsService {
       .createQueryBuilder('d')
       .innerJoin(Tournament, 't', 't.id = d.tournamentId')
       .addSelect('t.startsAt')
-      .where('t.tenantId = :tenantId', { tenantId })
-      .andWhere('t.deletedAt IS NULL')
+      .where('t.deletedAt IS NULL')
       .andWhere('d.deletedAt IS NULL')
       .andWhere('d.status IN (:...statuses)', { statuses });
+
+    const tenantId = opts?.tenantId?.trim();
+    if (tenantId) {
+      qb.andWhere('t.tenantId = :tenantId', { tenantId });
+    }
 
     if (opts?.sport?.trim()) {
       qb.andWhere('d.sport = :sport', { sport: opts.sport.trim() });
@@ -1206,8 +1236,8 @@ export class TournamentsService {
     return { items, page, limit, total };
   }
 
-  async getPublic(tenantId: string, id: string) {
-    const { event, division } = await this.findDivisionContext(tenantId, id);
+  async getPublic(id: string) {
+    const { event, division } = await this.findDivisionById(id);
     const summary = await this.toPublicSummary(event, division);
     const stageRows = await this.stages.find({
       where: { divisionId: id, deletedAt: IsNull() },
@@ -1295,6 +1325,7 @@ export class TournamentsService {
     return {
       id: division.id,
       eventId: event.id,
+      tenantId: event.tenantId,
       name: event.name,
       bannerImage: event.bannerImage ?? null,
       sport: division.sport,
@@ -1318,9 +1349,14 @@ export class TournamentsService {
     };
   }
 
-  async getPublicStandings(tenantId: string, divisionId: string) {
-    await this.findDivisionContext(tenantId, divisionId);
-    const raw = await this.getStandings(tenantId, divisionId);
+  async getPublicMatches(divisionId: string) {
+    const { event } = await this.findDivisionById(divisionId);
+    return this.getMatches(event.tenantId, divisionId);
+  }
+
+  async getPublicStandings(divisionId: string) {
+    const { event } = await this.findDivisionById(divisionId);
+    const raw = await this.getStandings(event.tenantId, divisionId);
     const teamIds = new Set<string>();
     for (const g of raw) {
       for (const s of g.standings) teamIds.add(s.teamId);
@@ -1350,8 +1386,8 @@ export class TournamentsService {
     }));
   }
 
-  async getPublicBracket(tenantId: string, divisionId: string) {
-    await this.findDivisionContext(tenantId, divisionId);
+  async getPublicBracket(divisionId: string) {
+    await this.findDivisionById(divisionId);
     const knockoutStages = await this.stages.find({
       where: { divisionId, stageType: 'knockout', deletedAt: IsNull() },
       order: { order: 'ASC' },

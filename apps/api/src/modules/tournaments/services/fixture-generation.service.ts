@@ -630,15 +630,10 @@ export class FixtureGenerationService {
       stages.push({ order: 1, name: 'Knockout', stageType: 'knockout' });
     } else if (structureType === 'group_only') {
       stages.push({ order: 1, name: 'Group Stage', stageType: 'group' });
-    } else if (
-      structureType === 'group_plus_knockout' ||
-      structureType === 'qualifier_group_knockout'
-    ) {
+    } else {
+      // group_plus_knockout (+ legacy qualifier_group_knockout / custom_multi_stage)
       stages.push({ order: 1, name: 'Group Stage', stageType: 'group' });
       stages.push({ order: 2, name: 'Knockout', stageType: 'knockout' });
-    } else {
-      stages.push({ order: 1, name: 'Stage 1', stageType: 'group' });
-      stages.push({ order: 2, name: 'Stage 2', stageType: 'knockout' });
     }
 
     for (const s of stages) {

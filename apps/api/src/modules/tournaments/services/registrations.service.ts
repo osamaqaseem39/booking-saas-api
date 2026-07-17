@@ -13,6 +13,7 @@ import { TournamentRegistration } from '../entities/tournament-registration.enti
 import { Team } from '../entities/team.entity';
 import { TeamMember } from '../entities/team-member.entity';
 import { RegisterTeamDto } from '../dto/register-team.dto';
+import { PublicRegisterTeamDto } from '../dto/public-register-team.dto';
 import {
   ACTIVE_REGISTRATION_STATUSES,
   TOURNAMENT_ERROR_CODES,
@@ -57,8 +58,41 @@ export class RegistrationsService {
       waitlistPosition: r.waitlistPosition ?? null,
       approvedAt: r.approvedAt?.toISOString() ?? null,
       rejectedReason: r.rejectedReason ?? null,
+      contactName:
+        ((r.metadata as { contactName?: string } | null)?.contactName) ?? null,
+      contactPhone:
+        ((r.metadata as { contactPhone?: string } | null)?.contactPhone) ?? null,
+      contactEmail:
+        ((r.metadata as { contactEmail?: string } | null)?.contactEmail) ??
+        null,
       createdAt: r.createdAt.toISOString(),
     }));
+  }
+
+  /** Unauthenticated public register — tenant resolved from tournament. */
+  async registerPublic(
+    divisionId: string,
+    dto: PublicRegisterTeamDto,
+    actorId?: string,
+    idempotencyKey?: string,
+  ) {
+    const { division, event } = await this.findDivisionById(divisionId);
+    return this.register(
+      event.tenantId,
+      divisionId,
+      {
+        teamName: dto.teamName,
+        members: this.membersWithContactCaptain(dto),
+      },
+      actorId,
+      idempotencyKey,
+      {
+        contactName: dto.contactName.trim(),
+        contactPhone: dto.contactPhone.trim(),
+        contactEmail: dto.contactEmail?.trim() || null,
+        source: 'public',
+      },
+    );
   }
 
   async register(
@@ -67,6 +101,7 @@ export class RegistrationsService {
     dto: RegisterTeamDto,
     actorId?: string,
     idempotencyKey?: string,
+    metadata?: Record<string, unknown> | null,
   ) {
     const { division, event } = await this.findDivisionContext(
       tenantId,
@@ -110,9 +145,12 @@ export class RegistrationsService {
       if (!found) throw new NotFoundException('Team not found');
       team = found;
     } else {
+      if (!dto.teamName?.trim()) {
+        throw new BadRequestException('teamName is required');
+      }
       team = await this.teams.save({
         tenantId,
-        name: dto.teamName,
+        name: dto.teamName.trim(),
       });
       if (dto.members?.length) {
         for (const m of dto.members) {
@@ -143,6 +181,7 @@ export class RegistrationsService {
       status: 'pending',
       waitlistPosition: null,
       idempotencyKey: idempotencyKey ?? null,
+      metadata: metadata ?? null,
       paymentStatus:
         division.entryFeeAmount && Number(division.entryFeeAmount) > 0
           ? 'pending'
@@ -380,16 +419,23 @@ export class RegistrationsService {
     reg: TournamentRegistration,
     team: Team,
     division: TournamentDivision,
-    _event: Tournament,
+    event: Tournament,
   ) {
     const entryFee = Number(division.entryFeeAmount ?? 0);
     const paymentExpiresAt = new Date(
       reg.createdAt.getTime() + 15 * 60_000,
     ).toISOString();
+    const meta = (reg.metadata ?? {}) as {
+      contactName?: string;
+      contactPhone?: string;
+      contactEmail?: string | null;
+    };
     return {
       registration: {
         id: reg.id,
         tournamentId: reg.divisionId,
+        eventId: event.id,
+        tenantId: event.tenantId,
         teamId: reg.teamId,
         status: reg.status,
         paymentStatus: reg.paymentStatus,
@@ -397,10 +443,25 @@ export class RegistrationsService {
         entryFeeAmount: entryFee > 0 ? entryFee : null,
         entryFeeCurrency: division.entryFeeCurrency,
         paymentExpiresAt: entryFee > 0 ? paymentExpiresAt : null,
+        contactName: meta.contactName ?? null,
+        contactPhone: meta.contactPhone ?? null,
+        contactEmail: meta.contactEmail ?? null,
         createdAt: reg.createdAt.toISOString(),
       },
       team: { id: team.id, name: team.name },
     };
+  }
+
+  private membersWithContactCaptain(dto: PublicRegisterTeamDto) {
+    const members = [...(dto.members ?? [])];
+    const hasCaptain = members.some((m) => m.role === 'captain');
+    if (!hasCaptain) {
+      members.unshift({
+        displayName: dto.contactName.trim(),
+        role: 'captain',
+      });
+    }
+    return members;
   }
 
   private countActiveRegistrations(divisionId: string) {
@@ -413,15 +474,23 @@ export class RegistrationsService {
     });
   }
 
-  private async findDivisionContext(tenantId: string, divisionId: string) {
+  private async findDivisionById(divisionId: string) {
     const division = await this.divisions.findOne({
       where: { id: divisionId, deletedAt: IsNull() },
     });
     if (!division) throw new NotFoundException('Tournament not found');
     const event = await this.tournaments.findOne({
-      where: { id: division.tournamentId, tenantId, deletedAt: IsNull() },
+      where: { id: division.tournamentId, deletedAt: IsNull() },
     });
     if (!event) throw new NotFoundException('Tournament not found');
+    return { division, event };
+  }
+
+  private async findDivisionContext(tenantId: string, divisionId: string) {
+    const { division, event } = await this.findDivisionById(divisionId);
+    if (event.tenantId !== tenantId) {
+      throw new NotFoundException('Tournament not found');
+    }
     return { division, event };
   }
 

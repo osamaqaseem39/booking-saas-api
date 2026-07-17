@@ -36,6 +36,9 @@ export class TournamentRegistration {
   @Column({ type: 'varchar', length: 120, nullable: true })
   idempotencyKey?: string | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  metadata?: Record<string, unknown> | null;
+
   @Column({ type: 'int', default: 1 })
   version!: number;
 

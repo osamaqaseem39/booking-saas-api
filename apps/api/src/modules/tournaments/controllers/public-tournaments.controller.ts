@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
@@ -12,11 +14,8 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { isUUID } from 'class-validator';
-import { CurrentTenant } from '../../../tenancy/tenant-context.decorator';
-import type { TenantContext } from '../../../tenancy/tenant-context.interface';
 import { ConsumerAuthGuard } from '../../iam/authz/consumer-auth.guard';
-import { RegisterTeamDto } from '../dto/register-team.dto';
+import { PublicRegisterTeamDto } from '../dto/public-register-team.dto';
 import { TournamentsService } from '../services/tournaments.service';
 import { RegistrationsService } from '../services/registrations.service';
 
@@ -32,96 +31,65 @@ export class PublicTournamentShareController {
 }
 
 @Controller('public/tournaments')
-@UseGuards(ConsumerAuthGuard)
 export class PublicTournamentsController {
   constructor(
     private readonly tournamentsService: TournamentsService,
     private readonly registrationsService: RegistrationsService,
   ) {}
 
-  private userId(req: Request): string {
-    const id = (req as Request & { userId?: string }).userId?.trim();
-    if (!id) throw new UnauthorizedException('Missing user');
-    return id;
-  }
-
-  private tenantId(tenant: TenantContext): string {
-    const id = tenant?.tenantId?.trim() ?? '';
-    if (!isUUID(id, 4)) {
-      throw new UnauthorizedException('Valid X-Tenant-Id required');
-    }
-    return id;
-  }
-
+  /** Platform-wide catalog — no auth. */
   @Get()
   list(
-    @CurrentTenant() tenant: TenantContext,
     @Query('sport') sport?: string,
     @Query('status') status?: string,
+    @Query('tenantId') tenantId?: string,
     @Query('page', new ParseIntPipe({ optional: true })) page?: number,
     @Query('limit', new ParseIntPipe({ optional: true })) limit?: number,
   ) {
-    return this.tournamentsService.listPublic(this.tenantId(tenant), {
+    return this.tournamentsService.listPublic({
       sport,
       status,
+      tenantId,
       page,
       limit,
     });
   }
 
   @Get(':tournamentId')
-  get(
-    @CurrentTenant() tenant: TenantContext,
-    @Param('tournamentId', ParseUUIDPipe) tournamentId: string,
-  ) {
-    return this.tournamentsService.getPublic(this.tenantId(tenant), tournamentId);
+  get(@Param('tournamentId', ParseUUIDPipe) tournamentId: string) {
+    return this.tournamentsService.getPublic(tournamentId);
   }
 
+  /** Guest team registration — no auth; tenant resolved from tournament. */
   @Post(':tournamentId/register')
+  @HttpCode(HttpStatus.CREATED)
   register(
-    @CurrentTenant() tenant: TenantContext,
     @Req() req: Request,
     @Param('tournamentId', ParseUUIDPipe) tournamentId: string,
-    @Body() dto: RegisterTeamDto,
+    @Body() dto: PublicRegisterTeamDto,
   ) {
     const key = req.headers['idempotency-key'] as string | undefined;
-    return this.registrationsService.register(
-      this.tenantId(tenant),
+    return this.registrationsService.registerPublic(
       tournamentId,
       dto,
-      this.userId(req),
+      undefined,
       key,
     );
   }
 
   @Get(':tournamentId/matches')
-  matches(
-    @CurrentTenant() tenant: TenantContext,
-    @Param('tournamentId', ParseUUIDPipe) tournamentId: string,
-  ) {
-    return this.tournamentsService.getMatches(this.tenantId(tenant), tournamentId);
+  matches(@Param('tournamentId', ParseUUIDPipe) tournamentId: string) {
+    return this.tournamentsService.getPublicMatches(tournamentId);
   }
 
   @Get(':tournamentId/standings')
-  standings(
-    @CurrentTenant() tenant: TenantContext,
-    @Param('tournamentId', ParseUUIDPipe) tournamentId: string,
-  ) {
-    return this.tournamentsService.getPublicStandings(
-      this.tenantId(tenant),
-      tournamentId,
-    );
+  standings(@Param('tournamentId', ParseUUIDPipe) tournamentId: string) {
+    return this.tournamentsService.getPublicStandings(tournamentId);
   }
 
   @Get(':tournamentId/bracket')
-  bracket(
-    @CurrentTenant() tenant: TenantContext,
-    @Param('tournamentId', ParseUUIDPipe) tournamentId: string,
-  ) {
-    return this.tournamentsService.getPublicBracket(
-      this.tenantId(tenant),
-      tournamentId,
-    );
+  bracket(@Param('tournamentId', ParseUUIDPipe) tournamentId: string) {
+    return this.tournamentsService.getPublicBracket(tournamentId);
   }
 }
 
