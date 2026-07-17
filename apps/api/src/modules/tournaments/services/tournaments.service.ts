@@ -471,6 +471,9 @@ export class TournamentsService {
       dto.minTeamsPerGroup != null ||
       dto.maxTeamsPerGroup != null ||
       dto.matchesPerTeam != null;
+    const previousStructureType = division.structureType;
+    const structureTypeChanging =
+      dto.structureType != null && dto.structureType !== previousStructureType;
 
     const before = { event: { ...event }, division: { ...division } };
 
@@ -573,9 +576,27 @@ export class TournamentsService {
         }
         config.structureBlueprint = blueprint;
         if (dto.advancement) config.advancementRules = [dto.advancement];
+        const nextStructureType = dto.structureType ?? division.structureType;
+        if (nextStructureType !== 'group_plus_knockout') {
+          config.advancementRules = [];
+        }
         await this.configs.save(config);
         if (dto.structureType != null)
           division.structureType = dto.structureType;
+        if (
+          division.currentConfigVersionId &&
+          (structureTypeChanging ||
+            !(await this.fixtureGen.stagesMatchStructure(
+              id,
+              nextStructureType,
+            )))
+        ) {
+          await this.fixtureGen.rebuildStagesFromBlueprint(
+            id,
+            division.currentConfigVersionId,
+            nextStructureType,
+          );
+        }
       }
     }
 

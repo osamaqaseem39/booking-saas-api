@@ -67,7 +67,7 @@ export class FixtureGenerationService {
     }
 
     const stage = await this.stages.findOne({
-      where: { divisionId, order: stageOrder },
+      where: { divisionId, order: stageOrder, deletedAt: IsNull() },
     });
     if (!stage) throw new Error('Stage not found');
 
@@ -85,12 +85,17 @@ export class FixtureGenerationService {
     });
     let teamIds = approved.map((r) => r.teamId);
 
-    if (stage.stageType === 'knockout' && blueprint.knockout) {
+    const usesGroupAdvancement =
+      division.structureType !== 'direct_knockout' &&
+      division.structureType !== 'group_only';
+
+    if (stage.stageType === 'knockout' && blueprint.knockout && usesGroupAdvancement) {
       const prevGroup = await this.stages.findOne({
         where: {
           divisionId,
           stageType: 'group',
           order: LessThan(stageOrder),
+          deletedAt: IsNull(),
         },
         order: { order: 'DESC' },
       });
@@ -148,7 +153,7 @@ export class FixtureGenerationService {
     stageOrder: number,
   ): Promise<{ stageId: string }> {
     const stage = await this.stages.findOne({
-      where: { divisionId, order: stageOrder },
+      where: { divisionId, order: stageOrder, deletedAt: IsNull() },
     });
     if (!stage) throw new ConflictException('Stage not found');
     if (stage.status === 'pending' || stage.status === 'generating') {
@@ -210,7 +215,7 @@ export class FixtureGenerationService {
     stageOrder: number,
   ): Promise<{ stageId: string; round: number; matchesCreated: number }> {
     const stage = await this.stages.findOne({
-      where: { divisionId, order: stageOrder },
+      where: { divisionId, order: stageOrder, deletedAt: IsNull() },
     });
     if (!stage || stage.stageType !== 'knockout') {
       throw new ConflictException({
@@ -646,5 +651,92 @@ export class FixtureGenerationService {
         status: 'pending',
       });
     }
+  }
+
+  expectedStageTypes(structureType: string): string[] {
+    if (structureType === 'direct_knockout') return ['knockout'];
+    if (structureType === 'group_only') return ['group'];
+    return ['group', 'knockout'];
+  }
+
+  async stagesMatchStructure(
+    divisionId: string,
+    structureType: string,
+  ): Promise<boolean> {
+    const existing = await this.stages.find({
+      where: { divisionId, deletedAt: IsNull() },
+      order: { order: 'ASC' },
+    });
+    const expected = this.expectedStageTypes(structureType);
+    if (existing.length !== expected.length) return false;
+    return existing.every((s, i) => s.stageType === expected[i]);
+  }
+
+  async rebuildStagesFromBlueprint(
+    divisionId: string,
+    configVersionId: string,
+    structureType: string,
+  ): Promise<void> {
+    const existing = await this.stages.find({
+      where: { divisionId, deletedAt: IsNull() },
+    });
+
+    for (const stage of existing) {
+      const stageMatches = await this.matches.find({
+        where: { divisionId, stageId: stage.id, deletedAt: IsNull() },
+      });
+      const hasLockedMatch = stageMatches.some((m) =>
+        ['approved', 'walkover', 'in_progress', 'completed', 'disputed'].includes(
+          m.status,
+        ),
+      );
+      if (hasLockedMatch) {
+        throw new ConflictException({
+          code: TOURNAMENT_ERROR_CODES.BRACKET_LOCKED,
+          message:
+            'Cannot change tournament format after matches have started or finished',
+        });
+      }
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      for (const stage of existing) {
+        const stageMatches = await manager.find(TournamentMatch, {
+          where: { divisionId, stageId: stage.id, deletedAt: IsNull() },
+        });
+        if (stageMatches.length > 0) {
+          const matchIds = stageMatches.map((m) => m.id);
+          await manager
+            .createQueryBuilder()
+            .delete()
+            .from(TournamentFixture)
+            .where('matchId IN (:...matchIds)', { matchIds })
+            .execute();
+          await manager.delete(TournamentMatch, {
+            divisionId,
+            stageId: stage.id,
+          });
+        }
+        await manager.delete(BracketNode, { stageId: stage.id });
+        if (stage.stageType === 'group') {
+          const groups = await manager.find(TournamentGroup, {
+            where: { stageId: stage.id },
+          });
+          for (const group of groups) {
+            await manager.delete(Standing, { groupId: group.id });
+            await manager.delete(GroupMember, { groupId: group.id });
+          }
+          await manager.delete(TournamentGroup, { stageId: stage.id });
+        }
+        stage.deletedAt = new Date();
+        await manager.save(TournamentStage, stage);
+      }
+    });
+
+    await this.buildStagesFromBlueprint(
+      divisionId,
+      configVersionId,
+      structureType,
+    );
   }
 }
