@@ -120,11 +120,10 @@ export function previewStructure(input: {
       size,
     }));
     const maxSize = Math.max(...sizes);
-    const fullRoundRobin = maxSize - 1;
-    const perTeam = Math.min(
-      matchesPerTeam ?? fullRoundRobin,
-      fullRoundRobin,
-    );
+    const fullRoundRobin = Math.max(1, maxSize - 1);
+    const maxMulti = fullRoundRobin * 2;
+    const requested = matchesPerTeam ?? fullRoundRobin;
+    const perTeam = Math.max(1, Math.min(requested, maxMulti));
     const blueprint: StructureBlueprint = {
       teamCount,
       structureType,

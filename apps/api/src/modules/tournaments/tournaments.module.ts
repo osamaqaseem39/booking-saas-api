@@ -26,6 +26,7 @@ import { RegistrationsController } from './controllers/registrations.controller'
 import { MatchesController } from './controllers/matches.controller';
 import {
   MyTournamentRegistrationsController,
+  PublicTournamentShareController,
   PublicTournamentsController,
 } from './controllers/public-tournaments.controller';
 import { TournamentsService } from './services/tournaments.service';
@@ -66,6 +67,7 @@ import { TournamentMatchBookingService } from './services/tournament-match-booki
     PlatformTournamentsController,
     RegistrationsController,
     MatchesController,
+    PublicTournamentShareController,
     PublicTournamentsController,
     MyTournamentRegistrationsController,
   ],

@@ -421,11 +421,12 @@ export class FixtureGenerationService {
     if (slice.length < 2) return;
 
     const matchesPerTeam = blueprint.groupStage?.matchesPerTeam;
-    const maxRounds =
+    const maxPerTeam = Math.max(1, (slice.length - 1) * 2);
+    const perTeam =
       matchesPerTeam != null
-        ? Math.min(matchesPerTeam, Math.max(1, slice.length - 1))
+        ? Math.min(matchesPerTeam, maxPerTeam)
         : undefined;
-    const fixtures = generateRoundRobinFixtures(slice, maxRounds);
+    const fixtures = generateRoundRobinFixtures(slice, perTeam);
     for (const f of fixtures) {
       const match = await manager.save(TournamentMatch, {
         divisionId: division.id,
@@ -470,11 +471,12 @@ export class FixtureGenerationService {
       }
 
       const matchesPerTeam = blueprint.groupStage?.matchesPerTeam;
-      const maxRounds =
+      const maxPerTeam = Math.max(1, (slice.length - 1) * 2);
+      const perTeam =
         matchesPerTeam != null
-          ? Math.min(matchesPerTeam, Math.max(1, slice.length - 1))
+          ? Math.min(matchesPerTeam, maxPerTeam)
           : undefined;
-      const fixtures = generateRoundRobinFixtures(slice, maxRounds);
+      const fixtures = generateRoundRobinFixtures(slice, perTeam);
       for (const f of fixtures) {
         const match = await manager.save(TournamentMatch, {
           divisionId: division.id,

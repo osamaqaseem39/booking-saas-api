@@ -16,6 +16,7 @@ import { Roles } from '../../iam/authz/roles.decorator';
 import { RolesGuard } from '../../iam/authz/roles.guard';
 import { Permissions } from '../../iam/authz/permissions.decorator';
 import { RegistrationsService } from '../services/registrations.service';
+import { UpdateRegistrationDto } from '../dto/update-registration.dto';
 
 @Controller('registrations')
 @UseGuards(RolesGuard)
@@ -34,6 +35,28 @@ export class RegistrationsController {
       throw new UnauthorizedException('Valid X-Tenant-Id required');
     }
     return id;
+  }
+
+  @Patch(':id')
+  @Roles(
+    'platform-owner',
+    'business-admin',
+    'location-admin',
+    'business-staff',
+  )
+  @Permissions('tournaments:edit')
+  update(
+    @CurrentTenant() tenant: TenantContext,
+    @Req() req: Request,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: UpdateRegistrationDto,
+  ) {
+    return this.registrationsService.updateStaff(
+      this.tenantId(tenant),
+      id,
+      body,
+      this.userId(req),
+    );
   }
 
   @Patch(':id/approve')

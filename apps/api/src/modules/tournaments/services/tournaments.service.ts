@@ -1221,6 +1221,38 @@ export class TournamentsService {
     };
   }
 
+  /** Unauthenticated share page — anyone with the link can view. */
+  async getSharePublic(divisionId: string) {
+    const { event, division } = await this.findDivisionById(divisionId);
+    const shareable = [
+      'published',
+      'registration_open',
+      'registration_closed',
+      'ready',
+      'in_progress',
+      'completed',
+    ];
+    if (!shareable.includes(division.status)) {
+      throw new NotFoundException('Tournament is not available to share');
+    }
+    const summary = await this.toPublicSummary(event, division);
+    const stageRows = await this.stages.find({
+      where: { divisionId, deletedAt: IsNull() },
+      order: { order: 'ASC' },
+    });
+    return {
+      ...summary,
+      eventId: event.id,
+      stages: stageRows.map((s) => ({
+        id: s.id,
+        order: s.order,
+        name: s.name,
+        stageType: s.stageType,
+        status: s.status,
+      })),
+    };
+  }
+
   private async toPublicSummaryForDivision(division: TournamentDivision) {
     const event = await this.tournaments.findOne({
       where: { id: division.tournamentId, deletedAt: IsNull() },

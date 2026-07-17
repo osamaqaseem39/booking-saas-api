@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -213,24 +214,12 @@ export class RegistrationsService {
     registrationId: string,
     actorId?: string,
   ) {
-    const reg = await this.findRegistration(tenantId, registrationId);
-    if (reg.paymentStatus === 'paid') {
-      throw new ConflictException({
-        code: TOURNAMENT_ERROR_CODES.PAYMENT_ALREADY_PROCESSED,
-        message: 'Payment already recorded',
-      });
-    }
-    reg.paymentStatus = 'paid';
-    reg.version += 1;
-    await this.registrations.save(reg);
-    await this.audit.log({
+    return this.updateStaff(
       tenantId,
-      entityType: 'registration',
-      entityId: reg.id,
+      registrationId,
+      { paymentStatus: 'paid' },
       actorId,
-      afterState: { paymentStatus: 'paid' },
-    });
-    return reg;
+    );
   }
 
   async reject(
@@ -239,9 +228,92 @@ export class RegistrationsService {
     reason?: string,
     actorId?: string,
   ) {
+    return this.updateStaff(
+      tenantId,
+      registrationId,
+      { status: 'rejected', rejectedReason: reason },
+      actorId,
+    );
+  }
+
+  async updateStaff(
+    tenantId: string,
+    registrationId: string,
+    dto: {
+      status?: 'pending' | 'approved' | 'rejected' | 'waitlisted';
+      paymentStatus?: 'pending' | 'paid';
+      rejectedReason?: string;
+    },
+    actorId?: string,
+  ) {
     const reg = await this.findRegistration(tenantId, registrationId);
-    reg.status = 'rejected';
-    reg.rejectedReason = reason ?? null;
+    const division = await this.divisions.findOne({
+      where: { id: reg.divisionId, deletedAt: IsNull() },
+    });
+    if (!division) throw new NotFoundException('Tournament not found');
+
+    const before = {
+      status: reg.status,
+      paymentStatus: reg.paymentStatus,
+    };
+
+    if (dto.paymentStatus != null && dto.paymentStatus !== reg.paymentStatus) {
+      if (!['pending', 'paid'].includes(dto.paymentStatus)) {
+        throw new BadRequestException('Invalid payment status');
+      }
+      reg.paymentStatus = dto.paymentStatus;
+    }
+
+    if (dto.status != null && dto.status !== reg.status) {
+      if (!['pending', 'approved', 'rejected', 'waitlisted'].includes(dto.status)) {
+        throw new BadRequestException('Invalid registration status');
+      }
+
+      if (dto.status === 'approved') {
+        const entryFee = Number(division.entryFeeAmount ?? 0);
+        const paid =
+          (dto.paymentStatus ?? reg.paymentStatus) === 'paid';
+        if (entryFee > 0 && !paid) {
+          throw new ConflictException({
+            code: TOURNAMENT_ERROR_CODES.PAYMENT_NOT_CONFIRMED,
+            message: 'Entry fee must be paid before approval',
+          });
+        }
+        if (reg.status !== 'approved') {
+          const approvedCount = await this.registrations.count({
+            where: {
+              divisionId: reg.divisionId,
+              status: 'approved' as const,
+              deletedAt: IsNull(),
+            },
+          });
+          if (approvedCount >= division.maxTeams) {
+            throw new ConflictException({
+              code: TOURNAMENT_ERROR_CODES.REGISTRATION_FULL,
+              message: 'Tournament is full',
+            });
+          }
+        }
+        reg.status = 'approved';
+        reg.approvedAt = new Date();
+        reg.rejectedReason = null;
+      } else if (dto.status === 'rejected') {
+        reg.status = 'rejected';
+        reg.rejectedReason = dto.rejectedReason ?? reg.rejectedReason ?? null;
+        reg.approvedAt = null;
+      } else if (dto.status === 'pending') {
+        reg.status = 'pending';
+        reg.approvedAt = null;
+        reg.rejectedReason = null;
+        reg.waitlistPosition = null;
+      } else {
+        reg.status = 'waitlisted';
+        reg.approvedAt = null;
+      }
+    } else if (dto.rejectedReason != null && reg.status === 'rejected') {
+      reg.rejectedReason = dto.rejectedReason;
+    }
+
     reg.version += 1;
     await this.registrations.save(reg);
     await this.audit.log({
@@ -249,7 +321,11 @@ export class RegistrationsService {
       entityType: 'registration',
       entityId: reg.id,
       actorId,
-      afterState: { status: 'rejected', reason },
+      beforeState: before,
+      afterState: {
+        status: reg.status,
+        paymentStatus: reg.paymentStatus,
+      },
     });
     return reg;
   }

@@ -20,6 +20,17 @@ import { RegisterTeamDto } from '../dto/register-team.dto';
 import { TournamentsService } from '../services/tournaments.service';
 import { RegistrationsService } from '../services/registrations.service';
 
+/** No auth — shareable tournament page for anyone with the link. */
+@Controller('public/share/tournaments')
+export class PublicTournamentShareController {
+  constructor(private readonly tournamentsService: TournamentsService) {}
+
+  @Get(':tournamentId')
+  get(@Param('tournamentId', ParseUUIDPipe) tournamentId: string) {
+    return this.tournamentsService.getSharePublic(tournamentId);
+  }
+}
+
 @Controller('public/tournaments')
 @UseGuards(ConsumerAuthGuard)
 export class PublicTournamentsController {

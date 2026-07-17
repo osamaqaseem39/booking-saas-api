@@ -210,9 +210,10 @@ export class MatchesService {
   ) {
     const match = await this.findMatch(tenantId, matchId);
     await this.assertDivisionStarted(tenantId, match.divisionId);
-    if (match.status === 'completed' || match.status === 'approved') {
+    if (['walkover', 'cancelled'].includes(match.status)) {
       throw new ConflictException({
         code: TOURNAMENT_ERROR_CODES.MATCH_ALREADY_COMPLETED,
+        message: 'Cannot edit score for this match status',
       });
     }
     if (dto.homeScore < 0 || dto.awayScore < 0) {
