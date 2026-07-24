@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, Repository } from 'typeorm';
@@ -19,6 +20,8 @@ import {
   TOURNAMENT_ERROR_CODES,
 } from '../types/tournament.types';
 import { TournamentAuditService } from './tournament-audit.service';
+import { AnalyticsService } from '../../analytics/analytics.service';
+import { toAnalyticsSport } from '../../analytics/analytics-event-catalog';
 
 @Injectable()
 export class RegistrationsService {
@@ -34,6 +37,7 @@ export class RegistrationsService {
     @InjectRepository(TeamMember)
     private readonly members: Repository<TeamMember>,
     private readonly audit: TournamentAuditService,
+    @Optional() private readonly analytics?: AnalyticsService,
   ) {}
 
   async listForTournament(divisionId: string) {
@@ -194,6 +198,18 @@ export class RegistrationsService {
       entityId: reg.id,
       actorId,
       afterState: { status: reg.status, teamId: team.id },
+    });
+
+    const sport = toAnalyticsSport(division.sport);
+    this.analytics?.emitServerEvent({
+      eventName: 'tournament_registration_created_server',
+      tenantId,
+      userId: actorId ?? null,
+      properties: {
+        registration_id: reg.id,
+        tournament_id: event.id,
+        ...(sport ? { sport } : {}),
+      },
     });
 
     return this.formatPublicRegistration(reg, team, division, event);

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, IsNull, Repository } from 'typeorm';
@@ -20,6 +21,7 @@ import {
   type PaymentEntityType,
 } from './entities/payment-attempt.entity';
 import { PaymentsService } from './payments.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 
 const PAYMENT_HOLD_MINUTES = 15;
 
@@ -55,6 +57,7 @@ export class ConsumerPaymentsService {
     @InjectRepository(PaymentTransaction)
     private readonly paymentTxns: Repository<PaymentTransaction>,
     private readonly paymentsService: PaymentsService,
+    @Optional() private readonly analytics?: AnalyticsService,
   ) {}
 
   private async expireStaleAttempts(): Promise<void> {
@@ -353,7 +356,7 @@ export class ConsumerPaymentsService {
       attempt.status = 'succeeded';
       attempt.completedAt = now;
       await this.attempts.save(attempt);
-      await this.fulfillPayment(attempt);
+      await this.fulfillPayment(attempt, 'succeeded');
       return {
         success: true,
         transactionId: attempt.transactionId,
@@ -372,8 +375,10 @@ export class ConsumerPaymentsService {
         where: { id: attempt.entityId },
       });
       if (booking && booking.paymentStatus !== 'paid') {
+        const fromStatus = booking.paymentStatus;
         booking.paymentStatus = 'failed';
         await this.bookings.save(booking);
+        this.emitPaymentStatusChanged(attempt, fromStatus, 'failed');
       }
     }
 
@@ -384,7 +389,10 @@ export class ConsumerPaymentsService {
     };
   }
 
-  private async fulfillPayment(attempt: PaymentAttempt): Promise<void> {
+  private async fulfillPayment(
+    attempt: PaymentAttempt,
+    toStatus: 'succeeded' | 'failed' = 'succeeded',
+  ): Promise<void> {
     const amount = numFromDec(attempt.amount);
     const now = new Date();
 
@@ -393,6 +401,7 @@ export class ConsumerPaymentsService {
         where: { id: attempt.entityId },
       });
       if (!booking) return;
+      const fromStatus = booking.paymentStatus;
       booking.paymentStatus = 'paid';
       booking.bookingStatus = 'confirmed';
       booking.paidAmount = booking.totalAmount;
@@ -408,6 +417,9 @@ export class ConsumerPaymentsService {
         note: 'Online payment',
         paidAt: now,
       });
+      if (toStatus === 'succeeded') {
+        this.emitPaymentStatusChanged(attempt, fromStatus, 'paid');
+      }
       return;
     }
 
@@ -431,5 +443,26 @@ export class ConsumerPaymentsService {
         await this.canteenOrders.save(order);
       }
     }
+  }
+
+  private emitPaymentStatusChanged(
+    attempt: PaymentAttempt,
+    fromStatus: string,
+    toStatus: string,
+  ): void {
+    if (!this.analytics || attempt.entityType !== 'booking') return;
+    this.analytics.emitServerEvent({
+      eventName: 'payment_status_changed_server',
+      tenantId: attempt.tenantId,
+      userId: attempt.userId,
+      properties: {
+        booking_id: attempt.entityId,
+        payment_id: attempt.id,
+        from_status: fromStatus,
+        to_status: toStatus,
+        value: numFromDec(attempt.amount),
+        currency: attempt.currency ?? 'PKR',
+      },
+    });
   }
 }

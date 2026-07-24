@@ -29,6 +29,7 @@ import { InventoryModule } from './modules/inventory/inventory.module';
 import { JourneyModule } from './modules/journey/journey.module';
 import { SupportModule } from './modules/support/support.module';
 import { MailModule } from './modules/mail/mail.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
 
 function createTypeOrmConfig(): TypeOrmModuleOptions {
   const poolMax = resolvePoolMax();
@@ -203,6 +204,7 @@ function sslModeFromEnv() {
     JourneyModule,
     SupportModule,
     WhatsappModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

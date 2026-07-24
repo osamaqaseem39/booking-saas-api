@@ -24,6 +24,7 @@ import { PublicPromoCodesController } from './public/public-promo-codes.controll
 import { PreviousBookingsController } from './user/previous-bookings.controller';
 import { IamModule } from '../iam/iam.module';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 
 import { BookingsSlotsTask } from './tasks/bookings-slots.task';
 
@@ -31,6 +32,7 @@ import { BookingsSlotsTask } from './tasks/bookings-slots.task';
   imports: [
     IamModule,
     RealtimeModule,
+    AnalyticsModule,
     TypeOrmModule.forFeature([
       Booking,
       BookingItem,

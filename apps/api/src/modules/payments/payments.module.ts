@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { IamModule } from '../iam/iam.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { Booking } from '../bookings/entities/booking.entity';
 import { PaymentTransaction } from '../bookings/entities/payment-transaction.entity';
 import { TournamentRegistration } from '../tournaments/entities/tournament-registration.entity';
@@ -20,6 +21,7 @@ import { JazzCashProvider } from './providers/jazzcash.provider';
   imports: [
     ConfigModule,
     IamModule,
+    AnalyticsModule,
     TypeOrmModule.forFeature([
       PaymentAttempt,
       Booking,

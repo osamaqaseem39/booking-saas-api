@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -10,6 +11,7 @@ import { BusinessLocation } from '../businesses/entities/business-location.entit
 import { BusinessMembership } from '../businesses/entities/business-membership.entity';
 import { Booking } from '../bookings/entities/booking.entity';
 import { IamService } from '../iam/iam.service';
+import { AnalyticsService } from '../analytics/analytics.service';
 import { CreateCanteenItemDto } from './dto/create-canteen-item.dto';
 import { UpdateCanteenItemDto } from './dto/update-canteen-item.dto';
 import { CanteenItem } from './entities/canteen-item.entity';
@@ -46,6 +48,7 @@ export class CanteenService {
     @InjectRepository(BusinessMembership)
     private readonly memberships: Repository<BusinessMembership>,
     private readonly iamService: IamService,
+    @Optional() private readonly analytics?: AnalyticsService,
   ) {}
 
   private formatDateOnly(value: Date | string): string {
@@ -304,6 +307,20 @@ export class CanteenService {
       where: { id: order.id },
       relations: ['items'],
     });
+
+    this.analytics?.emitServerEvent({
+      eventName: 'canteen_order_created_server',
+      locationId: lid,
+      userId,
+      properties: {
+        order_id: saved!.id,
+        venue_id: lid,
+        ...(dto.bookingId ? { booking_id: dto.bookingId } : {}),
+        value: Number(saved!.totalAmount),
+        currency: saved!.currency ?? 'PKR',
+      },
+    });
+
     return this.formatOrder(saved!);
   }
 

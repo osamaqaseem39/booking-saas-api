@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { IamModule } from '../iam/iam.module';
+import { AnalyticsModule } from '../analytics/analytics.module';
 import { BookingsModule } from '../bookings/bookings.module';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
 import { Business } from '../businesses/entities/business.entity';
@@ -41,6 +42,7 @@ import { TournamentMatchBookingService } from './services/tournament-match-booki
   imports: [
     IamModule,
     BookingsModule,
+    AnalyticsModule,
     TypeOrmModule.forFeature([
       Team,
       TeamMember,
