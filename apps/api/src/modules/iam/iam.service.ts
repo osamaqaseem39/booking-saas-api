@@ -13,6 +13,7 @@ import { createHash, randomBytes } from 'crypto';
 import { Business } from '../businesses/entities/business.entity';
 import { BusinessMembership } from '../businesses/entities/business-membership.entity';
 import { BusinessLocation } from '../businesses/entities/business-location.entity';
+import { Booking } from '../bookings/entities/booking.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { SystemRole } from './iam.constants';
@@ -47,6 +48,8 @@ export class IamService implements OnModuleInit {
     private readonly membershipsRepository: Repository<BusinessMembership>,
     @InjectRepository(BusinessLocation)
     private readonly locationsRepository: Repository<BusinessLocation>,
+    @InjectRepository(Booking)
+    private readonly bookingsRepository: Repository<Booking>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -286,19 +289,83 @@ export class IamService implements OnModuleInit {
     }));
   }
 
-  /** Users who have the customer-end-user role (plus their other roles). */
-  async listEndUsers() {
-    const endRows = await this.userRolesRepository.find({
-      where: { roleCode: 'customer-end-user' },
+  /** Users who booked at the given tenant (customer-end-user role). */
+  async listEndUsers(
+    requesterUserId: string,
+    isPlatformOwner: boolean,
+    input?: { tenantId?: string; search?: string },
+  ) {
+    const tenantId = (input?.tenantId ?? '').trim();
+    if (!tenantId || tenantId === 'public') {
+      if (isPlatformOwner) return [];
+      throw new BadRequestException('Tenant ID is required');
+    }
+
+    const business = await this.businessesRepository.findOne({
+      where: { tenantId },
     });
-    const userIds = [...new Set(endRows.map((r) => r.userId))];
+    if (!business) return [];
+
+    const tenantMemberships = await this.membershipsRepository.find({
+      where: { businessId: business.id },
+    });
+    const tenantUserIds = new Set(tenantMemberships.map((m) => m.userId));
+    const locations = await this.locationsRepository.find({
+      where: { businessId: business.id },
+    });
+    const locationIds = locations.map((l) => l.id);
+    if (locationIds.length > 0) {
+      const locAdminRoles = await this.userRolesRepository.find({
+        where: { roleCode: 'location-admin', locationId: In(locationIds) },
+      });
+      for (const r of locAdminRoles) {
+        tenantUserIds.add(r.userId);
+      }
+    }
+    if (!isPlatformOwner && !tenantUserIds.has(requesterUserId)) {
+      throw new ForbiddenException(
+        'You can only view customers in your business',
+      );
+    }
+
+    const bookingRows = await this.bookingsRepository
+      .createQueryBuilder('b')
+      .select('DISTINCT b.userId', 'userId')
+      .where('b.tenantId = :tenantId', { tenantId })
+      .getRawMany<{ userId: string }>();
+    let userIds = [
+      ...new Set(
+        bookingRows.map((r) => String(r.userId ?? '').trim()).filter(Boolean),
+      ),
+    ];
     if (userIds.length === 0) return [];
-    const users = await this.usersRepository.find({
-      where: { id: In(userIds) },
-      order: { createdAt: 'DESC' },
+
+    const endRows = await this.userRolesRepository.find({
+      where: { roleCode: 'customer-end-user', userId: In(userIds) },
     });
+    const endUserIdSet = new Set(endRows.map((r) => r.userId));
+    userIds = userIds.filter((id) => endUserIdSet.has(id));
+    if (userIds.length === 0) return [];
+
+    const search = (input?.search ?? '').trim().toLowerCase();
+    const query = this.usersRepository
+      .createQueryBuilder('user')
+      .where('user.id IN (:...ids)', { ids: userIds });
+
+    if (search) {
+      query.andWhere(
+        "(LOWER(user.fullName) LIKE :search OR LOWER(user.email) LIKE :search OR LOWER(COALESCE(user.phone, '')) LIKE :search)",
+        { search: `%${search}%` },
+      );
+    }
+
+    query.orderBy('user.createdAt', 'DESC');
+    const users = await query.getMany();
+    const foundIds = users.map((u) => u.id);
+    if (foundIds.length === 0) return [];
+
     const allRoles = await this.userRolesRepository.find({
-      where: { userId: In(userIds) },
+      where: { userId: In(foundIds) },
     });
     return users.map((user) => ({
       ...user,

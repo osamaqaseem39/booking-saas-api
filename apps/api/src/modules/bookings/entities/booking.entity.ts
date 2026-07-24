@@ -81,6 +81,9 @@ export class Booking {
   @Column({ type: 'timestamptz', nullable: true })
   paidAt?: Date;
 
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  paymentProofUrl?: string;
+
   @Column({ type: 'varchar', length: 20 })
   bookingStatus!: BookingStatus;
 

@@ -9,6 +9,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { IamService } from '../iam/iam.service';
+import { AnalyticsService } from '../analytics/analytics.service';
+import { toAnalyticsSport } from '../analytics/analytics-event-catalog';
 import { RealtimeService } from '../realtime/realtime.service';
 import type { BookingRealtimeAction } from '../realtime/realtime.events';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -261,6 +263,7 @@ export type BookingApiRow = {
     paidAt?: string;
     paidAmount: number;
     remainingAmount: number;
+    paymentProofUrl?: string;
   };
   paymentTransactions?: Array<{
     id: string;
@@ -317,6 +320,7 @@ export class BookingsService {
     private readonly promoCodes: PromoCodesService,
     private readonly iamService: IamService,
     @Optional() private readonly realtime?: RealtimeService,
+    @Optional() private readonly analytics?: AnalyticsService,
   ) {}
 
   private readonly logger = new Logger(BookingsService.name);
@@ -327,6 +331,79 @@ export class BookingsService {
     action: BookingRealtimeAction,
   ): void {
     this.realtime?.emitBookingChange(tenantId, bookingId, action);
+  }
+
+  private bookingVenueId(
+    booking: Booking,
+    courtToLocationMap: Record<string, string>,
+  ): string | null {
+    const first =
+      booking.items?.find((item) => item.itemStatus !== 'cancelled') ??
+      booking.items?.[0];
+    if (!first) return null;
+    return courtToLocationMap[first.courtId] ?? null;
+  }
+
+  private emitBookingCreatedServer(
+    tenantId: string,
+    booking: Booking,
+    courtToLocationMap: Record<string, string>,
+  ): void {
+    if (!this.analytics) return;
+    const venueId = this.bookingVenueId(booking, courtToLocationMap);
+    const sport = toAnalyticsSport(booking.sportType);
+    this.analytics.emitServerEvent({
+      eventName: 'booking_created_server',
+      tenantId,
+      userId: booking.userId,
+      locationId: venueId,
+      properties: {
+        booking_id: booking.id,
+        user_id: booking.userId,
+        ...(venueId ? { venue_id: venueId } : {}),
+        ...(sport ? { sport } : {}),
+        value: numFromDec(booking.totalAmount),
+        currency: 'PKR',
+      },
+    });
+  }
+
+  private emitBookingCancelledServer(
+    tenantId: string,
+    booking: Booking,
+    courtToLocationMap: Record<string, string>,
+    reason?: string | null,
+  ): void {
+    if (!this.analytics) return;
+    const venueId = this.bookingVenueId(booking, courtToLocationMap);
+    this.analytics.emitServerEvent({
+      eventName: 'booking_cancelled_server',
+      tenantId,
+      userId: booking.userId,
+      locationId: venueId,
+      properties: {
+        booking_id: booking.id,
+        ...(venueId ? { venue_id: venueId } : {}),
+        ...(reason ? { reason: reason.slice(0, 100) } : {}),
+      },
+    });
+  }
+
+  private emitBookingRefundedServer(
+    tenantId: string,
+    booking: Booking,
+  ): void {
+    if (!this.analytics) return;
+    this.analytics.emitServerEvent({
+      eventName: 'booking_refunded_server',
+      tenantId,
+      userId: booking.userId,
+      properties: {
+        booking_id: booking.id,
+        value: numFromDec(booking.totalAmount),
+        currency: 'PKR',
+      },
+    });
   }
 
   /** Pushes `live:tick` to connected dashboards for tenants with active live sessions. */
@@ -834,6 +911,7 @@ export class BookingsService {
         paidAmount: numFromDec(booking.paidAmount),
         remainingAmount:
           numFromDec(booking.totalAmount) - numFromDec(booking.paidAmount),
+        paymentProofUrl: booking.paymentProofUrl ?? undefined,
       },
       bookingStatus:
         opts?.projectLiveViewStatus === false
@@ -1325,7 +1403,10 @@ export class BookingsService {
         }
       }
 
-      if (!hasActiveBooking && slot.status === 'booked') {
+      if (
+        !hasActiveBooking &&
+        (slot.status === 'booked' || slot.status === 'blocked')
+      ) {
         availableStarts.push(slot.startTime);
       }
     }
@@ -1339,7 +1420,7 @@ export class BookingsService {
         .andWhere('courtKind = :courtKind', { courtKind })
         .andWhere('courtId = :courtId', { courtId })
         .andWhere('slotDate = :slotDate', { slotDate })
-        .andWhere("status = 'booked'")
+        .andWhere("status IN ('booked', 'blocked')")
         .andWhere('startTime IN (:...availableStarts)', { availableStarts })
         .execute();
     }
@@ -2055,6 +2136,7 @@ export class BookingsService {
       paymentMethod: dto.payment.paymentMethod,
       transactionId: dto.payment.transactionId,
       paidAt: dto.payment.paidAt ? new Date(dto.payment.paidAt) : undefined,
+      paymentProofUrl: dto.payment.paymentProofUrl?.trim() || undefined,
       paidAmount: dec(paidAmount),
       bookingStatus: dto.bookingStatus ?? 'confirmed',
       notes: dto.notes,
@@ -2137,6 +2219,7 @@ export class BookingsService {
       await this.resolveLocationMapping(full);
     const row = this.toApi(full, locationsMap, courtToLocationMap, locationTimeZoneMap, courtNamesMap);
     this.notifyBookingChange(tenantId, full.id, 'created');
+    this.emitBookingCreatedServer(tenantId, full, courtToLocationMap);
 
     const firstItem = full.items?.[0];
     let postGridSummary: Record<string, unknown> | undefined;
@@ -2187,6 +2270,9 @@ export class BookingsService {
       relations: ['items', 'user', 'paymentTransactions'],
     });
     if (!booking) throw new NotFoundException(`Booking ${bookingId} not found`);
+
+    const previousBookingStatus = booking.bookingStatus;
+    const previousPaymentStatus = booking.paymentStatus;
 
     let preLiveFacilityItems: BookingItem[] | undefined;
 
@@ -2355,6 +2441,9 @@ export class BookingsService {
     if (dto.payment?.paidAmount !== undefined) {
       booking.paidAmount = dec(dto.payment.paidAmount);
     }
+    if (dto.payment?.paymentProofUrl !== undefined) {
+      booking.paymentProofUrl = dto.payment.paymentProofUrl.trim() || undefined;
+    }
     this.assertPaidAmountWithinPayable(
       numFromDec(booking.paidAmount),
       numFromDec(booking.totalAmount),
@@ -2409,6 +2498,23 @@ export class BookingsService {
       projectLiveOvertimePricing: true,
     });
     this.notifyBookingChange(tenantId, full.id, 'updated');
+    if (
+      full.bookingStatus === 'cancelled' &&
+      previousBookingStatus !== 'cancelled'
+    ) {
+      this.emitBookingCancelledServer(
+        tenantId,
+        full,
+        courtToLocationMap,
+        full.cancellationReason,
+      );
+    }
+    if (
+      full.paymentStatus === 'refunded' &&
+      previousPaymentStatus !== 'refunded'
+    ) {
+      this.emitBookingRefundedServer(tenantId, full);
+    }
     return row;
   }
 

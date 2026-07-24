@@ -23,4 +23,8 @@ export class CreateBookingPaymentDto {
 
   @IsOptional()
   paidAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  paymentProofUrl?: string;
 }

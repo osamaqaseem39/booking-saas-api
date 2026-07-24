@@ -102,8 +102,19 @@ export class IamController {
   @Get('end-users')
   @Roles('platform-owner', 'business-admin', 'location-admin', 'business-staff')
   @Permissions('users:view')
-  async listEndUsers() {
-    return this.iamService.listEndUsers();
+  async listEndUsers(
+    @Req() req: Request,
+    @CurrentTenant() tenant: TenantContext,
+    @Query('search') search?: string,
+  ) {
+    const requesterId = this.requesterUserId(req);
+    const isPlatformOwner = await this.iamService.hasAnyRole(requesterId, [
+      'platform-owner',
+    ]);
+    return this.iamService.listEndUsers(requesterId, isPlatformOwner, {
+      tenantId: tenant.tenantId,
+      search,
+    });
   }
 
   @Post('users')

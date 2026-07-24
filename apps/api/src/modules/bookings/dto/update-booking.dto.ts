@@ -48,6 +48,10 @@ export class UpdateBookingPaymentDto {
   @IsOptional()
   @IsNumber()
   remainingAmount?: number;
+
+  @IsOptional()
+  @IsString()
+  paymentProofUrl?: string;
 }
 
 export class UpdateBookingPricingDto {
